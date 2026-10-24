@@ -1,0 +1,3 @@
+# Resolve `source` paths relative to each script, so the scripts can share scripts/lib/common.sh.
+source-path=SCRIPTDIR
+external-sources=true
