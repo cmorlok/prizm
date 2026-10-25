@@ -3,7 +3,9 @@
 #
 #   scripts/host/xcode.sh build        # Debug build of the app
 #   scripts/host/xcode.sh test         # unit + integration tests (PrizmTests)
-#   scripts/host/xcode.sh test-ui      # UI journeys (PrizmUITests scheme; drives the real app)
+#   scripts/host/xcode.sh test-ui      # UI journeys (PrizmUITests scheme; drives the real app).
+#                                      # To run only some classes, list them one per line in
+#                                      # build/host-bridge/ui-test-only (deleted after the run).
 #   scripts/host/xcode.sh test-all     # test + test-ui
 #   scripts/host/xcode.sh release      # Release build signed with your local team (not notarized)
 #   scripts/host/xcode.sh ci           # what CI runs: project checks, unsigned build + tests
@@ -18,7 +20,7 @@ set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
-case "${1:-}" in ""|-h|--help) sed -n '2,16p' "${BASH_SOURCE[0]}"; exit 0 ;; esac
+case "${1:-}" in ""|-h|--help) sed -n '2,18p' "${BASH_SOURCE[0]}"; exit 0 ;; esac
 require_host "scripts/host/xcode.sh"
 command -v xcodebuild >/dev/null || die "xcodebuild not found. Install Xcode and run: sudo xcode-select -s /Applications/Xcode.app"
 
@@ -88,11 +90,31 @@ ci_run() {
     -enableAddressSanitizer YES -derivedDataPath "${ci_derived}" "${unsigned[@]}" | pretty
 }
 
+# Optional class filter for test-ui (local iteration). Only names of existing UI test classes are
+# accepted, so the file cannot inject other xcodebuild arguments. Fills the global array ui_only.
+ui_only_file="build/host-bridge/ui-test-only"
+ui_only=()
+read_ui_only() {
+  [[ -f "${ui_only_file}" ]] || return 0
+  local name
+  while IFS= read -r name || [[ -n "${name}" ]]; do
+    name="${name//[[:space:]]/}"
+    [[ -z "${name}" ]] && continue
+    [[ "${name}" =~ ^[A-Z][A-Za-z0-9]*$ ]] || die "ui-test-only: invalid class name '${name}'"
+    grep -rqs "class ${name}[: ]" Prizm/UITests || die "ui-test-only: no UI test class '${name}'"
+    ui_only+=("-only-testing:PrizmUITests/${name}")
+  done < "${ui_only_file}"
+}
+
 cmd="${1:-}"
 case "${cmd}" in
   build)    check_local_config; xcb Prizm Debug build ;;
   test)     check_local_config; xcb Prizm Debug test -only-testing:PrizmTests ;;
-  test-ui)  check_local_config; xcb PrizmUITests Debug test ;;
+  test-ui)  check_local_config
+            read_ui_only
+            rm -f "${ui_only_file}"
+            [[ ${#ui_only[@]} -gt 0 ]] && log "only: ${ui_only[*]}"
+            xcb PrizmUITests Debug test ${ui_only[@]+"${ui_only[@]}"} ;;
   test-all) check_local_config
             xcb Prizm Debug test -only-testing:PrizmTests
             xcb PrizmUITests Debug test ;;
