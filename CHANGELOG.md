@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix the arrow keys in the sidebar and the item list: after clicking a row, ↑ and ↓ now move the
+  selection.
 - Fix VoiceOver reading stale values: the dots of a masked password after Reveal, the previous
   item's fields after selecting another item, and an old password generator preview.
 - Fix a crash when pressing ⌘N while Trash is selected. The "+" button is no longer shown in Trash.

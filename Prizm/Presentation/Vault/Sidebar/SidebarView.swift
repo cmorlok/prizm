@@ -49,6 +49,9 @@ struct SidebarView: View {
     @State private var collectionToDelete: OrgCollection? = nil
     @State private var showDeleteCollectionAlert = false
 
+    /// Keyboard focus for the list, so the arrow keys move the selection (fix-ui-journey-findings).
+    @FocusState private var isListFocused: Bool
+
     // Tree collapse state (per-session)
     @State private var expandedFolderIds: Set<String> = []
     @State private var expandedOrgIds: Set<String> = []
@@ -72,6 +75,11 @@ struct SidebarView: View {
                 sidebarSections.move(fromOffsets: from, toOffset: to)
             }
         }
+        .focused($isListFocused)
+        // A click on a row does not make the list the first responder: `.onMove` and the drop
+        // targets let SwiftUI handle the click itself, so the arrow keys went to the window.
+        // Focus the list on every click, including one on the row that is already selected.
+        .simultaneousGesture(TapGesture().onEnded { isListFocused = true })
         .navigationTitle("Prizm")
         .alert("Delete Collection", isPresented: $showDeleteCollectionAlert,
                presenting: collectionToDelete) { col in
