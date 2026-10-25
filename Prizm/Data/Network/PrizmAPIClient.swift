@@ -185,7 +185,7 @@ protocol PrizmAPIClientProtocol: Actor {
     // MARK: - Cipher partial / move
 
     /// PUT `/ciphers/{id}/partial` — updates folderId and favorite without re-encrypting.
-    func updateCipherPartial(id: String, folderId: String?, favorite: Bool) async throws
+    func updateCipherPartial(id: String, folderId: String?, favorite: Bool) async throws -> PartialCipherResponse
 
     /// PUT `/ciphers/move` — bulk-moves ciphers to a folder.
     func moveCiphersToFolder(ids: [String], folderId: String?) async throws
@@ -317,6 +317,32 @@ extension APIError: LocalizedError {
         case .baseURLNotSet:
             return "No server URL is configured."
         }
+    }
+}
+
+// MARK: - Partial update wire model
+
+/// The fields of the `PUT /api/ciphers/{id}/partial` response that Prizm checks. Both servers answer
+/// with the cipher as the user sees it after the update (Vaultwarden `put_cipher_partial`, Bitwarden
+/// `CiphersController.PutPartial`).
+nonisolated struct PartialCipherResponse: Decodable, Equatable {
+    let favorite: Bool?
+    /// `.some(nil)`: the field is present and null (no folder). `nil`: the server did not send it.
+    let folderId: String??
+
+    init(favorite: Bool?, folderId: String??) {
+        self.favorite = favorite
+        self.folderId = folderId
+    }
+
+    private enum CodingKeys: String, CodingKey { case favorite, folderId }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        favorite = try container.decodeIfPresent(Bool.self, forKey: .favorite)
+        folderId = container.contains(.folderId)
+            ? .some(try container.decodeIfPresent(String.self, forKey: .folderId))
+            : nil
     }
 }
 
@@ -975,7 +1001,7 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
 
     // MARK: - Cipher partial / move
 
-    func updateCipherPartial(id: String, folderId: String?, favorite: Bool) async throws {
+    func updateCipherPartial(id: String, folderId: String?, favorite: Bool) async throws -> PartialCipherResponse {
         guard let base = baseURL else { throw APIError.baseURLNotSet }
         let url = base.appendingPathComponent("api/ciphers/\(id)/partial")
         var request = baseRequest(url: url)
@@ -987,7 +1013,7 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
         var body: [String: Any] = ["favorite": favorite]
         body["folderId"] = folderId as Any
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        try await performEmpty(request: request)
+        return try await perform(request: request)
     }
 
     func moveCiphersToFolder(ids: [String], folderId: String?) async throws {

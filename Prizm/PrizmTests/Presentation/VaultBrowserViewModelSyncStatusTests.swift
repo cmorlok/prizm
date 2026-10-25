@@ -29,6 +29,7 @@ final class VaultBrowserViewModelSyncStatusTests: XCTestCase {
             renameFolder:     StubRenameFolder(),
             deleteFolder:     StubDeleteFolder(),
             moveItem:         StubMoveItem(),
+            setFavorite:      SetFavoriteUseCaseImpl(repository: vault),
             createCollection: StubCreateCollection(),
             renameCollection: StubRenameCollection(),
             deleteCollection: StubDeleteCollection(),

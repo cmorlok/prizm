@@ -93,6 +93,7 @@ final class VaultBrowserViewModel: ObservableObject {
     private let renameFolderUseCase:      any RenameFolderUseCase
     private let deleteFolderUseCase:      any DeleteFolderUseCase
     private let moveItemUseCase:          any MoveItemToFolderUseCase
+    private let setFavoriteUseCase:       any SetFavoriteUseCase
     private let createCollectionUseCase:  any CreateCollectionUseCase
     private let renameCollectionUseCase:  any RenameCollectionUseCase
     private let deleteCollectionUseCase:  any DeleteCollectionUseCase
@@ -159,6 +160,7 @@ final class VaultBrowserViewModel: ObservableObject {
         renameFolder:      any RenameFolderUseCase,
         deleteFolder:      any DeleteFolderUseCase,
         moveItem:          any MoveItemToFolderUseCase,
+        setFavorite:       any SetFavoriteUseCase,
         createCollection:  any CreateCollectionUseCase,
         renameCollection:  any RenameCollectionUseCase,
         deleteCollection:  any DeleteCollectionUseCase,
@@ -174,6 +176,7 @@ final class VaultBrowserViewModel: ObservableObject {
         self.renameFolderUseCase    = renameFolder
         self.deleteFolderUseCase    = deleteFolder
         self.moveItemUseCase        = moveItem
+        self.setFavoriteUseCase     = setFavorite
         self.createCollectionUseCase = createCollection
         self.renameCollectionUseCase = renameCollection
         self.deleteCollectionUseCase = deleteCollection
@@ -440,14 +443,17 @@ final class VaultBrowserViewModel: ObservableObject {
 
     func toggleFavorite(item: VaultItem) {
         let onSaved = saveHandler()
+        let generation = sessionGeneration
         Task {
-            var draft = DraftVaultItem(item)
-            draft.isFavorite.toggle()
             do {
-                let updated = try await vault.update(draft)
+                // A partial update, not a re-save of the whole item: see `VaultRepository.setFavorite`.
+                let updated = try await setFavoriteUseCase.execute(itemId: item.id, isFavorite: !item.isFavorite)
                 onSaved(updated)
             } catch {
                 logger.error("Toggle favorite failed: \(error.localizedDescription, privacy: .public)")
+                // No alert for a request from a session that has ended (lock or sign-out meanwhile).
+                guard isCurrent(generation) else { return }
+                actionError = "Couldn't update favorite. \(error.localizedDescription)"
             }
         }
     }

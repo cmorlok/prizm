@@ -158,6 +158,7 @@ private func makeVaultBrowserViewModel(vault: MockVaultRepository, search: any S
         renameFolder:     StubRenameFolder(),
         deleteFolder:     StubDeleteFolder(),
         moveItem:         StubMoveItem(),
+        setFavorite:      SetFavoriteUseCaseImpl(repository: vault),
         createCollection: StubCreateCollection(),
         renameCollection: StubRenameCollection(),
         deleteCollection: StubDeleteCollection(),

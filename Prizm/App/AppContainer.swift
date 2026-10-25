@@ -47,6 +47,7 @@ final class AppContainer: ObservableObject {
     let renameFolderUseCase:             RenameFolderUseCaseImpl
     let deleteFolderUseCase:             DeleteFolderUseCaseImpl
     let moveItemToFolderUseCase:         MoveItemToFolderUseCaseImpl
+    let setFavoriteUseCase:              SetFavoriteUseCaseImpl
     let createCollectionUseCase:         CreateCollectionUseCaseImpl
     let renameCollectionUseCase:         RenameCollectionUseCaseImpl
     let deleteCollectionUseCase:         DeleteCollectionUseCaseImpl
@@ -142,6 +143,7 @@ final class AppContainer: ObservableObject {
         self.renameFolderUseCase             = RenameFolderUseCaseImpl(repository: vault)
         self.deleteFolderUseCase             = DeleteFolderUseCaseImpl(repository: vault)
         self.moveItemToFolderUseCase         = MoveItemToFolderUseCaseImpl(repository: vault)
+        self.setFavoriteUseCase              = SetFavoriteUseCaseImpl(repository: vault)
         self.createCollectionUseCase         = CreateCollectionUseCaseImpl(repository: vault)
         self.renameCollectionUseCase         = RenameCollectionUseCaseImpl(repository: vault)
         self.deleteCollectionUseCase         = DeleteCollectionUseCaseImpl(repository: vault)
@@ -195,6 +197,7 @@ final class AppContainer: ObservableObject {
             renameFolder:     renameFolderUseCase,
             deleteFolder:     deleteFolderUseCase,
             moveItem:         moveItemToFolderUseCase,
+            setFavorite:      setFavoriteUseCase,
             createCollection: createCollectionUseCase,
             renameCollection: renameCollectionUseCase,
             deleteCollection: deleteCollectionUseCase,

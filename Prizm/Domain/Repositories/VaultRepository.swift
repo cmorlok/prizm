@@ -78,6 +78,8 @@ protocol VaultRepository: AnyObject, Sendable {
 
     func moveItemToFolder(itemId: String, folderId: String?) async throws
     func moveItemsToFolder(itemIds: [String], folderId: String?) async throws
+    /// Marks or unmarks an item as favorite on the server and in the cache; returns the updated item.
+    func setFavorite(itemId: String, isFavorite: Bool) async throws -> VaultItem
 
     // MARK: - Collection CRUD
 
@@ -93,6 +95,9 @@ nonisolated enum VaultError: Error, LocalizedError {
     case vaultLocked
     case decryptionFailed(String)
     case itemNotFound(String)
+    /// The server answered a favorite or folder change without saving it. Bitwarden servers on the
+    /// MySQL, PostgreSQL or SQLite backend do this (fix-favorite-and-folder-partial-updates).
+    case partialUpdateNotSaved
 
     var errorDescription: String? {
         switch self {
@@ -102,6 +107,8 @@ nonisolated enum VaultError: Error, LocalizedError {
             return "Decryption failed: \(detail)"
         case .itemNotFound(let id):
             return "Item not found: \(id)"
+        case .partialUpdateNotSaved:
+            return "The server didn't save this change."
         }
     }
 }

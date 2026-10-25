@@ -252,6 +252,7 @@ final class MockRootDependencies: RootViewModelDependencies {
             renameFolder:     StubRenameFolder(),
             deleteFolder:     StubDeleteFolder(),
             moveItem:         StubMoveItem(),
+            setFavorite:      SetFavoriteUseCaseImpl(repository: mockVault),
             createCollection: StubCreateCollection(),
             renameCollection: StubRenameCollection(),
             deleteCollection: StubDeleteCollection(),
