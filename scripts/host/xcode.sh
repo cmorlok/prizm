@@ -63,7 +63,9 @@ ci_run() {
   cp ${local_config}.template ${local_config}   (CI does the same)"
 
   log "ci: no Team ID committed in the project file"
-  if grep -nE 'DEVELOPMENT_TEAM = "?[A-Za-z0-9]+"?;' "${project}/project.pbxproj"; then
+  # Also the forms Xcode writes: conditional settings and TargetAttributes' DevelopmentTeam.
+  if grep -nE '"?DEVELOPMENT_TEAM(\[[^]]*\])?"? = "?[A-Za-z0-9]+"?;|DevelopmentTeam = "?[A-Za-z0-9]+"?;' \
+      "${project}/project.pbxproj"; then
     die "DEVELOPMENT_TEAM is set in project.pbxproj. Set it in ${local_config} instead."
   fi
 
@@ -74,6 +76,7 @@ ci_run() {
 
   log "ci: the built app has a bundle identifier"
   local plist="${ci_derived}/Build/Products/Debug/Prizm.app/Contents/Info.plist" id
+  [[ -f "${plist}" ]] || die "Built app not found at ${plist}. Check the build output above."
   id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${plist}" 2>/dev/null || true)"
   [[ -n "${id}" ]] || die "The built app has no CFBundleIdentifier. Set PRODUCT_BUNDLE_IDENTIFIER for the Prizm target."
   # CI and releases build with the unchanged template, so they must get exactly the default.
