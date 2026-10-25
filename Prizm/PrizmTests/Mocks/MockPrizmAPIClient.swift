@@ -284,13 +284,30 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     nonisolated(unsafe) var lastCreateCollectionOrgId: String?
     nonisolated(unsafe) var lastCreateCollectionEncryptedName: String?
 
-    func createCollection(organizationId: String, encryptedName: String) async throws -> RawCollection {
+    /// Order of collection calls, e.g. ["details col-1", "rename col-1"].
+    nonisolated(unsafe) var collectionCalls: [String] = []
+    nonisolated(unsafe) var lastCollectionWriteRequest: CollectionWriteRequest?
+    /// The access details answer; by default an empty access list.
+    nonisolated(unsafe) var collectionAccessDetails: CollectionAccessDetailsResponse?
+    nonisolated(unsafe) var collectionAccessDetailsError: Error?
+
+    func getCollectionAccessDetails(organizationId: String, id: String) async throws -> CollectionAccessDetailsResponse {
+        collectionCalls.append("details \(id)")
+        if let err = collectionAccessDetailsError { throw err }
+        return collectionAccessDetails ?? CollectionAccessDetailsResponse(
+            id: id, organizationId: organizationId, name: "2.n|iv|mac", externalId: nil, users: [], groups: []
+        )
+    }
+
+    func createCollection(organizationId: String, request: CollectionWriteRequest) async throws -> RawCollection {
         createCollectionCallCount += 1
+        collectionCalls.append("create")
         lastCreateCollectionOrgId = organizationId
-        lastCreateCollectionEncryptedName = encryptedName
+        lastCreateCollectionEncryptedName = request.name
+        lastCollectionWriteRequest = request
         if let err = createCollectionShouldThrow { throw err }
         return createCollectionResponse ?? RawCollection(
-            id: UUID().uuidString, organizationId: organizationId, name: encryptedName
+            id: "col-\(UUID().uuidString.prefix(8))", organizationId: organizationId, name: request.name
         )
     }
 
@@ -298,11 +315,13 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     nonisolated(unsafe) var renameCollectionShouldThrow: Error?
     nonisolated(unsafe) var renameCollectionCallCount: Int = 0
 
-    func renameCollection(id: String, organizationId: String, encryptedName: String) async throws -> RawCollection {
+    func renameCollection(id: String, organizationId: String, request: CollectionWriteRequest) async throws -> RawCollection {
         renameCollectionCallCount += 1
+        collectionCalls.append("rename \(id)")
+        lastCollectionWriteRequest = request
         if let err = renameCollectionShouldThrow { throw err }
         return renameCollectionResponse ?? RawCollection(
-            id: id, organizationId: organizationId, name: encryptedName
+            id: id, organizationId: organizationId, name: request.name
         )
     }
 

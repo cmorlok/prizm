@@ -101,6 +101,12 @@ nonisolated enum VaultError: Error, LocalizedError {
     /// An org item was to be saved but its organization key is not available. Raised instead of
     /// encrypting with the personal key (fix-org-key-required-on-write).
     case organizationKeyUnavailable
+    /// A collection's access list could not be read, so a rename was not sent: sending a list
+    /// Prizm did not read would replace everyone's access (fix-collection-access-on-rename).
+    case collectionAccessUnreadable
+    /// The user's organization-user id in the sync profile is present but unreadable, so a new
+    /// collection cannot be assigned to its creator.
+    case organizationMembershipUnreadable
 
     var errorDescription: String? {
         switch self {
@@ -112,6 +118,10 @@ nonisolated enum VaultError: Error, LocalizedError {
             return "Item not found: \(id)"
         case .partialUpdateNotSaved:
             return "The server didn't save this change."
+        case .collectionAccessUnreadable:
+            return "Couldn't rename the collection. Its access settings could not be read."
+        case .organizationMembershipUnreadable:
+            return "Couldn't create the collection. Your membership in this organization could not be read."
         case .organizationKeyUnavailable:
             return "This item's organization can't be accessed right now. Lock and unlock Prizm, then try again."
         }

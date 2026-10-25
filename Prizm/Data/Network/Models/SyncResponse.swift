@@ -77,12 +77,15 @@ nonisolated struct RawOrganization: Codable, Equatable {
     let key:  String
     /// Membership role integer: 0=Owner, 1=Admin, 2=User, 3=Manager, 4=Custom.
     let type: Int
+    /// The user's organization-user id (`organizationUserId`); see `OrgMembershipId`.
+    let organizationUserId: OrgMembershipId
 
-    init(id: String, name: String, key: String, type: Int) {
+    init(id: String, name: String, key: String, type: Int, organizationUserId: OrgMembershipId = .notSent) {
         self.id   = id
         self.name = name
         self.key  = key
         self.type = type
+        self.organizationUserId = organizationUserId
     }
 
     init(from decoder: Decoder) throws {
@@ -91,6 +94,24 @@ nonisolated struct RawOrganization: Codable, Equatable {
         name = try (try? c.decode(String.self, forKey: .name)) ?? c.decode(String.self, forKey: .nameUpper)
         key  = try (try? c.decode(String.self, forKey: .key))  ?? c.decode(String.self, forKey: .keyUpper)
         type = try (try? c.decode(Int.self,    forKey: .type)) ?? c.decode(Int.self,    forKey: .typeUpper)
+        // Only a missing key means "not sent" (official servers before v2025.1.0); a present but
+        // non-string value (including null) is unreadable, so no id is ever guessed.
+        let memberKey: FlexOrgKeys? = c.contains(.organizationUserId) ? .organizationUserId
+            : c.contains(.organizationUserIdUpper) ? .organizationUserIdUpper : nil
+        if let memberKey {
+            organizationUserId = (try? c.decode(String.self, forKey: memberKey)).map { .known($0) } ?? .unreadable
+        } else {
+            organizationUserId = .notSent
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: FlexOrgKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(key, forKey: .key)
+        try c.encode(type, forKey: .type)
+        if case .known(let memberId) = organizationUserId { try c.encode(memberId, forKey: .organizationUserId) }
     }
 
     private enum FlexOrgKeys: String, CodingKey {
@@ -98,6 +119,7 @@ nonisolated struct RawOrganization: Codable, Equatable {
         case name = "name", nameUpper = "Name"
         case key  = "key",  keyUpper  = "Key"
         case type = "type", typeUpper = "Type"
+        case organizationUserId = "organizationUserId", organizationUserIdUpper = "OrganizationUserId"
     }
 }
 

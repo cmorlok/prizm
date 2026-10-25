@@ -175,7 +175,7 @@ actor SyncRepositoryImpl: SyncRepository {
                         logger.error("Unknown org role type \(raw.type, privacy: .public) for org \(raw.id.prefix(8), privacy: .public)")
                         return nil
                     }
-                    let org = Organization(id: raw.id, name: raw.name, role: role)
+                    let org = Organization(id: raw.id, name: raw.name, role: role, membershipId: raw.organizationUserId)
                     logger.info("Org \(raw.name, privacy: .public): type=\(raw.type, privacy: .public) role=\(String(describing: role), privacy: .public) canManage=\(org.canManageCollections, privacy: .public)")
                     return org
                 }

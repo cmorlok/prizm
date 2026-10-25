@@ -156,10 +156,17 @@ and does not enter Domain.
 - **[Medium] Lost update between read and write.** If another admin changes access between the
   GET and the PUT, Prizm writes the older list back. The web vault has the same window (it reads
   when the dialog opens). → The window is one round trip; documented here.
-- **[Low] Vaultwarden derives `manage` in the details response** (`collection.rs:971-981`).
-  Resending it can store `manage: true` for a manager who had full read/write but no explicit
-  Manage flag. Effective rights don't change, because Vaultwarden already treats such a manager as
-  able to manage. The web vault behaves the same.
+- **[Medium] Vaultwarden derives `manage` in the details response, and resending stores it.**
+  For members: `manage = type >= Admin || manage || (Manager && !readOnly && !hidePasswords)`
+  (`collection.rs:971-981`); for groups: `manage = manage || (!readOnly && !hidePasswords)`
+  (`group.rs:139-149`). Rows from before Vaultwarden's `add_manage` migration have `manage = 0`.
+  After a rename, a group with read/write access, or a Manager assigned with read/write, is stored
+  with `manage = 1`, and server-side checks use the stored flag (`is_coll_manageable_by_user`,
+  `auth.rs`): Managers in such a group gain rename, delete and access-edit rights on that
+  collection. The web vault's save does exactly the same, and Prizm cannot read the stored value
+  through this endpoint. **Open decision for the maintainer** (Open Questions 2).
+- **[Low] Vaultwarden before 1.33.0 has no `manage`** in its selections; Prizm reads a missing
+  `manage` as false (legacy decoder, marked), and those versions ignore it when it is sent back.
 - **[Low] Vaultwarden with groups disabled** returns `groups: []`. Resending deletes stale
   `CollectionGroup` rows from a time when groups were enabled. The web vault does the same.
 - **[Low] Already damaged collections stay damaged.** → CHANGELOG note for admins.
@@ -171,3 +178,5 @@ and does not enter Domain.
 
 1. Should the create request also add the creator when the org allows admin access to all items?
    The web vault always preselects; this design follows it.
+2. Accept that a rename on Vaultwarden can store a derived `manage` (Risks), as the web vault does?
+   The alternative is no fix Prizm can make on its own: the stored value is not readable.

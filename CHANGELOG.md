@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Fix: renaming a collection removed the access of every member and group that is not an owner
+  or admin, and its directory-sync link. Prizm now reads the collection's access settings and sends
+  them back; if they can't be read, the rename is not sent. On Vaultwarden, this can store a Manage
+  permission the server previously only derived, as the web vault does when it saves a collection. New collections are now
+  managed by their creator, as in the web vault. Admins: check the access of collections renamed
+  with earlier Prizm versions.
 - Fix: an organization item could be saved encrypted with your personal key when the
   organization's key was unavailable (for example after it could not be unlocked during sign-in,
   or during a sync), which made it unreadable for everyone else. Such saves now stop with an error

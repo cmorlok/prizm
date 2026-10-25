@@ -457,9 +457,26 @@ actor VaultRepositoryImpl: VaultRepository {
     func createCollection(name: String, organizationId: String) async throws -> OrgCollection {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw VaultError.decryptionFailed("empty collection name") }
+        // The creator is assigned with Manage, as the web vault preselects; without a member with
+        // Manage the official server rejects the create, and the collection could drop out of the
+        // creator's own sync (fix-collection-access-on-rename, D3).
+        let membershipId = organizationStore.first(where: { $0.id == organizationId })?.membershipId
         let encName = try await encryptCollectionName(trimmed, organizationId: organizationId)
-        let raw = try await apiClient.createCollection(organizationId: organizationId,
-                                                        encryptedName: encName)
+        let request: CollectionWriteRequest
+        switch membershipId {
+        case .known(let memberId):
+            request = CollectionWriteRequest(
+                name: encName, externalId: nil,
+                users: [CollectionAccessSelection(id: memberId, readOnly: false, hidePasswords: false, manage: true)],
+                groups: []
+            )
+        case .notSent:
+            request = LegacyCollectionCreateWithoutMembership.request(encryptedName: encName)
+        case .unreadable, nil:
+            logger.error("Collection not created: no readable organizationUserId in the sync profile")
+            throw VaultError.organizationMembershipUnreadable
+        }
+        let raw = try await apiClient.createCollection(organizationId: organizationId, request: request)
         let collection = OrgCollection(id: raw.id, organizationId: organizationId, name: trimmed)
         collectionStore.append(collection)
         buildIndexes()
@@ -467,13 +484,32 @@ actor VaultRepositoryImpl: VaultRepository {
         return collection
     }
 
-    /// Renames an existing collection. New name encrypted with the org key.
+    /// Renames an existing collection, keeping its access settings. New name encrypted with the
+    /// org key.
+    ///
+    /// Both servers replace a collection's members, groups and `externalId` with the ones in the
+    /// rename request, so the request must carry the current ones: they are read first with
+    /// `GET …/collections/{id}/details` and sent back unchanged, as the web vault does. If they
+    /// can't be read, nothing is sent (fix-collection-access-on-rename, D1–D2). Not cached.
     func renameCollection(id: String, organizationId: String, name: String) async throws -> OrgCollection {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw VaultError.decryptionFailed("empty collection name") }
+        let details: CollectionAccessDetailsResponse
+        do {
+            details = try await apiClient.getCollectionAccessDetails(organizationId: organizationId, id: id)
+        } catch {
+            // Status only: an HTTP error's description carries the response body.
+            let status = (error as? APIError).flatMap { if case .httpError(let code, _) = $0 { code } else { nil } }
+            logger.error("Collection not renamed: access settings not readable for \(id, privacy: .public) (HTTP \(status.map(String.init) ?? "n/a", privacy: .public))")
+            throw VaultError.collectionAccessUnreadable
+        }
+        guard let users = details.users, let groups = details.groups else {
+            logger.error("Collection not renamed: access settings incomplete for \(id, privacy: .public)")
+            throw VaultError.collectionAccessUnreadable
+        }
         let encName = try await encryptCollectionName(trimmed, organizationId: organizationId)
-        _ = try await apiClient.renameCollection(id: id, organizationId: organizationId,
-                                                  encryptedName: encName)
+        let request = CollectionWriteRequest(name: encName, externalId: details.externalId, users: users, groups: groups)
+        _ = try await apiClient.renameCollection(id: id, organizationId: organizationId, request: request)
         let collection = OrgCollection(id: id, organizationId: organizationId, name: trimmed)
         if let idx = collectionStore.firstIndex(where: { $0.id == id }) {
             collectionStore[idx] = collection
