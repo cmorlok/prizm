@@ -1,4 +1,5 @@
 import Foundation
+import XCTest
 
 /// A `URLProtocol` that records every request and answers from a test-provided responder, so
 /// `PrizmAPIClientImpl` can be tested at the HTTP level (paths, bodies, headers, status handling).
@@ -61,6 +62,11 @@ nonisolated final class StubURLProtocol: URLProtocol, @unchecked Sendable {
             body: request.httpBody ?? request.httpBodyStream.map(Self.readAll)
         )
         Self.lock.withLock { Self._requests.append(recorded) }
+        // Guard (fix-empty-trash, D5): POST /ciphers/purge deletes the user's whole vault. No test
+        // may ever build a request to a purge path.
+        if request.url?.path.hasSuffix("/purge") == true {
+            XCTFail("Request to a purge path: \(request.httpMethod ?? "?") \(request.url?.path ?? "")")
+        }
 
         switch Self.responder(request) {
         case .status(let code, let body):

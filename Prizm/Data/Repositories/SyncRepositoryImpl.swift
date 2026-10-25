@@ -109,6 +109,7 @@ actor SyncRepositoryImpl: SyncRepository {
         // Phase 2b: Populate the per-cipher key cache from keys collected during decryptList.
         // Only ciphers with a per-item key are included; vault-key-only ciphers are handled
         // by VaultKeyServiceImpl's fallback path.
+        try await ensureStillUnlocked()
         await vaultKeyCache.populate(keys: cipherKeyMap)
         logger.info("VaultKeyCache populated with \(cipherKeyMap.count, privacy: .public) per-item key(s)")
 
@@ -160,6 +161,7 @@ actor SyncRepositoryImpl: SyncRepository {
                         logger.fault("Failed to unwrap org key for org \(rawOrg.id.prefix(8), privacy: .public)… — org ciphers will be skipped: \(error, privacy: .public)")
                     }
                 }
+                try await ensureStillUnlocked()
                 await orgKeyCache.replaceAll(with: unwrappedOrgKeys)
 
                 // Build domain Organization entities.
@@ -226,6 +228,7 @@ actor SyncRepositoryImpl: SyncRepository {
                     }
                 }
                 // Refresh the VaultKeyCache to include per-item keys from org ciphers.
+                try await ensureStillUnlocked()
                 await vaultKeyCache.populate(keys: cipherKeyMap)
 
                 logger.info("Org sync: \(organizations.count) org(s), \(collections.count) collection(s), \(orgCipherFailedCount, privacy: .public) org cipher(s) skipped")
@@ -242,6 +245,7 @@ actor SyncRepositoryImpl: SyncRepository {
 
         // Phase 3: Populate the in-memory vault store.
         let syncedAt = Date()
+        try await ensureStillUnlocked()
         await vaultRepository.populate(
             items:         items,
             folders:       folders,
@@ -255,5 +259,21 @@ actor SyncRepositoryImpl: SyncRepository {
             totalCiphers:          totalCiphers,
             failedDecryptionCount: failedCount
         )
+    }
+
+    // MARK: - Lock guard
+
+    /// Throws if the vault locked while this sync was running.
+    ///
+    /// Security goal: a sync that finishes after a lock must not put decrypted items or keys back
+    /// in memory. The lock clears the vault store and the key caches, and Empty Trash runs syncs in
+    /// the middle of a session (fix-empty-trash). Checked right before each cache or store write.
+    /// Intentionally NOT done: a lock that lands between this check and the write it guards is
+    /// not caught; the window is one actor hop.
+    private func ensureStillUnlocked() async throws {
+        guard await crypto.isUnlocked else {
+            logger.info("Sync discarded: the vault locked while it ran")
+            throw PrizmCryptoServiceError.vaultLocked
+        }
     }
 }

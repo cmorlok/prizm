@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add Empty Trash to the Trash view. Prizm syncs first, asks "Permanently delete N items?", deletes
+  exactly the items in Trash and reports any it could not delete. It never uses the server's
+  "purge vault" call, which would delete every item.
 - Fix: renaming a collection removed the access of every member and group that is not an owner
   or admin, and its directory-sync link. Prizm now reads the collection's access settings and sends
   them back; if they can't be read, the rename is not sent. On Vaultwarden, this can store a Manage

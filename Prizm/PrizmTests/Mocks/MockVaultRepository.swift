@@ -145,6 +145,18 @@ final class MockVaultRepository: VaultRepository {
     private(set) var permanentDeleteCallCount: Int = 0
     private(set) var lastPermanentDeletedId: String?
 
+    var stubbedPermanentDeleteItemsError: Error?
+    private(set) var permanentDeleteItemsCalls: [[String]] = []
+
+    @discardableResult
+    func permanentDeleteItems(ids: [String]) async throws -> Int {
+        permanentDeleteItemsCalls.append(ids)
+        if let error = stubbedPermanentDeleteItemsError { throw error }
+        let before = populatedItems.count
+        populatedItems.removeAll { ids.contains($0.id) && $0.isDeleted }
+        return before - populatedItems.count
+    }
+
     func permanentDeleteItem(id: String) async throws {
         permanentDeleteCallCount += 1
         lastPermanentDeletedId = id

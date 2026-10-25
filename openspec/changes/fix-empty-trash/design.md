@@ -29,8 +29,10 @@ Sources: `$SRC` checkouts of 2026-10-23 (clients, sdk-internal, server) and Vaul
 **Vaultwarden 1.37.4.**
 - `DELETE /ciphers` with `{ids}` → `delete_multiple_ciphers(..., HardMulti)`
   (`vaultwarden/src/api/core/ciphers.rs:1535-1544`). It deletes one id after the other and stops at
-  the first error, for example "Cipher can't be deleted by user" (`:1816-1829`, `:1882-1901`). Ids
-  before the failing one stay deleted. It does not check that items are in Trash either. No size
+  the first error, for example "Cipher can't be deleted by user" (`:1816-1829`, `:1882-1901`). The
+  ids arrive as a `HashSet` (`:1878-1880`), so which items were deleted before the error is
+  arbitrary (1.35.4 used a `Vec`). An id deleted elsewhere meanwhile fails the same way ("Cipher
+  doesn't exist"). It does not check that items are in Trash either. No size
   limit.
 - `POST /ciphers/purge` deletes every cipher the user owns and every folder of the user
   (`ciphers.rs:1752-1776`); `POST /ciphers/purge?organizationId=` purges the org vault for owners
@@ -110,6 +112,20 @@ underlying error is logged at `.error` with HTTP status only.
 - A source test scans `Prizm/` for the string `ciphers/purge` and fails if it appears outside
   comments that warn against it.
 - The comment at `PrizmAPIClient.swift:1089` is corrected.
+
+### D6. After review
+
+- A failing chunk does not stop the others; the first failure is reported at the end. The result
+  carries the count the server confirmed, the cause (refused or connection) and whether the
+  follow-up sync worked; a failed follow-up sync is not recorded as a sync.
+- Lock or sign-out resets the Empty Trash state (`clearSession()`), so the button cannot stay
+  disabled and no confirmation comes back in the next session.
+- The alert passes its confirmation to the action, so "Delete Permanently" works whether SwiftUI
+  closes the alert before or after running it.
+- Empty Trash is the first sync that runs in the middle of a session, so a lock can land while it
+  runs. `SyncRepositoryImpl` now checks that the vault is still unlocked right before each cache
+  and store write, and discards the sync otherwise. A lock between that check and the write it
+  guards is not caught (one actor hop).
 
 ## Risks / Trade-offs
 
