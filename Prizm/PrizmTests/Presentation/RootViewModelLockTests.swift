@@ -119,6 +119,83 @@ final class RootViewModelLockTests: XCTestCase {
         }
     }
 
+    // MARK: - Locking and signing out drop the vault browser's decrypted state (fix-ui-journey-findings)
+
+    private let secretItem = VaultItem(
+        id: "secret-1", name: "Secret", isFavorite: false, isDeleted: false,
+        creationDate: .now, revisionDate: .now,
+        content: .login(LoginContent(username: "alice", password: "hunter2", uris: [], totp: nil,
+                                     notes: nil, customFields: []))
+    )
+
+    /// Puts decrypted data into the vault browser the way a user session does: listed items,
+    /// folders, a selected item and a search term.
+    private func openVaultBrowser() async throws -> VaultBrowserViewModel {
+        await mockVault.populate(items: [secretItem], folders: [Folder(id: "f1", name: "Private")],
+                                 organizations: [], collections: [], syncedAt: .now)
+        let browser = sut.vaultBrowserVM
+        browser.refreshItems()
+        browser.refreshFolders()
+        try await waitUntil { !browser.displayedItems.isEmpty && !browser.folders.isEmpty }
+        browser.itemSelection = secretItem
+        try await waitUntil { self.sut.menuBarCanEdit && self.sut.selectedLogin != nil }
+        XCTAssertFalse(browser.displayedItems.isEmpty, "Precondition: items are listed")
+        XCTAssertTrue(sut.menuBarCanEdit, "Precondition: Edit is enabled for the selected item")
+        return browser
+    }
+
+    private func assertVaultBrowserCleared(_ browser: VaultBrowserViewModel,
+                                           file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertNil(browser.itemSelection, "The selected item must not survive", file: file, line: line)
+        XCTAssertTrue(browser.displayedItems.isEmpty, "Listed items must not survive", file: file, line: line)
+        XCTAssertTrue(browser.folders.isEmpty, "Folder names must not survive", file: file, line: line)
+        XCTAssertEqual(browser.searchQuery, "", "The search term must not survive", file: file, line: line)
+        XCTAssertTrue(browser.itemCounts.isEmpty, "Item counts must not survive", file: file, line: line)
+        XCTAssertFalse(browser.isGlobalSearch, "Global search must end", file: file, line: line)
+        XCTAssertFalse(sut.menuBarCanEdit, "Item → Edit must be disabled", file: file, line: line)
+        XCTAssertNil(sut.selectedLogin, "Copy commands must have no login to copy from", file: file, line: line)
+    }
+
+    func testLockVault_clearsVaultBrowserState() async throws {
+        mockAuth.stubbedStoredAccount = stubAccount
+        let browser = try await openVaultBrowser()
+        // After the awaits: the login flow's initial state arrives on the main queue and resets it.
+        sut.screen = .vault
+        browser.searchQuery = "Sec"
+
+        sut.lockVault()
+        try await waitUntil { if case .unlock = self.sut.screen { return true }; return false }
+        try await waitUntil { !self.sut.menuBarCanEdit && self.sut.selectedLogin == nil }
+
+        assertVaultBrowserCleared(browser)
+    }
+
+    func testSignOut_clearsVaultBrowserState() async throws {
+        mockAuth.stubbedStoredAccount = stubAccount
+        let browser = try await openVaultBrowser()
+        // After the awaits: the login flow's initial state arrives on the main queue and resets it.
+        sut.screen = .vault
+        browser.sidebarSelection = .folder("f1")
+
+        sut.signOut()
+        try await waitUntil { if case .login = self.sut.screen { return true }; return false }
+        try await waitUntil { !self.sut.menuBarCanEdit && self.sut.selectedLogin == nil }
+
+        assertVaultBrowserCleared(browser)
+        XCTAssertEqual(browser.sidebarSelection, .allItems,
+                       "The next account must not start in the previous account's folder")
+    }
+
+    func testCopyCommands_unavailableWhileLocked() async throws {
+        sut.screen = .unlock
+        // Even if a decrypted item were still selected, nothing may be copied while locked.
+        sut.vaultBrowserVM.itemSelection = secretItem
+        try await waitUntil { self.sut.selectedLogin != nil }
+
+        XCTAssertFalse(sut.selectedFieldAvailable(.password))
+        XCTAssertFalse(sut.selectedFieldAvailable(.username))
+    }
+
     // MARK: - lockVault() works from .syncing state
 
     func testLockVault_worksFromSyncing() async throws {
@@ -167,7 +244,7 @@ final class MockRootDependencies: RootViewModelDependencies {
         let syncRepo = MockSyncTimestampRepository(storedDate: nil)
         return VaultBrowserViewModel(
             vault:           mockVault,
-            search:          StubSearchUseCase(),
+            search:          SearchVaultUseCaseImpl(vault: mockVault),
             delete:          StubDeleteUseCase(),
             permanentDelete: StubPermanentDeleteUseCase(),
             restore:         StubRestoreUseCase(),
@@ -190,9 +267,6 @@ final class MockRootDependencies: RootViewModelDependencies {
 }
 
 // Minimal stubs for VaultBrowserViewModel dependencies.
-@MainActor private final class StubSearchUseCase: SearchVaultUseCase {
-    func execute(query: String, in selection: SidebarSelection) throws -> [VaultItem] { [] }
-}
 @MainActor private final class StubDeleteUseCase: DeleteVaultItemUseCase {
     func execute(id: String) async throws {}
 }
