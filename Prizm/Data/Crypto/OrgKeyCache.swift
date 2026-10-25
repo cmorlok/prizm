@@ -53,18 +53,36 @@ actor OrgKeyCache {
     /// Zeroing before clearing reduces the window during which key bytes remain on the
     /// heap after the cache is discarded (Constitution §III).
     func clear() {
+        Self.zero(&cache)
+        cache.removeAll()
+        logger.info("OrgKeyCache cleared — key material zeroed")
+    }
+
+    /// Replaces all org keys in one step and zeroes the replaced ones.
+    ///
+    /// Security goal: a save that runs during a sync sees either the previous keys or the new ones,
+    /// never an empty map, so it can never take a path without the org key
+    /// (fix-org-key-required-on-write, D2). Called once per sync after every org key is unwrapped;
+    /// orgs that are not in `newKeys` have no key afterwards.
+    func replaceAll(with newKeys: [String: CryptoKeys]) {
+        var replaced = cache
+        cache = newKeys
+        Self.zero(&replaced)
+        logger.info("OrgKeyCache replaced: \(newKeys.count, privacy: .public) org key(s)")
+    }
+
+    /// Zeroes the key bytes in `keys` in place.
+    private static func zero(_ keys: inout [String: CryptoKeys]) {
         // Data slices retain their original indices (the RSA-unwrapped MAC key
         // starts at 32). A zero-based range can overwrite memory outside the slice.
         // Capture ranges before mutation to avoid overlapping dictionary accesses.
         // CoW means outstanding snapshots retain their own buffers (see SECURITY.md).
-        for key in cache.keys {
-            if let encRange = cache[key]?.encryptionKey.indices,
-               let macRange = cache[key]?.macKey.indices {
-                cache[key]?.encryptionKey.resetBytes(in: encRange)
-                cache[key]?.macKey.resetBytes(in: macRange)
+        for key in keys.keys {
+            if let encRange = keys[key]?.encryptionKey.indices,
+               let macRange = keys[key]?.macKey.indices {
+                keys[key]?.encryptionKey.resetBytes(in: encRange)
+                keys[key]?.macKey.resetBytes(in: macRange)
             }
         }
-        cache.removeAll()
-        logger.info("OrgKeyCache cleared — key material zeroed")
     }
 }

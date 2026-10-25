@@ -476,6 +476,8 @@ final class RootViewModel: ObservableObject {
             }
             await container.vaultRepo.clearVault()
             await container.vaultKeyCache.clear()
+            // Org keys must not outlive the session either (Constitution §III); lock clears them too.
+            await container.orgKeyCache.clear()
             // The next account must not start in a folder or collection of this one.
             vaultBrowserVM.sidebarSelection = .allItems
             unlockVM = nil

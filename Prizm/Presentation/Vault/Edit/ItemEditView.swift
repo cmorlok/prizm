@@ -183,6 +183,10 @@ struct ItemEditView: View {
             Text("\"\(viewModel.draft.name)\" will be moved to Trash.")
         }
         // Dismiss the sheet when the ViewModel signals it (save success or discard).
+        // The banner alone is not read out; announce a save failure (§VIII).
+        .onChange(of: viewModel.saveError) { _, error in
+            if let error { AccessibilityNotification.Announcement(error).post() }
+        }
         .onChange(of: viewModel.isDismissed) { _, dismissed in
             if dismissed { isPresented = false }
         }

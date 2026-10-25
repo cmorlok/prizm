@@ -98,6 +98,9 @@ nonisolated enum VaultError: Error, LocalizedError {
     /// The server answered a favorite or folder change without saving it. Bitwarden servers on the
     /// MySQL, PostgreSQL or SQLite backend do this (fix-favorite-and-folder-partial-updates).
     case partialUpdateNotSaved
+    /// An org item was to be saved but its organization key is not available. Raised instead of
+    /// encrypting with the personal key (fix-org-key-required-on-write).
+    case organizationKeyUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -109,6 +112,8 @@ nonisolated enum VaultError: Error, LocalizedError {
             return "Item not found: \(id)"
         case .partialUpdateNotSaved:
             return "The server didn't save this change."
+        case .organizationKeyUnavailable:
+            return "This item's organization can't be accessed right now. Lock and unlock Prizm, then try again."
         }
     }
 }
