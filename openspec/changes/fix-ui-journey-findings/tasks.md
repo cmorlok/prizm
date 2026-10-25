@@ -5,11 +5,11 @@ Estimates are ideal engineer-days. Write a failing test first (§IV). One commit
 
 ## 1. Lock and sign-out clear browser state (0.5 d)
 
-- [ ] 1.1 Failing unit tests: `lockVault()` and `signOut()` leave no selected item, listed item, folder or search term, and disable Edit and the copy commands (`RootViewModelLockTests`).
-- [ ] 1.2 Failing unit tests: `clearSession()` drops the create and edit sheet state; a read in flight and a read started after it are discarded; a late save is ignored; refreshes work again after `beginSession()` (`VaultBrowserViewModelSessionTests`); copy commands are unavailable while locked; sign-out resets the sidebar.
-- [ ] 1.3 Implement design D1.
-- [ ] 1.4 UI test `EditItemJourneyTests.testItemMenu_followsSelectionAndLock`: remove the known-bug marker.
-- [ ] 1.5 CHANGELOG.
+- [x] 1.1 Failing unit tests: `lockVault()` and `signOut()` leave no selected item, listed item, folder or search term, and disable Edit and the copy commands (`RootViewModelLockTests`).
+- [x] 1.2 Failing unit tests: `clearSession()` drops the create and edit sheet state; a read in flight and a read started after it are discarded; a late save is ignored, also in the next session; refreshes work again after `beginSession()` (`VaultBrowserViewModelSessionTests`); copy commands copy nothing while locked, also when the lock comes while a code is generated; sign-out resets the sidebar.
+- [x] 1.3 Implement design D1.
+- [x] 1.4 UI test `EditItemJourneyTests.testItemMenu_followsSelectionAndLock`: remove the known-bug marker.
+- [x] 1.5 CHANGELOG.
 
 ## 2. ⌘N and "+" in Trash (0.25 d)
 

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fix: locking the vault or signing out now also clears the selected item, the item list and the
+  search term from memory. Before, the decrypted item stayed loaded behind the unlock screen and
+  Item → Edit stayed enabled.
 - Fix signed builds from source: the app target had lost its bundle identifier (since 1.4.0) and
   carried a fixed Team ID that overrode `LocalConfig.xcconfig`. Contributors can now set their own
   bundle identifier with `PRIZM_BUNDLE_IDENTIFIER` (see DEVELOPMENT.md). If you used 1.4.0 to
