@@ -51,10 +51,13 @@ struct PrizmApp: App {
             }
 
             CommandGroup(after: .appInfo) {
+                // No keyboard shortcut, as in the official Bitwarden desktop client: signing out is
+                // rare and clears all local data. ⌘⇧Q, used before, is the system's Log Out
+                // shortcut; a UI test that sent it logged the user out of macOS
+                // (fix-ui-journey-findings).
                 Button("Sign Out…") {
                     rootVM.confirmSignOut()
                 }
-                .keyboardShortcut("q", modifiers: [.command, .shift])
                 .disabled(!rootVM.isSignedIn)
 
                 Button("Lock Vault") {
