@@ -13,9 +13,9 @@ Estimates are ideal engineer-days. Write a failing test first (§IV). One commit
 
 ## 2. ⌘N and "+" in Trash (0.25 d)
 
-- [ ] 2.1 Failing tests: `VaultBrowserViewModelTrashTests`; UI tests `testCmdN_isNoOp_inTrash` (real steps instead of the skip) and `testNewItemButton_hiddenInTrash` (marker removed).
-- [ ] 2.2 Implement design D2.
-- [ ] 2.3 CHANGELOG.
+- [x] 2.1 Failing tests: `VaultBrowserViewModelTrashTests`; UI tests `testCmdN_isNoOp_inTrash` (real steps instead of the skip) and `testNewItemButton_hiddenInTrash` (marker removed).
+- [x] 2.2 Implement design D2.
+- [x] 2.3 CHANGELOG.
 
 ## 3. Accessibility values (0.25 d)
 

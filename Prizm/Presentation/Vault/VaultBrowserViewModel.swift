@@ -70,13 +70,17 @@ final class VaultBrowserViewModel: ObservableObject {
     /// The Presentation layer surfaces this as an alert.
     @Published var actionError: String? = nil
 
-    /// Set to a non-nil `ItemType` to present the create sheet for that type.
-    /// Automatically cleared if the user switches to Trash.
-    @Published var createItemType: ItemType? = nil {
-        didSet {
-            if sidebarSelection == .trash { createItemType = nil }
-        }
+    /// Set to a non-nil `ItemType` to present the create sheet for that type. Ignored while Trash
+    /// is selected: nothing is created in Trash (spec list-column-header).
+    ///
+    /// The check sits in a setter over a private published value. It used to reset the value in
+    /// its own `didSet`, and a unit test showed the value stayed set; ⌘N in Trash then crashed the
+    /// app, for a reason not traced further (fix-ui-journey-findings).
+    var createItemType: ItemType? {
+        get { pendingCreateItemType }
+        set { pendingCreateItemType = sidebarSelection == .trash ? nil : newValue }
     }
+    @Published private var pendingCreateItemType: ItemType? = nil
 
     // MARK: - Dependencies
 

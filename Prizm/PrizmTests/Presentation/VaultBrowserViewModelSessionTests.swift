@@ -119,6 +119,32 @@ final class VaultBrowserViewModelSessionTests: XCTestCase {
     }
 }
 
+/// The "+" menu and ⌘N are not offered in Trash (spec list-column-header); the view model refuses
+/// a create sheet there as well.
+@MainActor
+final class VaultBrowserViewModelTrashTests: XCTestCase {
+
+    func testCreateItemType_staysNilInTrash() async throws {
+        let vault = MockVaultRepository()
+        let sut = makeVaultBrowserViewModel(vault: vault, search: SearchVaultUseCaseImpl(vault: vault))
+        sut.sidebarSelection = .trash
+
+        sut.createItemType = .login
+
+        XCTAssertNil(sut.createItemType)
+    }
+
+    func testCreateItemType_isSetOutsideTrash() async throws {
+        let vault = MockVaultRepository()
+        let sut = makeVaultBrowserViewModel(vault: vault, search: SearchVaultUseCaseImpl(vault: vault))
+        sut.sidebarSelection = .type(.login)
+
+        sut.createItemType = .login
+
+        XCTAssertEqual(sut.createItemType, .login)
+    }
+}
+
 @MainActor
 private func makeVaultBrowserViewModel(vault: MockVaultRepository, search: any SearchVaultUseCase) -> VaultBrowserViewModel {
     let syncRepo = MockSyncTimestampRepository(storedDate: nil)
