@@ -19,9 +19,9 @@ Estimates are ideal engineer-days. Write a failing test first (§IV). One commit
 
 ## 3. Accessibility values (0.25 d)
 
-- [ ] 3.1 Failing UI tests: the reveal marker removed; the username after switching items; the generator preview after a change.
-- [ ] 3.2 Implement design D3.
-- [ ] 3.3 CHANGELOG.
+- [x] 3.1 Failing UI tests: the reveal marker removed; the username after switching items; the generator preview after a change.
+- [x] 3.2 Implement design D3.
+- [x] 3.3 CHANGELOG.
 
 ## 4. Arrow keys (0.25 d)
 
