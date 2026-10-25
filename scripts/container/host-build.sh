@@ -63,9 +63,16 @@ stream_new_output() {
   fi
 }
 
+# The daemon counts as alive while its heartbeat is fresh or the build log keeps growing. Under
+# heavy load (UI tests) the shared mount can show a stale heartbeat for a minute or more, while the
+# build is still running.
+last_growth="$(date +%s)"
 while [[ ! -e "${base}.exit" ]]; do
+  before="${offset}"
   stream_new_output
-  if (( $(heartbeat_age) > 2 * PRIZM_BRIDGE_STALE_AFTER )); then
+  (( offset > before )) && last_growth="$(date +%s)"
+  silent_for=$(( $(date +%s) - last_growth ))
+  if (( $(heartbeat_age) > 2 * PRIZM_BRIDGE_STALE_AFTER && silent_for > 4 * PRIZM_BRIDGE_STALE_AFTER )); then
     die "the host build daemon stopped while handling ${id}. ${daemon_hint}"
   fi
   if (( $(date +%s) - started > timeout )); then
