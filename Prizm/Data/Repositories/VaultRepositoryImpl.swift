@@ -450,12 +450,7 @@ actor VaultRepositoryImpl: VaultRepository {
         folderStore.removeAll { $0.id == id }
         // Unfolder items that were in this folder (server does this too).
         for i in items.indices where items[i].folderId == id {
-            let old = items[i]
-            items[i] = VaultItem(
-                id: old.id, name: old.name, isFavorite: old.isFavorite, isDeleted: old.isDeleted,
-                creationDate: old.creationDate, revisionDate: old.revisionDate,
-                content: old.content, reprompt: old.reprompt, attachments: old.attachments, folderId: nil
-            )
+            items[i] = items[i].with(folderId: nil)
         }
         buildIndexes()
         logger.info("Folder deleted: \(id, privacy: .public)")
@@ -511,30 +506,64 @@ actor VaultRepositoryImpl: VaultRepository {
     // MARK: - Move to folder
 
     func moveItemToFolder(itemId: String, folderId: String?) async throws {
-        guard let idx = items.firstIndex(where: { $0.id == itemId }) else { return }
-        let old = items[idx]
-        try await apiClient.updateCipherPartial(id: itemId, folderId: folderId, favorite: old.isFavorite)
-        items[idx] = VaultItem(
-            id: old.id, name: old.name, isFavorite: old.isFavorite, isDeleted: old.isDeleted,
-            creationDate: old.creationDate, revisionDate: old.revisionDate,
-            content: old.content, reprompt: old.reprompt, attachments: old.attachments, folderId: folderId
-        )
-        buildIndexes()
+        guard let old = items.first(where: { $0.id == itemId }) else { return }
+        try await sendPartial(itemId: itemId, folderId: folderId, favorite: old.isFavorite)
         logger.info("Item moved to folder: \(itemId, privacy: .public)")
     }
 
     func moveItemsToFolder(itemIds: [String], folderId: String?) async throws {
         try await apiClient.moveCiphersToFolder(ids: itemIds, folderId: folderId)
         for i in items.indices where itemIds.contains(items[i].id) {
-            let old = items[i]
-            items[i] = VaultItem(
-                id: old.id, name: old.name, isFavorite: old.isFavorite, isDeleted: old.isDeleted,
-                creationDate: old.creationDate, revisionDate: old.revisionDate,
-                content: old.content, reprompt: old.reprompt, attachments: old.attachments, folderId: folderId
-            )
+            items[i] = items[i].with(folderId: folderId)
         }
         buildIndexes()
         logger.info("Bulk move to folder: \(itemIds.count, privacy: .public) item(s)")
+    }
+
+    // MARK: - Favorite
+
+    /// Sets the favorite state with `PUT /api/ciphers/{id}/partial`, sending the cached folder.
+    ///
+    /// Deliberately not the full cipher PUT the official clients use for editable items: the
+    /// partial request carries no item data, so it cannot drop fields Prizm does not model, needs
+    /// no key, and works on read-only org items (fix-favorite-and-folder-partial-updates, D1).
+    func setFavorite(itemId: String, isFavorite: Bool) async throws -> VaultItem {
+        guard let old = items.first(where: { $0.id == itemId }) else {
+            throw VaultError.itemNotFound(itemId)
+        }
+        let updated = try await sendPartial(itemId: itemId, folderId: old.folderId, favorite: isFavorite)
+        logger.info("Favorite set: \(itemId, privacy: .public)")
+        // The server saved it; if a lock or sync removed the item from the cache meanwhile, report
+        // the item as it now is on the server.
+        return updated ?? old.with(isFavorite: isFavorite)
+    }
+
+    /// Sends `/partial` and, once the server confirms it, caches exactly the pair that was sent.
+    ///
+    /// - Each request carries both per-user fields, so the server keeps the last request's pair;
+    ///   caching that pair keeps the cache equal to the server when a move and a star overlap.
+    /// - Neither server bumps the cipher's revision on /partial, so the cached one stays (D3).
+    /// - The item is looked up again after the request: this actor is reentrant, and a sync can
+    ///   replace the cache meanwhile.
+    /// - Throws `VaultError.partialUpdateNotSaved` when the response shows another state: Bitwarden's
+    ///   Entity Framework backends answer 200 without saving (`CipherRepository.UpdatePartialAsync`).
+    ///   A field missing from the response is not checked.
+    /// - Returns: the updated cached item, or nil if it is no longer cached.
+    @discardableResult
+    private func sendPartial(itemId: String, folderId: String?, favorite: Bool) async throws -> VaultItem? {
+        let response = try await apiClient.updateCipherPartial(id: itemId, folderId: folderId, favorite: favorite)
+        if let saved = response.favorite, saved != favorite {
+            logger.error("Partial update not saved by the server (favorite): \(itemId, privacy: .public)")
+            throw VaultError.partialUpdateNotSaved
+        }
+        if case .some(let savedFolder) = response.folderId, savedFolder?.lowercased() != folderId?.lowercased() {
+            logger.error("Partial update not saved by the server (folder): \(itemId, privacy: .public)")
+            throw VaultError.partialUpdateNotSaved
+        }
+        guard let idx = items.firstIndex(where: { $0.id == itemId }) else { return nil }
+        items[idx] = items[idx].with(folderId: folderId).with(isFavorite: favorite)
+        buildIndexes()
+        return items[idx]
     }
 
     // MARK: - Private helpers

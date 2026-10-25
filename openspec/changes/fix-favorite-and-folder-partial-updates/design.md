@@ -71,10 +71,10 @@ fails on read-only items.
 ### D2. One copy helper for local updates
 
 `VaultItem` gets `func with(folderId: String?) -> VaultItem` and `func with(isFavorite: Bool) ->
-VaultItem`. Both call the full memberwise initializer with every stored property. A unit test builds
-an item with every property set to a non-default value and checks that only the target property
-changes. That test fails at compile time or at run time when someone adds a property and forgets
-the helper.
+VaultItem`. Both copy `self` and change one property (`folderId` and `isFavorite` are
+`private(set) var`), so every other property, including ones added later, is kept. A unit test
+builds an item with every property set to a non-default value and checks that only the target
+property changes.
 
 All local rebuilds in this change (`setFavorite`, `moveItemToFolder`, `moveItemsToFolder`,
 `deleteFolder`) use the helper. Other existing rebuilds that already pass all fields can move to it
@@ -90,7 +90,19 @@ After `/partial` and `/move`, the cached `revisionDate` is kept. Neither server 
 cipher's revision on these calls (see Context). This matters for `fix-cipher-edit-data-loss`,
 whose stale-write check sends the cached revision: a new value there would cause false conflicts.
 
-The `/partial` response body is not decoded. Prizm needs nothing from it.
+### D3a. Check the server's answer, cache the pair that was sent
+
+Both servers answer `/partial` with the cipher as the user now sees it, including `favorite` and
+`folderId`. Prizm compares them with what it sent and throws `VaultError.partialUpdateNotSaved` on a
+mismatch (a field missing from the response is not checked). Bitwarden's Entity Framework backends
+answer 200 without saving (Risks), so without the check the cache would show a change the server
+does not have.
+
+After a confirmed response, the cache gets exactly the pair that was sent. Each request carries both
+per-user fields, so when a move and a star overlap, the server keeps the last request's pair; the
+cache now follows. The item is looked up again after the request, because the repository actor is
+reentrant and a sync can replace the cache meanwhile (the old `moveItemToFolder` reused the index
+from before the request). A lock during the request is not an error: the server saved the change.
 
 ### D4. Use case and error surfacing
 
@@ -101,6 +113,21 @@ shows and VoiceOver announces. On success it refreshes the list and counts as to
 
 ## Risks / Trade-offs
 
+- **[Medium] Bitwarden self-hosted on MySQL, PostgreSQL or SQLite cannot save `/partial`.** The
+  Entity Framework repository (`server/src/Infrastructure.EntityFramework/Vault/Repositories/
+  CipherRepository.cs`, `UpdatePartialAsync`) edits parsed copies of `Folders` and `Favorites` and
+  never writes them back; with no folder map yet, `JObject.Parse(null)` throws (500). MSSQL
+  (`Cipher_UpdatePartial.sql`) is correct. On those servers, the star now fails with an error,
+  where the full PUT worked before (with the data loss this change removes). Moving one item to a
+  folder already used `/partial` and fails there today too. The official clients only use
+  `/partial` for read-only items, so they rarely hit it. **Open decision** (proposal, Open
+  Questions): accept this, or send the full PUT on Bitwarden servers when `/partial` is not saved.
+
+- **[Low] Saved, but reported as failed.** The official server's current `PutPartial` authorizes
+  the write response after `UpdatePartialAsync`; for a cipher behind its lease gate it throws
+  NotFound because Prizm does not advertise partial-cipher support. The change is saved, Prizm
+  shows an error and keeps the old cache state until the next sync. Likewise a proxy that answers
+  200 with an empty body now fails decoding after the save; neither real server does that.
 - **[Low] Favorite toggled on a stale `folderId`.** If the item was moved to another folder on
   another device after the last sync, `/partial` writes the old folder back. → Same race exists for
   move-to-folder today; the window ends at the next sync. Official clients send the cached folder
@@ -109,6 +136,10 @@ shows and VoiceOver announces. On success it refreshes the list and counts as to
   the call is identical.
 
 ## Open Questions
+
+0. Bitwarden EF backends (Risks): keep the error, or fall back to the full PUT there? A fallback
+   brings back the data-loss risk until `fix-cipher-edit-data-loss` lands. Report the server bug
+   upstream either way.
 
 1. Should the edit sheet's favorite toggle also move to `/partial` when nothing else changed? Not
    needed for safety once `fix-cipher-edit-data-loss` lands; left for later.

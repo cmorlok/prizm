@@ -189,6 +189,8 @@
 		FE3145A0627D44CABC58ADCE /* MaskedFieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8197007AA7E412D96A52B14 /* MaskedFieldView.swift */; };
 		FF0FFCD0FDD849318EBBFF77 /* FaviconLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50445584AD814B6EBD971FDA /* FaviconLoader.swift */; };
 		960765B0AB097AD5A024293E /* LegacyPreloginEndpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFDBB17F6E2AA8597455939D /* LegacyPreloginEndpoint.swift */; };
+		DB6006E4E878A9C9C893C91A /* SetFavoriteUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33F70D5AD25DD2A43576733F /* SetFavoriteUseCase.swift */; };
+		918757C4B8FDA02ACD662167 /* SetFavoriteUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47EF6BBB6170F5C4F6D7AB9B /* SetFavoriteUseCaseImpl.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -393,6 +395,8 @@
 		FEE3CE5476C5402F9BC3FF76 /* OrgKeyCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrgKeyCache.swift; sourceTree = "<group>"; };
 		FF00112233445566778899AA /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		BFDBB17F6E2AA8597455939D /* LegacyPreloginEndpoint.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LegacyPreloginEndpoint.swift; sourceTree = "<group>"; };
+		33F70D5AD25DD2A43576733F /* SetFavoriteUseCase.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SetFavoriteUseCase.swift; sourceTree = "<group>"; };
+		47EF6BBB6170F5C4F6D7AB9B /* SetFavoriteUseCaseImpl.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SetFavoriteUseCaseImpl.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -531,6 +535,7 @@
 				6C53A49FF8CB462DBB0E474A /* RenameCollectionUseCase.swift */,
 				6EDCDA57D3434985AC25FF5F /* DeleteCollectionUseCase.swift */,
 				B790BCA90C074D3E6B407DF4 /* GenerateTOTPCodeUseCase.swift */,
+				33F70D5AD25DD2A43576733F /* SetFavoriteUseCase.swift */,
 			);
 			path = UseCases;
 			sourceTree = "<group>";
@@ -901,6 +906,7 @@
 				AA100E00000000000000000E /* DownloadAttachmentUseCaseImpl.swift */,
 				AA100F00000000000000000F /* DeleteAttachmentUseCaseImpl.swift */,
 				4DCCEC04E9695CEDB593662E /* GenerateTOTPCodeUseCaseImpl.swift */,
+				47EF6BBB6170F5C4F6D7AB9B /* SetFavoriteUseCaseImpl.swift */,
 			);
 			path = UseCases;
 			sourceTree = "<group>";
@@ -1224,6 +1230,8 @@
 				EC92BFB78809ACD1946D76CB /* VerificationCodeCard.swift in Sources */,
 				0710CED60B2C5AE731226A72 /* VerificationCodesListView.swift in Sources */,
 				960765B0AB097AD5A024293E /* LegacyPreloginEndpoint.swift in Sources */,
+				DB6006E4E878A9C9C893C91A /* SetFavoriteUseCase.swift in Sources */,
+				918757C4B8FDA02ACD662167 /* SetFavoriteUseCaseImpl.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
