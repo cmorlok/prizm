@@ -6,7 +6,9 @@ Prizm is a macOS app, so it **cannot be built or tested in a Linux container**. 
 |---|---|---|
 | Container (`prizm-dev`) | Claude Code, OpenSpec, GSD, spec validation, shell/plist/scheme checks, workflow lint, Linux type-check of the Foundation-only Domain layer, optional swift-format | `scripts/container/checks.sh` |
 | Mac host | `xcodebuild` build, unit tests, UI tests, signed Release build | `scripts/host/xcode.sh` |
-| Mac host, both in order | container checks, then Xcode | `scripts/build.sh` |
+| Mac host or container, both in order | container checks, then Xcode (from the container through the build daemon) | `scripts/build.sh` |
+| Mac host, left running | runs Xcode builds requested from the container | `scripts/host/build-daemon.sh` |
+| Container → Mac | one Xcode command on the Mac, output streamed back | `scripts/container/host-build.sh` |
 | Mac host terminal → container | run `claude` inside the container | `scripts/claude.sh` |
 
 ## Prerequisites (on the Mac)
@@ -56,6 +58,35 @@ To start from a clean home, remove the container and the volume, then reopen the
 docker rm -f prizm-dev && docker volume rm prizm-dev-home
 ```
 This also deletes the container's Claude Code login.
+
+## Building from inside the container
+
+Xcode runs only on the Mac, but Claude Code runs in the container. The host build daemon connects
+the two:
+
+1. In a Mac terminal, in the repo, start the daemon and leave it running:
+   ```bash
+   scripts/host/build-daemon.sh
+   ```
+2. In the container, build and test as usual:
+   ```bash
+   scripts/build.sh                         # container checks, then build + unit tests on the Mac
+   scripts/container/host-build.sh test     # only the Xcode part: build, test, test-ui, test-all, release, clean
+   ```
+   The output streams back into the container, and the command exits with the build's exit code.
+   Ctrl-C cancels the build on the Mac.
+
+How it works: the client writes a request file into `build/host-bridge/` (git-ignored, inside the
+mounted repo). The daemon polls that folder, runs `scripts/host/xcode.sh <command>`, writes the
+output to `<id>.log` there, and writes `<id>.exit` when done. The protocol is described in
+`scripts/lib/build-bridge.sh`.
+
+- **Commands:** the daemon runs only the `xcode.sh` commands listed above, so the container cannot
+  make the Mac run anything else.
+- **Order:** one build at a time, in request order.
+- **Daemon not running:** the client fails at once with a hint, based on a heartbeat file the
+  daemon rewrites every second. If the daemon stops during a build, the client gets exit 125.
+- **Logs:** kept in `build/host-bridge/` for 7 days.
 
 ## Pinned versions
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Full local pipeline, run from the Mac: container checks first (fast, no Xcode), then the
-# Xcode part on the host.
+# Full local pipeline: container checks first (fast, no Xcode), then the Xcode part on the Mac.
+# Works from the Mac and from inside the devcontainer. In the container, the Xcode part is handed
+# to scripts/host/build-daemon.sh, which must be running in a Mac terminal.
 #
 #   scripts/build.sh                  # checks, then build + unit tests
 #   scripts/build.sh test-all         # checks, then build + unit + UI tests
@@ -11,7 +12,9 @@ set -euo pipefail
 # shellcheck source=lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 
-require_host "scripts/build.sh"
+if ! in_container; then
+  require_host "scripts/build.sh"
+fi
 
 run_checks=1
 run_host=1
@@ -37,5 +40,9 @@ fi
 if [[ "${run_host}" == 1 ]]; then
   # `test` also builds, so a separate build step is only needed for build-only commands.
   log "Xcode on host: ${host_cmd}"
-  "${PRIZM_REPO_ROOT}/scripts/host/xcode.sh" "${host_cmd}"
+  if in_container; then
+    "${PRIZM_REPO_ROOT}/scripts/container/host-build.sh" "${host_cmd}"
+  else
+    "${PRIZM_REPO_ROOT}/scripts/host/xcode.sh" "${host_cmd}"
+  fi
 fi
