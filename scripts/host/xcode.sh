@@ -76,6 +76,8 @@ ci_run() {
   local plist="${ci_derived}/Build/Products/Debug/Prizm.app/Contents/Info.plist" id
   id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${plist}" 2>/dev/null || true)"
   [[ -n "${id}" ]] || die "The built app has no CFBundleIdentifier. Set PRODUCT_BUNDLE_IDENTIFIER for the Prizm target."
+  # CI and releases build with the unchanged template, so they must get exactly the default.
+  [[ "${id}" == "de.b0x42.Prizm" ]] || die "CFBundleIdentifier is '${id}', expected de.b0x42.Prizm for CI and release builds. Personal identifiers belong in ${local_config}."
   log "CFBundleIdentifier: ${id}"
 
   log "ci: unsigned unit tests with Address Sanitizer"
