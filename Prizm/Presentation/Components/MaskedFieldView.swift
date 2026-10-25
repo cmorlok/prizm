@@ -78,6 +78,9 @@ struct MaskedFieldView: View {
             Text(effectiveDisplayValue)
                 .font(Typography.fieldValue.monospaced())
                 .textSelection(.enabled)
+                // A selectable Text keeps the accessibility value it was created with, so VoiceOver
+                // read the dots after Reveal. Set it to what is shown (fix-ui-journey-findings).
+                .accessibilityValue(effectiveDisplayValue)
                 .accessibilityIdentifier(AccessibilityID.Masked.value(label))
             Button {
                 state = state.toggled()
