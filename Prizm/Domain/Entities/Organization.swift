@@ -18,6 +18,18 @@ nonisolated enum OrgRole: Int, Equatable, Hashable {
     case custom  = 4
 }
 
+// MARK: - OrgMembershipId
+
+/// The user's organization-user id (`organizationUserId` in the sync profile), needed to assign the
+/// creator to a new collection (fix-collection-access-on-rename). Not a secret.
+nonisolated enum OrgMembershipId: Equatable, Hashable {
+    case known(String)
+    /// The server does not send the field (official servers before v2025.1.0).
+    case notSent
+    /// The field is present but not a string; Prizm never guesses an id.
+    case unreadable
+}
+
 // MARK: - Organization
 
 /// A Bitwarden organization the user belongs to.
@@ -27,6 +39,8 @@ nonisolated struct Organization: Identifiable, Equatable, Hashable {
     let id: String
     let name: String
     let role: OrgRole
+    /// No default: an organization built without it would silently take the legacy create path.
+    let membershipId: OrgMembershipId
 
     /// Whether this user may create, rename, and delete collections in this org.
     ///

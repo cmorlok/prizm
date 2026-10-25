@@ -197,10 +197,12 @@ protocol PrizmAPIClientProtocol: Actor {
     /// - Parameters:
     ///   - organizationId: The org the collection belongs to.
     ///   - encryptedName: The collection name encrypted with the org's symmetric key.
-    func createCollection(organizationId: String, encryptedName: String) async throws -> RawCollection
+    func createCollection(organizationId: String, request: CollectionWriteRequest) async throws -> RawCollection
 
     /// PUT `/api/organizations/{orgId}/collections/{id}` — renames an existing collection.
-    func renameCollection(id: String, organizationId: String, encryptedName: String) async throws -> RawCollection
+    /// GET `/api/organizations/{orgId}/collections/{id}/details`: the collection with its access list.
+    func getCollectionAccessDetails(organizationId: String, id: String) async throws -> CollectionAccessDetailsResponse
+    func renameCollection(id: String, organizationId: String, request: CollectionWriteRequest) async throws -> RawCollection
 
     /// DELETE `/api/organizations/{orgId}/collections/{id}` — deletes a collection.
     func deleteCollection(id: String, organizationId: String) async throws
@@ -956,13 +958,9 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
     // MARK: - Collection CRUD
 
     /// Bitwarden collection body for create/rename — `groups` and `users` default to empty.
-    private struct CollectionBody: Encodable {
-        let name: String
-        let groups: [String]
-        let users: [String]
-    }
-
-    func createCollection(organizationId: String, encryptedName: String) async throws -> RawCollection {
+    /// The body carries the full access list (`CollectionWriteRequest`): both servers replace the
+    /// collection's members and groups with it (fix-collection-access-on-rename).
+    func createCollection(organizationId: String, request body: CollectionWriteRequest) async throws -> RawCollection {
         guard let base = baseURL else { throw APIError.baseURLNotSet }
         let url = base.appendingPathComponent("api/organizations/\(organizationId)/collections")
         var request = baseRequest(url: url)
@@ -971,11 +969,24 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
         if let token = accessToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        request.httpBody = try JSONEncoder().encode(CollectionBody(name: encryptedName, groups: [], users: []))
+        request.httpBody = try JSONEncoder().encode(body)
         return try await perform(request: request)
     }
 
-    func renameCollection(id: String, organizationId: String, encryptedName: String) async throws -> RawCollection {
+    func getCollectionAccessDetails(organizationId: String, id: String) async throws -> CollectionAccessDetailsResponse {
+        guard let base = baseURL else { throw APIError.baseURLNotSet }
+        let url = base.appendingPathComponent("api/organizations/\(organizationId)/collections/\(id)/details")
+        var request = baseRequest(url: url)
+        request.httpMethod = "GET"
+        if let token = accessToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        return try await perform(request: request)
+    }
+
+    /// See `createCollection`: the body must carry the access list read from the server, or the
+    /// rename removes everyone's access.
+    func renameCollection(id: String, organizationId: String, request body: CollectionWriteRequest) async throws -> RawCollection {
         guard let base = baseURL else { throw APIError.baseURLNotSet }
         let url = base.appendingPathComponent("api/organizations/\(organizationId)/collections/\(id)")
         var request = baseRequest(url: url)
@@ -984,7 +995,7 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
         if let token = accessToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        request.httpBody = try JSONEncoder().encode(CollectionBody(name: encryptedName, groups: [], users: []))
+        request.httpBody = try JSONEncoder().encode(body)
         return try await perform(request: request)
     }
 

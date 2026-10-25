@@ -12,29 +12,29 @@ final class OrganizationEntityTests: XCTestCase {
     // MARK: - canManageCollections
 
     func testOwnerCanManageCollections() {
-        let org = Organization(id: "1", name: "Test", role: .owner)
+        let org = Organization(id: "1", name: "Test", role: .owner, membershipId: .notSent)
         XCTAssertTrue(org.canManageCollections)
     }
 
     func testAdminCanManageCollections() {
-        let org = Organization(id: "1", name: "Test", role: .admin)
+        let org = Organization(id: "1", name: "Test", role: .admin, membershipId: .notSent)
         XCTAssertTrue(org.canManageCollections)
     }
 
     func testManagerCanManageCollections() {
-        let org = Organization(id: "1", name: "Test", role: .manager)
+        let org = Organization(id: "1", name: "Test", role: .manager, membershipId: .notSent)
         XCTAssertTrue(org.canManageCollections)
     }
 
     func testUserCannotManageCollections() {
-        let org = Organization(id: "1", name: "Test", role: .user)
+        let org = Organization(id: "1", name: "Test", role: .user, membershipId: .notSent)
         XCTAssertFalse(org.canManageCollections)
     }
 
     func testCustomRoleCannotManageCollections() {
         // Custom role defaults to false — server-side permission flags for custom roles
         // are not available in the sync `type` integer (Bitwarden Security Whitepaper §4).
-        let org = Organization(id: "1", name: "Test", role: .custom)
+        let org = Organization(id: "1", name: "Test", role: .custom, membershipId: .notSent)
         XCTAssertFalse(org.canManageCollections)
     }
 
