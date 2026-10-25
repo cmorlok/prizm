@@ -1,0 +1,226 @@
+import XCTest
+
+// Shared helpers for the UI journeys (openspec change `fix-ui-test-target`).
+
+/// Base class for the UI journeys. When a test records a failure, it prints the app's UI hierarchy
+/// at that moment into the test log, so a failure can be diagnosed from the log alone.
+class PrizmUITestCase: XCTestCase {
+
+    private var isDumping = false
+
+    override func record(_ issue: XCTIssue) {
+        if !isDumping {
+            isDumping = true
+            print("UI hierarchy at failure (\(name)):\n\(XCUIApplication().debugDescription)")
+            isDumping = false
+        }
+        super.record(issue)
+    }
+}
+
+/// Launch arguments of the app's DEBUG-only test states (`App/UITestFixtures.swift`, design D1).
+/// In every state the app uses in-memory keychains, so a journey cannot touch the developer's
+/// stored login.
+enum UITestLaunch {
+    /// Unlocked, with the seeded in-memory vault.
+    static let vault = ["--ui-test-vault"]
+    /// The unlock screen for the fixture account.
+    static let locked = ["--ui-test-locked"]
+    /// The login screen.
+    static let signedOut = ["--ui-test-signed-out"]
+}
+
+/// What the seeded vault guarantees (`App/UITestFixtures.swift`, design D3). Row identifiers are
+/// `itemList.row.<id>`.
+enum Fixture {
+    static let accountEmail = "uitest@example.com"
+    /// Active logins, in the list's alphabetical order: Alpha Bank, Beta Mail, Delta Bad Seed,
+    /// Gamma No Seed, Kappa Login.
+    static let alpha = "alpha"
+    static let gamma = "gamma"
+    /// The only favourite; it also carries the only attachment.
+    static let kappa = "kappa"
+    static let card = "card1"
+    static let identity = "ident1"
+    static let note = "note1"
+    /// In the trash.
+    static let trashed = "zeta"
+    static let attachmentId = "att1"
+    static let attachmentFileName = "kappa-notes.txt"
+
+    static func password(of id: String) -> String { "pw-\(id)" }
+    static func row(_ id: String) -> String { "itemList.row.\(id)" }
+}
+
+/// Prerequisites a journey needs and a test run may not have (design D5). Each one is reported as a
+/// skip with a fixed reason instead of passing without checking anything.
+enum UITestPrerequisite {
+
+    /// Saving anything goes to the server; the test states have none.
+    static func serverWrites() throws -> Never {
+        throw XCTSkip("Needs a test backend for saving (follow-up change ui-test-backend).")
+    }
+
+    /// Downloading an attachment needs the server; the test states have none.
+    static func serverDownloads() throws -> Never {
+        throw XCTSkip("Needs a test backend for downloads (follow-up change ui-test-backend).")
+    }
+
+    /// A journey that runs into a known app bug, which a separate change fixes. Skipped instead of
+    /// run when the bug is a crash: a crash cannot be marked as an expected failure, and every run
+    /// would leave a crash report dialog on the developer's screen.
+    static func knownAppBug(_ description: String, fixedBy change: String) throws -> Never {
+        throw XCTSkip("Known app bug: \(description) (to be fixed by \(change)).")
+    }
+
+    /// Touch ID cannot be simulated yet.
+    static func biometrics() throws -> Never {
+        throw XCTSkip("Needs simulated Touch ID (follow-up change ui-test-biometrics).")
+    }
+
+    struct RealAccount {
+        let serverURL: String
+        let email: String
+        let password: String
+    }
+
+    /// A real account on a real server, from the test runner's environment. With `xcodebuild`, pass
+    /// them as `TEST_RUNNER_BW_TEST_SERVER_URL` and so on (see DEVELOPMENT.md).
+    static func realAccount(
+        emailVariable: String = "BW_TEST_EMAIL",
+        passwordVariable: String = "BW_TEST_PASSWORD"
+    ) throws -> RealAccount {
+        let names = ["BW_TEST_SERVER_URL", emailVariable, passwordVariable]
+        let values = names.compactMap { name -> String? in
+            guard let value = ProcessInfo.processInfo.environment[name], !value.isEmpty else { return nil }
+            return value
+        }
+        guard values.count == names.count else {
+            throw XCTSkip("Needs a real account: set \(names.joined(separator: ", ")).")
+        }
+        return RealAccount(serverURL: values[0], email: values[1], password: values[2])
+    }
+}
+
+extension XCUIApplication {
+    /// Any element with the accessibility identifier `id`, wherever it is in the hierarchy.
+    func element(_ id: String) -> XCUIElement {
+        descendants(matching: .any)[id].firstMatch
+    }
+
+    /// Launches the app in a test state.
+    func launch(in state: [String]) {
+        launchArguments = state
+        launch()
+    }
+
+    /// The vault browser's sidebar. SwiftUI does not expose the browser's own identifier
+    /// (`vault.navigationSplit`) or the sidebar rows' identifiers to accessibility; the sidebar is an
+    /// outline labelled "Sidebar" and its rows are found by their titles.
+    var sidebar: XCUIElement { outlines["Sidebar"] }
+
+    /// A sidebar row by its visible title, for example "All Items", "Favorites", "Login" or "Trash".
+    func sidebarRow(_ title: String) -> XCUIElement {
+        sidebar.staticTexts.matching(NSPredicate(format: "label == %@ OR value == %@", title, title)).firstMatch
+    }
+
+    /// Selects a sidebar row by its title. `waitForVaultBrowser()` makes the window tall enough that
+    /// the sidebar does not scroll: scrolling it from a test is unreliable, and a row the outline
+    /// has not rendered reports a frame at the screen edge, so it cannot be scrolled into view.
+    func selectSidebarRow(_ title: String, file: StaticString = #filePath, line: UInt = #line) {
+        let row = sidebarRow(title)
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "Sidebar row \(title) should exist", file: file, line: line)
+        XCTAssertTrue(sidebar.frame.contains(row.frame),
+                      "Sidebar row \(title) should be visible without scrolling; is the window too small?",
+                      file: file, line: line)
+        row.click()
+    }
+
+    /// Waits for the vault browser. On failure, prints the app's UI hierarchy into the test log,
+    /// so the screen the app showed instead is visible without re-running.
+    /// Also zooms a small window: macOS restores the last window size, which can be too small to
+    /// show the whole sidebar (see `selectSidebarRow(_:)`).
+    func waitForVaultBrowser(timeout: TimeInterval = 30) -> Bool {
+        let found = sidebar.waitForExistence(timeout: timeout)
+        if !found { print("Vault browser not found. UI hierarchy:\n\(debugDescription)") }
+        if found { ensureLargeWindow() }
+        return found
+    }
+
+    /// Zooms the window with Window → Zoom when it is shorter than `minimumHeight`. Zoom toggles,
+    /// so it is only used on a small window, and the new size is kept for the next launch.
+    private func ensureLargeWindow(minimumHeight: CGFloat = 700) {
+        let window = windows.firstMatch
+        guard window.frame.height < minimumHeight else { return }
+        menuBars.menuBarItems["Window"].click()
+        menuBars.menuItems["Zoom"].click()
+        let deadline = Date().addingTimeInterval(3)
+        while window.frame.height < minimumHeight && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        }
+    }
+
+    /// The value of a detail-pane field row, for example "Password". The row's identifier
+    /// `field.<label>` overrides the identifiers of its children (`masked.<label>.value`), so the
+    /// value is the row's text that is not the field label itself.
+    func fieldValue(_ label: String) -> XCUIElement {
+        // A revealed value also brings a "COPY" text into the row.
+        staticTexts.matching(NSPredicate(format: "identifier == %@ AND NOT (value IN %@)",
+                                         "field.\(label)", [label, "COPY"])).firstMatch
+    }
+
+    /// The reveal/mask button of a masked field row (labelled "Reveal <label>" or "Hide <label>").
+    func revealButton(_ label: String) -> XCUIElement {
+        buttons["field.\(label)"].firstMatch
+    }
+
+    /// An element of the attachments section by its text. The section's identifier
+    /// `attachment.section` overrides those of its rows and buttons (`attachment.button.add`,
+    /// `attachment.row.<id>.*`), so elements are found by that identifier plus their label or value.
+    func attachmentElement(_ type: XCUIElement.ElementType, _ text: String) -> XCUIElement {
+        descendants(matching: type).matching(NSPredicate(
+            format: "identifier == %@ AND (label == %@ OR value == %@)",
+            AccessibilityID.Attachment.sectionCard, text, text)).firstMatch
+    }
+
+    /// The unlock screen's subtitle, which names the stored account ("Enter the password for
+    /// <email> to unlock."). The screen has no separate email field since ba1cd07 (#39).
+    var unlockSubtitle: XCUIElement {
+        staticTexts.matching(NSPredicate(format: "value CONTAINS %@ OR label CONTAINS %@",
+                                         Fixture.accountEmail, Fixture.accountEmail)).firstMatch
+    }
+
+    /// The toolbar search field. In a narrow window the toolbar collapses it into a Search button.
+    func searchField() -> XCUIElement {
+        let field = searchFields.firstMatch
+        if !field.waitForExistence(timeout: 2), buttons["Search"].exists {
+            buttons["Search"].click()
+        }
+        return field
+    }
+}
+
+extension XCUIElement {
+    /// The visible text. SwiftUI exposes many texts as the accessibility value, not the label.
+    var text: String { label.isEmpty ? (value as? String ?? "") : label }
+
+    /// The text a selectable `Text` (`.textSelection(.enabled)`) currently shows. Accessibility
+    /// wraps such a text in an outer element that carries the identifier but keeps its first value;
+    /// only the inner text element follows changes (seen for the masked field value and the
+    /// generator preview). Wait on this element, not on the outer one, for a text change.
+    var displayedText: XCUIElement { staticTexts.firstMatch }
+
+    /// Waits until the element's text (label and value) no longer equals `text`.
+    func waitForTextChange(from text: String, timeout: TimeInterval) -> Bool {
+        let predicate = NSPredicate(format: "label != %@ AND value != %@", text, text)
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: self)
+        return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    /// Waits until the element's text (label or value) equals `text`.
+    func waitForText(_ text: String, timeout: TimeInterval) -> Bool {
+        let predicate = NSPredicate(format: "label == %@ OR value == %@", text, text)
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: self)
+        return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
+    }
+}

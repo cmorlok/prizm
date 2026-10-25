@@ -13,15 +13,14 @@ import XCTest
 ///
 /// Run with: `xcodebuild test -scheme Prizm -destination 'platform=macOS' -only-testing:PrizmUITests`.
 /// The target is skipped in the scheme by default so a plain "run all tests" stays fast.
-final class VerificationCodeJourneyTests: XCTestCase {
+final class VerificationCodeJourneyTests: PrizmUITestCase {
 
     private var app: XCUIApplication!
 
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments = ["--ui-test-vault"]
-        app.launch()
+        app.launch(in: UITestLaunch.vault)
         XCTAssertTrue(element("itemList.row.alpha").waitForExistence(timeout: 20), "Seeded vault must appear")
     }
 

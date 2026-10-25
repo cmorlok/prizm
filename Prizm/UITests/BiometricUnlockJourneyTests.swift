@@ -8,20 +8,18 @@ import XCTest
 ///
 /// Touch ID is indicated by a badge on the lock icon and subtitle copy —
 /// there is no separate Touch ID button (design Decision 2).
-final class BiometricUnlockJourneyTests: XCTestCase {
+final class BiometricUnlockJourneyTests: PrizmUITestCase {
 
     private var app: XCUIApplication!
 
     override func setUpWithError() throws {
+        // Every journey here needs simulated Touch ID, which the test states don't provide yet.
+        // The bodies below are kept for the follow-up change ui-test-biometrics.
+        try UITestPrerequisite.biometrics()
+
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments = [
-            "--ui-testing",
-            "--inject-session",
-            "--mock-biometrics",
-            "--biometric-enabled",
-        ]
-        app.launch()
+        app.launch(in: UITestLaunch.locked)
     }
 
     override func tearDownWithError() throws {
@@ -44,7 +42,7 @@ final class BiometricUnlockJourneyTests: XCTestCase {
 
     func testBiometricUnlock_success_showsVaultBrowser() throws {
         // With mock biometrics succeeding, the vault should appear.
-        let vault = app.navigationSplitViews["vault.navigationSplit"]
+        let vault = app.sidebar
         XCTAssertTrue(vault.waitForExistence(timeout: 10))
     }
 

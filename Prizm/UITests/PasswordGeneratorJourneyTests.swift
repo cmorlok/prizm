@@ -5,20 +5,19 @@ import XCTest
 /// Validates the generator popover flow: opening from the Login edit sheet,
 /// interacting with controls, and applying the generated value.
 ///
-/// Prerequisites: App launched with `--ui-testing`, `--inject-session`, `--inject-vault`,
-/// `--skip-sync` so a pre-populated vault is available without a network round-trip.
-final class PasswordGeneratorJourneyTests: XCTestCase {
+/// Runs on the seeded test vault (`UITestLaunch.vault`). Nothing is saved: the edit sheet is
+/// discarded at the end. The generator stores its options in the app's preferences, which a test
+/// run changes (design.md of fix-ui-test-target, Risks).
+final class PasswordGeneratorJourneyTests: PrizmUITestCase {
 
     private var app: XCUIApplication!
 
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments = ["--ui-testing", "--inject-session", "--inject-vault", "--skip-sync"]
-        app.launch()
+        app.launch(in: UITestLaunch.vault)
 
-        let vaultNav = app.otherElements["vault.navigationSplit"]
-        XCTAssertTrue(vaultNav.waitForExistence(timeout: 30), "Vault browser must be visible")
+        XCTAssertTrue(app.waitForVaultBrowser(), "Vault browser must be visible")
     }
 
     override func tearDownWithError() throws {
@@ -29,12 +28,11 @@ final class PasswordGeneratorJourneyTests: XCTestCase {
 
     func testGeneratorPopover_opensAndAppliesPassword() throws {
         // Select a Login item from the sidebar.
-        let sidebarLogins = app.staticTexts["sidebar.type.login"]
+        let sidebarLogins = app.sidebarRow("Login")
         XCTAssertTrue(sidebarLogins.waitForExistence(timeout: 5))
         sidebarLogins.click()
 
-        // Select the first item.
-        let firstRow = app.tables["itemList.list"].cells.firstMatch
+        let firstRow = app.element(Fixture.row(Fixture.alpha))
         XCTAssertTrue(firstRow.waitForExistence(timeout: 5))
         firstRow.click()
 
@@ -51,16 +49,28 @@ final class PasswordGeneratorJourneyTests: XCTestCase {
         // Verify the popover opened — preview should exist.
         let preview = app.staticTexts["generator.preview"]
         XCTAssertTrue(preview.waitForExistence(timeout: 3), "Generator popover should be open")
-        let initialPreview = preview.label
+        let previewText = preview.displayedText
 
-        // Change the length slider.
+        // The generator keeps its options in the app's preferences, so it may open in Passphrase
+        // mode from an earlier run; the length slider exists only in Password mode.
+        let passwordTab = app.radioButtons["Password"]
+        XCTAssertTrue(passwordTab.waitForExistence(timeout: 2))
+        passwordTab.click()
+
+        // Change the length. The slider may start anywhere: move it to the other end.
         let slider = app.sliders["generator.lengthSlider"]
+        _ = slider.waitForExistence(timeout: 2)
+        let initialPreview = previewText.text
         XCTAssertTrue(slider.exists, "Length slider should be visible")
-        slider.adjust(toNormalizedSliderPosition: 0.8)
+        let positionBefore = slider.normalizedSliderPosition
+        slider.adjust(toNormalizedSliderPosition: positionBefore > 0.5 ? 0.1 : 0.9)
 
-        // Verify preview updated.
-        let updatedPreview = app.staticTexts["generator.preview"].label
-        XCTAssertNotEqual(initialPreview, updatedPreview, "Preview should update after slider change")
+        // Separate checks, so a failure says which step went wrong.
+        XCTAssertNotEqual(slider.normalizedSliderPosition, positionBefore, accuracy: 0.05,
+                          "The slider should have moved")
+        XCTAssertTrue(preview.exists, "The generator popover should still be open after moving the slider")
+        XCTAssertTrue(previewText.waitForTextChange(from: initialPreview, timeout: 3),
+                      "Preview should update after slider change")
 
         // Tap "Use Password".
         let useButton = app.buttons["generator.button.use"]
@@ -70,20 +80,20 @@ final class PasswordGeneratorJourneyTests: XCTestCase {
         // Verify popover dismissed.
         XCTAssertFalse(preview.waitForExistence(timeout: 2), "Popover should have dismissed")
 
-        // Discard the edit sheet.
+        // Discard the edit sheet: nothing is saved.
         let discardButton = app.buttons["edit.button.discard"]
-        if discardButton.exists { discardButton.click() }
+        if discardButton.waitForExistence(timeout: 2) { discardButton.click() }
     }
 
     // MARK: - Task 5.2: Switch to Passphrase mode, change word count, verify preview
 
     func testGeneratorPopover_passphraseMode_wordCountUpdatesPreview() throws {
         // Select a Login item.
-        let sidebarLogins = app.staticTexts["sidebar.type.login"]
+        let sidebarLogins = app.sidebarRow("Login")
         XCTAssertTrue(sidebarLogins.waitForExistence(timeout: 5))
         sidebarLogins.click()
 
-        let firstRow = app.tables["itemList.list"].cells.firstMatch
+        let firstRow = app.element(Fixture.row(Fixture.alpha))
         XCTAssertTrue(firstRow.waitForExistence(timeout: 5))
         firstRow.click()
 
@@ -99,28 +109,36 @@ final class PasswordGeneratorJourneyTests: XCTestCase {
 
         let preview = app.staticTexts["generator.preview"]
         XCTAssertTrue(preview.waitForExistence(timeout: 3))
+        let previewText = preview.displayedText
 
-        // Switch to Passphrase mode.
-        let passphraseTab = app.buttons["Passphrase"]
+        // Switch to Passphrase mode. The mode picker is segmented, which accessibility exposes as
+        // radio buttons. It may already be selected from an earlier run (preferences persist).
+        let passphraseTab = app.radioButtons["Passphrase"]
         XCTAssertTrue(passphraseTab.waitForExistence(timeout: 2))
         passphraseTab.click()
+        XCTAssertTrue(preview.exists, "The generator popover should still be open after choosing Passphrase")
 
-        // Verify preview now contains hyphens (passphrase separator).
-        let passphrasePreview = app.staticTexts["generator.preview"].label
-        XCTAssertTrue(passphrasePreview.contains("-"), "Passphrase should contain separator")
-
-        // Change word count via stepper increment.
         let stepper = app.steppers["generator.wordCount"]
-        XCTAssertTrue(stepper.exists, "Word count stepper should be visible")
-        stepper.buttons["Increment"].click()
+        XCTAssertTrue(stepper.waitForExistence(timeout: 3), "Word count stepper should be visible")
+        // Accessibility does not report the segment's selection reliably; check its effect instead.
+        let separated = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label CONTAINS '-' OR value CONTAINS '-'"), object: previewText)
+        XCTAssertEqual(XCTWaiter().wait(for: [separated], timeout: 3), .completed,
+                       "Passphrase should contain separator")
+        let passphrasePreview = previewText.text
 
-        // Verify preview updated.
-        let updatedPreview = app.staticTexts["generator.preview"].label
-        XCTAssertNotEqual(passphrasePreview, updatedPreview, "Preview should update after word count change")
+        // Change the word count (3 to 10). The stepper exposes its arrows as increment and
+        // decrement arrows, not as buttons. At the maximum, Increment does nothing, so step down then.
+        stepper.incrementArrows.firstMatch.click()
+        if !previewText.waitForTextChange(from: passphrasePreview, timeout: 2) {
+            stepper.decrementArrows.firstMatch.click()
+        }
+        XCTAssertTrue(previewText.waitForTextChange(from: passphrasePreview, timeout: 3),
+                      "Preview should update after word count change")
 
-        // Discard.
+        // Close the popover and discard the edit sheet: nothing is saved.
         app.typeKey(.escape, modifierFlags: [])
         let discardButton = app.buttons["edit.button.discard"]
-        if discardButton.exists { discardButton.click() }
+        if discardButton.waitForExistence(timeout: 2) { discardButton.click() }
     }
 }

@@ -2,23 +2,19 @@ import XCTest
 
 /// XCUITest: US2 Unlock Journey (T043)
 ///
-/// Validates the vault unlock flow for returning users with a stored session.
-/// The unlock screen should show the stored email, accept the master password,
-/// and reach the vault browser without a network login request.
-///
-/// **Prerequisites**: A session must be stored (run LoginJourneyTests first or
-/// use `--ui-testing --inject-session` launch args to pre-seed a test session).
-/// **Success Criteria**: SC-002 — unlock-to-vault ≤5s.
-final class UnlockJourneyTests: XCTestCase {
+/// Validates the unlock screen for a returning user, in the locked test state (`UITestLaunch.locked`,
+/// fixture account `Fixture.accountEmail`). The screen follows the redesign in ba1cd07 (#39):
+/// title "Prizm Is Locked", the email inline in the subtitle, one password field submitted with
+/// Return, no unlock button. Unlocking successfully needs a real account (SC-002 — ≤5s).
+final class UnlockJourneyTests: PrizmUITestCase {
 
     private var app: XCUIApplication!
 
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        // Inject a stored session so the unlock screen appears on launch.
-        app.launchArguments = ["--ui-testing", "--inject-session"]
-        app.launch()
+        // Locked test state: the unlock screen for the fixture account, with an in-memory keychain.
+        app.launch(in: UITestLaunch.locked)
     }
 
     override func tearDownWithError() throws {
@@ -34,19 +30,15 @@ final class UnlockJourneyTests: XCTestCase {
             header.waitForExistence(timeout: 5),
             "Unlock screen should appear for returning users"
         )
-        XCTAssertEqual(header.label, "Vault locked")
+        XCTAssertEqual(header.text, "Prizm Is Locked")
     }
 
     // MARK: - US2 Scenario 2: Stored email is displayed read-only
 
-    /// Verifies the stored email is displayed on the unlock screen.
+    /// Verifies the stored email is shown, inline in the subtitle (FR-003).
     func testStoredEmailDisplayed() {
-        let emailLabel = app.staticTexts["unlock.email"]
-        XCTAssertTrue(
-            emailLabel.waitForExistence(timeout: 5),
-            "Stored email should be visible on unlock screen"
-        )
-        XCTAssertFalse(emailLabel.label.isEmpty, "Email label should not be empty")
+        XCTAssertTrue(app.unlockSubtitle.waitForExistence(timeout: 5),
+                      "The subtitle with the stored email should be visible on the unlock screen")
     }
 
     // MARK: - US2 Scenario 3: Correct password unlocks vault (SC-002)
@@ -54,25 +46,33 @@ final class UnlockJourneyTests: XCTestCase {
     /// Verifies that entering the correct master password reaches the vault browser.
     /// Measures time against SC-002 (≤5s).
     func testCorrectPasswordUnlocksVault() throws {
-        let password = try XCTUnwrap(envVar("BW_TEST_PASSWORD"), "BW_TEST_PASSWORD required")
+        // The fixture account has no keys, so this needs a real account: sign in, lock, unlock.
+        let account = try UITestPrerequisite.realAccount()
+        app.terminate()
+        app.launch(in: UITestLaunch.signedOut)
 
-        let passField  = app.secureTextFields["unlock.password"]
-        let unlockBtn  = app.buttons["unlock.unlock"]
+        let serverField = app.textFields["login.serverURL"]
+        XCTAssertTrue(serverField.waitForExistence(timeout: 5))
+        serverField.click()
+        serverField.typeText(account.serverURL)
+        app.textFields["login.email"].click()
+        app.textFields["login.email"].typeText(account.email)
+        app.secureTextFields["login.password"].click()
+        app.secureTextFields["login.password"].typeText(account.password)
+        app.buttons["login.signIn"].click()
+        let vaultNav = app.sidebar
+        XCTAssertTrue(vaultNav.waitForExistence(timeout: 60), "Vault browser should appear after login")
 
+        app.typeKey("l", modifierFlags: .command)
+        let passField = app.secureTextFields["unlock.password"]
         XCTAssertTrue(passField.waitForExistence(timeout: 5))
 
         let startTime = CFAbsoluteTimeGetCurrent()
-
         passField.click()
-        passField.typeText(password)
-        unlockBtn.click()
+        passField.typeText(account.password)
+        passField.typeKey(.return, modifierFlags: [])
 
-        let vaultNav = app.otherElements["vault.navigationSplit"]
-        XCTAssertTrue(
-            vaultNav.waitForExistence(timeout: 30),
-            "Vault browser should appear after unlock"
-        )
-
+        XCTAssertTrue(vaultNav.waitForExistence(timeout: 30), "Vault browser should appear after unlock")
         let elapsed = CFAbsoluteTimeGetCurrent() - startTime
         XCTAssertLessThanOrEqual(elapsed, 5.0, "SC-002: Unlock-to-vault must complete within 5s")
     }
@@ -83,13 +83,11 @@ final class UnlockJourneyTests: XCTestCase {
     /// the unlock screen (vault is not locked/destroyed).
     func testWrongPasswordShowsErrorStaysOnUnlock() {
         let passField = app.secureTextFields["unlock.password"]
-        let unlockBtn = app.buttons["unlock.unlock"]
-
         XCTAssertTrue(passField.waitForExistence(timeout: 5))
 
         passField.click()
         passField.typeText("definitely-wrong-password")
-        unlockBtn.click()
+        passField.typeKey(.return, modifierFlags: [])
 
         let error = app.staticTexts["unlock.error"]
         XCTAssertTrue(
@@ -118,34 +116,26 @@ final class UnlockJourneyTests: XCTestCase {
         )
     }
 
-    // MARK: - US2 Scenario 6: Unlock button disabled when password empty
+    // MARK: - US2 Scenario 6: Empty password does nothing
 
-    /// Verifies the unlock button is disabled when the password field is empty.
+    /// There is no unlock button since the redesign; Return with an empty password must neither
+    /// unlock nor show an error.
     func testUnlockButtonDisabledWhenEmpty() {
-        let unlockBtn = app.buttons["unlock.unlock"]
-        XCTAssertTrue(unlockBtn.waitForExistence(timeout: 5))
-        XCTAssertFalse(unlockBtn.isEnabled, "Unlock should be disabled with empty password")
+        let passField = app.secureTextFields["unlock.password"]
+        XCTAssertTrue(passField.waitForExistence(timeout: 5))
+        passField.click()
+        passField.typeKey(.return, modifierFlags: [])
+
+        XCTAssertFalse(app.staticTexts["unlock.error"].waitForExistence(timeout: 2),
+                       "Return with an empty password should not show an error")
+        XCTAssertTrue(app.staticTexts["unlock.headerTitle"].exists, "Should stay on the unlock screen")
     }
 
     // MARK: - Biometric invalidation message
 
-    /// Verifies that a biometric invalidation error shows the correct message.
-    /// Requires `--mock-biometrics --biometric-invalidated` launch arguments.
-    func testBiometricInvalidation_showsErrorMessage() {
-        // This test requires a separate launch configuration with invalidated biometrics.
-        // When biometric unlock fails due to enrollment change, the error message
-        // "Your Touch ID settings have changed" should appear.
-        let error = app.staticTexts["unlock.error"]
-        if error.waitForExistence(timeout: 3) {
-            // Only assert if the error appeared (depends on launch args).
-            XCTAssertTrue(error.label.contains("settings have changed") || error.label.contains("master password"))
-        }
-    }
-
-    // MARK: - Helpers
-
-    private func envVar(_ name: String) -> String? {
-        let value = ProcessInfo.processInfo.environment[name]
-        return (value?.isEmpty == false) ? value : nil
+    /// When biometric unlock fails because the enrolled fingers changed, the unlock screen shows
+    /// "Your Touch ID settings have changed".
+    func testBiometricInvalidation_showsErrorMessage() throws {
+        try UITestPrerequisite.biometrics()
     }
 }
