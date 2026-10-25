@@ -71,7 +71,7 @@ the two:
 2. In the container, build and test as usual:
    ```bash
    scripts/build.sh                         # container checks, then build + unit tests on the Mac
-   scripts/container/host-build.sh test     # only the Xcode part: build, test, test-ui, test-all, release, clean
+   scripts/container/host-build.sh test     # only the Xcode part: build, test, test-ui, test-all, release, ci, clean
    ```
    The output streams back into the container, and the command exits with the build's exit code.
    Ctrl-C cancels the build on the Mac.

@@ -21,7 +21,7 @@ PRIZM_BRIDGE_DIR="${PRIZM_REPO_ROOT}/build/host-bridge"
 
 # The only commands the daemon runs. Keep in sync with the cases in scripts/host/xcode.sh.
 # The container must not be able to make the host run anything else.
-PRIZM_BRIDGE_COMMANDS="build test test-ui test-all release clean"
+PRIZM_BRIDGE_COMMANDS="build test test-ui test-all release ci clean"
 
 # Heartbeat age, in seconds, after which the client treats the daemon as not running.
 PRIZM_BRIDGE_STALE_AFTER=30

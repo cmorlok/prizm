@@ -3,7 +3,7 @@
 # host build daemon, and streams its output. Exits with the build's exit code.
 #
 #   scripts/container/host-build.sh test        # build + unit tests on the Mac
-#   scripts/container/host-build.sh build       # also: test-ui, test-all, release, clean
+#   scripts/container/host-build.sh build       # also: test-ui, test-all, release, ci, clean
 #
 # Needs scripts/host/build-daemon.sh running in a Mac terminal. Ctrl-C cancels the build.
 # Environment: PRIZM_BRIDGE_TIMEOUT (seconds, default 7200) limits how long it waits.

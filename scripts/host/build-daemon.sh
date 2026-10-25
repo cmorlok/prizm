@@ -6,7 +6,7 @@
 #   scripts/host/build-daemon.sh            # serve requests until Ctrl-C
 #
 # It runs only the commands of scripts/host/xcode.sh (build, test, test-ui, test-all, release,
-# clean), one at a time, in request order. Protocol: scripts/lib/build-bridge.sh.
+# ci, clean), one at a time, in request order. Protocol: scripts/lib/build-bridge.sh.
 # Testing hook: PRIZM_BRIDGE_RUNNER replaces scripts/host/xcode.sh, so the protocol can be
 # exercised without Xcode (also on Linux).
 set -uo pipefail

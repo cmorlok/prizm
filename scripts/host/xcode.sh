@@ -6,6 +6,7 @@
 #   scripts/host/xcode.sh test-ui      # UI journeys (PrizmUITests scheme; drives the real app)
 #   scripts/host/xcode.sh test-all     # test + test-ui
 #   scripts/host/xcode.sh release      # Release build signed with your local team (not notarized)
+#   scripts/host/xcode.sh ci           # what CI runs: project checks, unsigned build + tests
 #   scripts/host/xcode.sh clean
 #
 # Uses Prizm/LocalConfig.xcconfig for signing (DEVELOPMENT_TEAM; see DEVELOPMENT.md).
@@ -17,7 +18,7 @@ set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
-case "${1:-}" in ""|-h|--help) sed -n '2,13p' "${BASH_SOURCE[0]}"; exit 0 ;; esac
+case "${1:-}" in ""|-h|--help) sed -n '2,16p' "${BASH_SOURCE[0]}"; exit 0 ;; esac
 require_host "scripts/host/xcode.sh"
 command -v xcodebuild >/dev/null || die "xcodebuild not found. Install Xcode and run: sudo xcode-select -s /Applications/Xcode.app"
 
@@ -50,6 +51,38 @@ xcb() {
     -allowProvisioningUpdates "$@" | pretty
 }
 
+# Mirrors .github/workflows/ci.yml (keep in sync): the project checks, then an unsigned Debug build
+# and the unsigned unit tests with Address Sanitizer. Command-line settings clear your personal
+# DEVELOPMENT_TEAM and PRIZM_BUNDLE_IDENTIFIER, so the build sees the template defaults like CI.
+# Products go to build/DerivedData-ci, so your signed build products stay untouched.
+ci_run() {
+  local ci_derived="build/DerivedData-ci"
+  local unsigned=(CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+                  DEVELOPMENT_TEAM="" PRIZM_BUNDLE_IDENTIFIER="")
+  [[ -f "${local_config}" ]] || die "${local_config} is missing.
+  cp ${local_config}.template ${local_config}   (CI does the same)"
+
+  log "ci: no Team ID committed in the project file"
+  if grep -nE 'DEVELOPMENT_TEAM = "?[A-Za-z0-9]+"?;' "${project}/project.pbxproj"; then
+    die "DEVELOPMENT_TEAM is set in project.pbxproj. Set it in ${local_config} instead."
+  fi
+
+  log "ci: unsigned Debug build"
+  set -o pipefail
+  xcodebuild -project "${project}" -scheme Prizm -configuration Debug \
+    -derivedDataPath "${ci_derived}" "${unsigned[@]}" build | pretty
+
+  log "ci: the built app has a bundle identifier"
+  local plist="${ci_derived}/Build/Products/Debug/Prizm.app/Contents/Info.plist" id
+  id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${plist}" 2>/dev/null || true)"
+  [[ -n "${id}" ]] || die "The built app has no CFBundleIdentifier. Set PRODUCT_BUNDLE_IDENTIFIER for the Prizm target."
+  log "CFBundleIdentifier: ${id}"
+
+  log "ci: unsigned unit tests with Address Sanitizer"
+  xcodebuild test -project "${project}" -scheme Prizm -destination "platform=macOS" \
+    -enableAddressSanitizer YES -derivedDataPath "${ci_derived}" "${unsigned[@]}" | pretty
+}
+
 cmd="${1:-}"
 case "${cmd}" in
   build)    check_local_config; xcb Prizm Debug build ;;
@@ -60,6 +93,7 @@ case "${cmd}" in
             xcb PrizmUITests Debug test ;;
   release)  check_local_config; xcb Prizm Release build
             log "Built ${derived}/Build/Products/Release/Prizm.app (signed with your team, not notarized)" ;;
-  clean)    rm -rf "${derived}"; log "Removed ${derived}" ;;
+  ci)       ci_run ;;
+  clean)    rm -rf "${derived}" build/DerivedData-ci; log "Removed ${derived} and build/DerivedData-ci" ;;
   *) die "unknown command: ${cmd} (try --help)" ;;
 esac
