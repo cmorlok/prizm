@@ -136,27 +136,30 @@ struct VaultBrowserView: View {
                     itemListPane
                 }
                 .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
-                        Menu {
-                            ForEach(ItemType.allCases) { type in
-                                Button {
-                                    viewModel.createItemType = type
-                                } label: {
-                                    Label(type.displayName, systemImage: type.sfSymbol)
+                    // Not rendered in Trash, so its ⌘N shortcut is gone there too (spec list-column-header).
+                    if viewModel.sidebarSelection != .trash {
+                        ToolbarItem(placement: .primaryAction) {
+                            Menu {
+                                ForEach(ItemType.allCases) { type in
+                                    Button {
+                                        viewModel.createItemType = type
+                                    } label: {
+                                        Label(type.displayName, systemImage: type.sfSymbol)
+                                    }
                                 }
+                            } label: {
+                                Image(systemName: "plus")
                             }
-                        } label: {
-                            Image(systemName: "plus")
-                        }
-                        .help("New Item (⌘N)")
-                        .accessibilityLabel("New Item")
-                        .accessibilityIdentifier(AccessibilityID.Create.newItemButton)
-                        .menuIndicator(.visible)
-                        .background {
-                            Button("") { viewModel.createItemType = .login }
-                                .keyboardShortcut("n", modifiers: .command)
-                                .frame(width: 0, height: 0)
-                                .opacity(0)
+                            .help("New Item (⌘N)")
+                            .accessibilityLabel("New Item")
+                            .accessibilityIdentifier(AccessibilityID.Create.newItemButton)
+                            .menuIndicator(.visible)
+                            .background {
+                                Button("") { viewModel.createItemType = .login }
+                                    .keyboardShortcut("n", modifiers: .command)
+                                    .frame(width: 0, height: 0)
+                                    .opacity(0)
+                            }
                         }
                     }
                 }

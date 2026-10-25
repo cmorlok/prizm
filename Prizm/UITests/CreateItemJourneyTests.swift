@@ -44,11 +44,8 @@ final class CreateItemJourneyTests: PrizmUITestCase {
 
         let newItemButton = app.menuButtons["create.button.newItem"]
         XCTAssertTrue(app.element(Fixture.row(Fixture.trashed)).waitForExistence(timeout: 5), "Trash must be selected")
-        // Known app bug, against spec list-column-header: the + button stays in Trash.
-        XCTExpectFailure("Known app bug: the + button is rendered in Trash (change fix-ui-journey-findings)") {
-            XCTAssertFalse(newItemButton.waitForExistence(timeout: 2),
-                           "+ button must not exist in view hierarchy while Trash is selected")
-        }
+        XCTAssertFalse(newItemButton.waitForExistence(timeout: 2),
+                       "+ button must not exist in view hierarchy while Trash is selected")
     }
 
     // MARK: - Button reappears after leaving Trash
@@ -101,8 +98,15 @@ final class CreateItemJourneyTests: PrizmUITestCase {
     func testCmdN_isNoOp_inTrash() throws {
         app.selectSidebarRow("Trash")
 
-        // Pressing ⌘N here crashes Prizm (UI run 2026-10-25), against the spec.
-        try UITestPrerequisite.knownAppBug("⌘N in Trash crashes the app", fixedBy: "change fix-ui-journey-findings")
+        XCTAssertTrue(app.element(Fixture.row(Fixture.trashed)).waitForExistence(timeout: 5), "Trash must be selected")
+
+        // Before fix-ui-journey-findings, ⌘N here crashed Prizm.
+        app.typeKey("n", modifierFlags: .command)
+
+        XCTAssertFalse(app.buttons["edit.button.save"].waitForExistence(timeout: 2),
+                       "⌘N must not open a create sheet in Trash")
+        XCTAssertEqual(app.state, .runningForeground, "Prizm must still be running")
+        XCTAssertTrue(app.element(Fixture.row(Fixture.trashed)).exists, "Trash must stay selected")
     }
 
     /// The new Login sheet opened with ⌘N can be closed again without creating anything.
