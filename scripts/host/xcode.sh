@@ -10,7 +10,9 @@
 #
 # Uses Prizm/LocalConfig.xcconfig for signing (DEVELOPMENT_TEAM; see DEVELOPMENT.md).
 # Build products go to build/DerivedData (git-ignored). Output is piped through xcbeautify or
-# xcpretty when either is installed.
+# xcpretty when either is installed. -allowProvisioningUpdates lets automatic signing create
+# the development profile from the command line, as the Xcode GUI does (needs your Apple ID in
+# Xcode → Settings → Accounts).
 set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
@@ -44,7 +46,8 @@ xcb() {
   log "xcodebuild ${scheme} (${configuration}): $*"
   set -o pipefail
   xcodebuild -project "${project}" -scheme "${scheme}" -configuration "${configuration}" \
-    -destination "platform=macOS" -derivedDataPath "${derived}" "$@" | pretty
+    -destination "platform=macOS" -derivedDataPath "${derived}" \
+    -allowProvisioningUpdates "$@" | pretty
 }
 
 cmd="${1:-}"
