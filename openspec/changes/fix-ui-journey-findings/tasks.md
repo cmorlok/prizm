@@ -32,12 +32,21 @@ Estimates are ideal engineer-days. Write a failing test first (§IV). One commit
 ## 5. Sign Out shortcut (0.1 d)
 
 - [ ] 5.1 Remove the shortcut (design D5). UI tests cannot read a menu item's key equivalent, so check by hand: the Prizm menu shows "Sign Out…" without a shortcut.
-- [ ] 5.2 CHANGELOG.
+- [x] 5.2 CHANGELOG.
 
 ## 6. Verify (0.25 d)
 
-- [ ] 6.1 `PrizmTests` pass.
-- [ ] 6.2 `PrizmUITests` pass with no known-bug markers left from `fix-ui-test-target`.
-- [ ] 6.3 Code review of all five commits; security review of bug 1.
+- [x] 6.1 `PrizmTests` pass.
+- [x] 6.2 `PrizmUITests` pass with no known-bug markers left from `fix-ui-test-target`.
+- [x] 6.3 Code review of all five commits; security review of bug 1.
 - [ ] 6.4 By hand: drag an item to a folder and reorder sidebar sections (design, Risks); VoiceOver reads a revealed password.
-- [ ] 6.5 `openspec validate fix-ui-journey-findings --type change --strict`.
+- [x] 6.5 `openspec validate fix-ui-journey-findings --type change --strict`.
+
+## Results (2026-10-25, macOS 26, signed with a contributor team)
+
+- 6.1 `PrizmTests`: 564 passed. Each new guard was removed once to confirm its test fails without it.
+- 6.2 `PrizmUITests`: 88 tests, 67 passed, 21 skipped (8 simulated Touch ID, 7 test backend for
+  saving, 1 for downloads, 5 real account), 0 failed, no known-bug markers left.
+- 6.3 Two review rounds (design.md, Review). Each fix commit was built and unit-tested on its own.
+- Open, by hand: 5.1 (Sign Out shows no shortcut) and 6.4 (drag and drop, VoiceOver).
+

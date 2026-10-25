@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Changed**: "Sign Out…" no longer has a keyboard shortcut. ⌘⇧Q is macOS's own Log Out shortcut.
 - Fix the arrow keys in the sidebar and the item list: after clicking a row, ↑ and ↓ now move the
   selection.
 - Fix VoiceOver reading stale values: the dots of a masked password after Reveal, the previous
