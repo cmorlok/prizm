@@ -25,9 +25,9 @@ Estimates are ideal engineer-days. Write a failing test first (§IV). One commit
 
 ## 4. Arrow keys (0.25 d)
 
-- [ ] 4.1 Failing UI tests: the arrow-key markers removed; returning to the sidebar after a click in the item list.
-- [ ] 4.2 Implement design D4.
-- [ ] 4.3 CHANGELOG.
+- [x] 4.1 Failing UI tests: the arrow-key markers removed; returning to the sidebar after a click in the item list.
+- [x] 4.2 Implement design D4.
+- [x] 4.3 CHANGELOG.
 
 ## 5. Sign Out shortcut (0.1 d)
 
