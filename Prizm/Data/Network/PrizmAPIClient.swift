@@ -28,7 +28,8 @@ protocol PrizmAPIClientProtocol: Actor {
     ///   be read from a heap dump after the session ends (Constitution §III).
     func clearAccessToken()
 
-    /// POST `/accounts/prelogin` — returns KDF parameters for the given email.
+    /// POST `/identity/accounts/prelogin/password` (legacy servers: `/identity/accounts/prelogin`)
+    /// — returns KDF parameters for the given email.
     /// Used to derive the master key before posting credentials to `/connect/token`.
     ///
     /// No authentication required; sends only the email address.
@@ -208,7 +209,7 @@ protocol PrizmAPIClientProtocol: Actor {
 
 // MARK: - Wire Models
 
-/// Response from POST `/accounts/prelogin`.
+/// Response from POST `/identity/accounts/prelogin/password` (or the legacy `/identity/accounts/prelogin`).
 ///
 /// Contains the KDF parameters needed to derive the master key locally.
 /// `kdfMemory` and `kdfParallelism` are only present when `kdf == 1` (Argon2id).
@@ -415,10 +416,24 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
 
     // MARK: - preLogin
 
+    /// Fetches the account's KDF settings from `POST {base}/identity/accounts/prelogin/password`,
+    /// the route the official clients and the Bitwarden SDK use (Vaultwarden 1.36.0+, Bitwarden
+    /// server v2025.12.0+). Older servers answer 404 or 405 there; they get the same request on
+    /// `LegacyPreloginEndpoint`. Any other failure is thrown as is.
     func preLogin(email: String) async throws -> PreLoginResponse {
         guard let base = baseURL else { throw APIError.baseURLNotSet }
-        let url = base.appendingPathComponent("api/accounts/prelogin")
+        do {
+            return try await sendPreLogin(email: email, to: base.appendingPathComponent("identity/accounts/prelogin/password"),
+                                          expectedFailures: [404, 405])
+        } catch where LegacyPreloginEndpoint.isFallback(for: error) {
+            logger.info("preLogin: the server has no prelogin/password route; using the legacy prelogin route")
+            return try await sendPreLogin(email: email, to: base.appendingPathComponent(LegacyPreloginEndpoint.path))
+        }
+    }
 
+    /// - Parameter expectedFailures: statuses that are logged at `.info`, not `.error`: on the
+    ///   primary route, 404 and 405 only mean the server predates it.
+    private func sendPreLogin(email: String, to url: URL, expectedFailures: Set<Int> = []) async throws -> PreLoginResponse {
         if DebugConfig.isEnabled {
             logger.debug("[debug] preLogin → POST \(url.absoluteString, privacy: .public)")
         }
@@ -430,7 +445,7 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
         let body = try JSONEncoder().encode(["email": email])
         request.httpBody = body
 
-        let response: PreLoginResponse = try await perform(request: request)
+        let response: PreLoginResponse = try await perform(request: request, expectedFailures: expectedFailures)
         if DebugConfig.isEnabled {
             logger.debug("[debug] preLogin ← kdf=\(response.kdf, privacy: .public) iterations=\(response.kdfIterations, privacy: .public) memory=\(response.kdfMemory.map(String.init) ?? "nil", privacy: .public) parallelism=\(response.kdfParallelism.map(String.init) ?? "nil", privacy: .public)")
         }
@@ -1033,7 +1048,8 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
     /// Sends `request`, checks the HTTP status code, and decodes the JSON response body.
     ///
     /// - Throws: `APIError.httpError` on non-2xx status codes; `APIError.decodingFailed` on JSON errors.
-    private func perform<T: Decodable>(request: URLRequest) async throws -> T {
+    /// - Parameter expectedFailures: non-2xx statuses the caller handles; logged at `.info`.
+    private func perform<T: Decodable>(request: URLRequest, expectedFailures: Set<Int> = []) async throws -> T {
         let (data, response) = try await session.data(for: request)
 
         guard let http = response as? HTTPURLResponse else {
@@ -1048,7 +1064,11 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
         guard (200..<300).contains(http.statusCode) else {
             let body = String(data: data, encoding: .utf8) ?? ""
             // Scrub: do not log response body (may contain tokens or error details with PII).
-            logger.error("HTTP \(http.statusCode) for \(request.url?.path ?? "unknown")")
+            if expectedFailures.contains(http.statusCode) {
+                logger.info("HTTP \(http.statusCode) for \(request.url?.path ?? "unknown") (handled by the caller)")
+            } else {
+                logger.error("HTTP \(http.statusCode) for \(request.url?.path ?? "unknown")")
+            }
             if DebugConfig.isEnabled {
                 // Log only top-level JSON keys on error, never values.
                 if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {

@@ -188,6 +188,7 @@
 		FD30240C189E483CBB5E2E3B /* SidebarSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7044163F8FD4199B4925DD2 /* SidebarSelection.swift */; };
 		FE3145A0627D44CABC58ADCE /* MaskedFieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8197007AA7E412D96A52B14 /* MaskedFieldView.swift */; };
 		FF0FFCD0FDD849318EBBFF77 /* FaviconLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50445584AD814B6EBD971FDA /* FaviconLoader.swift */; };
+		960765B0AB097AD5A024293E /* LegacyPreloginEndpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFDBB17F6E2AA8597455939D /* LegacyPreloginEndpoint.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -391,6 +392,7 @@
 		FC4A8B1C2F9D34E100123456 /* LocalConfig.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = LocalConfig.xcconfig; sourceTree = SOURCE_ROOT; };
 		FEE3CE5476C5402F9BC3FF76 /* OrgKeyCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrgKeyCache.swift; sourceTree = "<group>"; };
 		FF00112233445566778899AA /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
+		BFDBB17F6E2AA8597455939D /* LegacyPreloginEndpoint.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LegacyPreloginEndpoint.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -566,6 +568,7 @@
 				E819470C1E544509A3DDD52F /* PrizmAPIClient.swift */,
 				50445584AD814B6EBD971FDA /* FaviconLoader.swift */,
 				4309FCF22F680BDF0031C9F4 /* Models */,
+				32C0A77201F592245A5C04C3 /* Legacy */,
 			);
 			path = Network;
 			sourceTree = "<group>";
@@ -902,6 +905,14 @@
 			path = UseCases;
 			sourceTree = "<group>";
 		};
+		32C0A77201F592245A5C04C3 /* Legacy */ = {
+			isa = PBXGroup;
+			children = (
+				BFDBB17F6E2AA8597455939D /* LegacyPreloginEndpoint.swift */,
+			);
+			path = Legacy;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -1212,6 +1223,7 @@
 				71DD2CFC91D400C2EBF1A434 /* AppVisibility.swift in Sources */,
 				EC92BFB78809ACD1946D76CB /* VerificationCodeCard.swift in Sources */,
 				0710CED60B2C5AE731226A72 /* VerificationCodesListView.swift in Sources */,
+				960765B0AB097AD5A024293E /* LegacyPreloginEndpoint.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
