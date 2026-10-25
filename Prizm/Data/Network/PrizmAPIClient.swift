@@ -493,6 +493,21 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
 
     // MARK: - identityToken
 
+    /// The token request parameters that may appear in a debug log: an allow-list, so a parameter
+    /// added later is not logged by default. Never logged: `username` (the email), `password` (the
+    /// server hash), `twoFactorToken`, `deviceIdentifier` (harden-key-lifecycle-and-logging, D4).
+    nonisolated static let loggableTokenParams: Set<String> = [
+        "grant_type", "scope", "client_id", "deviceType", "deviceName", "twoFactorProvider", "twoFactorRemember",
+    ]
+
+    /// The token request parameters as one debug-log line, with only the allow-listed ones.
+    nonisolated static func debugDescription(ofTokenParams params: [String: String]) -> String {
+        params.filter { loggableTokenParams.contains($0.key) }
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: " | ")
+    }
+
     func identityToken(
         email:             String,
         passwordHash:      String,
@@ -524,12 +539,7 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
         if twoFactorRemember                { params["twoFactorRemember"] = "true" }
 
         if DebugConfig.isEnabled {
-            // Log all params except password (server hash) — scrubbed for security.
-            let scrubbed = params.filter { $0.key != "password" }
-                .sorted(by: { $0.key < $1.key })
-                .map { "\($0.key)=\($0.value)" }
-                .joined(separator: " | ")
-            logger.debug("[debug] identityToken params (password scrubbed): \(scrubbed, privacy: .public)")
+            logger.debug("[debug] identityToken params: \(Self.debugDescription(ofTokenParams: params), privacy: .public)")
         }
 
         var request = baseRequest(url: url)
@@ -570,19 +580,19 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
                 if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     let keys = json.keys.sorted().joined(separator: ", ")
                     logger.debug("[debug] identityToken 400 body keys: [\(keys, privacy: .public)]")
-                    // error_description and message are server-generated error text, not secrets.
+                    // Server-generated text can echo the email or other input: private.
                     if let errorDesc = json["error_description"] as? String {
-                        logger.debug("[debug] identityToken 400 error_description: \(errorDesc, privacy: .public)")
+                        logger.debug("[debug] identityToken 400 error_description: \(errorDesc, privacy: .private)")
                     }
                     if let msg = json["message"] as? String {
-                        logger.debug("[debug] identityToken 400 message: \(msg, privacy: .public)")
+                        logger.debug("[debug] identityToken 400 message: \(msg, privacy: .private)")
                     }
                     if let errorModel = json["errorModel"] as? [String: Any],
                        let errMsg = errorModel["message"] as? String {
-                        logger.debug("[debug] identityToken 400 errorModel.message: \(errMsg, privacy: .public)")
+                        logger.debug("[debug] identityToken 400 errorModel.message: \(errMsg, privacy: .private)")
                     }
                 } else {
-                    logger.debug("[debug] identityToken 400 body (non-JSON): \(body.prefix(200), privacy: .public)")
+                    logger.debug("[debug] identityToken 400 body (non-JSON): \(body.prefix(200), privacy: .private)")
                 }
             }
             // Parse the error body to determine the specific error type.
@@ -633,8 +643,9 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
         } catch {
             logger.error("Decoding failed for TokenResponse: \(error.localizedDescription)")
             if DebugConfig.isEnabled {
-                let raw = String(data: data, encoding: .utf8) ?? "(binary)"
-                logger.debug("[debug] TokenResponse raw body keys: \((try? JSONSerialization.jsonObject(with: data) as? [String: Any])?.keys.sorted().joined(separator: ", ") ?? raw.prefix(300).description, privacy: .public)")
+                // Keys only: a truncated token response would start with the access token.
+                let keys = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?.keys.sorted().joined(separator: ", ")
+                logger.debug("[debug] TokenResponse body keys: \(keys ?? "(non-JSON, \(data.count) bytes)", privacy: .public)")
             }
             throw APIError.decodingFailed
         }
@@ -1150,13 +1161,13 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
         } catch {
             logger.error("Decoding failed for \(T.self): \(error.localizedDescription)")
             if DebugConfig.isEnabled {
-                logger.debug("[debug] decode error detail: \(error, privacy: .public)")
+                logger.debug("[debug] decode error detail: \(error, privacy: .private)")
                 if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     let keys = json.keys.sorted().joined(separator: ", ")
                     logger.debug("[debug] response body keys: [\(keys, privacy: .public)]")
                 } else {
                     let snippet = String(data: data.prefix(500), encoding: .utf8) ?? "(binary)"
-                    logger.debug("[debug] response body snippet: \(snippet, privacy: .public)")
+                    logger.debug("[debug] response body snippet: \(snippet, privacy: .private)")
                 }
             }
             throw APIError.decodingFailed

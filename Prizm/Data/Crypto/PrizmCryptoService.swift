@@ -223,6 +223,15 @@ protocol PrizmCryptoService: Actor {
 ///   platforms (CryptoKit is FIPS 140-3 certified since macOS 12).
 actor PrizmCryptoServiceImpl: PrizmCryptoService {
 
+    #if DEBUG
+    /// Test seam: the user-key scratch buffer of `decryptSymmetricKey` right after zeroing, and
+    /// whether it was zeroed in place (not in a copy).
+    private var scratchZeroedObserver: (@Sendable (Data, Bool) -> Void)?
+    func setScratchZeroedObserver(_ observer: (@Sendable (Data, Bool) -> Void)?) {
+        scratchZeroedObserver = observer
+    }
+    #endif
+
     private let logger = Logger(subsystem: "com.prizm", category: "PrizmCryptoService")
 
     // MARK: - State
@@ -418,12 +427,24 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
             throw PrizmCryptoServiceError.invalidEncUserKey
         }
 
-        let keyData: Data
+        var keyData: Data
         do {
             keyData = try enc.decrypt(keys: stretchedKeys)
         } catch {
             logger.error("Failed to decrypt encUserKey: \(error, privacy: .public)")
             throw PrizmCryptoServiceError.invalidEncUserKey
+        }
+        // The returned keys get their own buffers (`subdata` copies), so this 64-byte scratch
+        // buffer can be zeroed; slices would share it (harden-key-lifecycle-and-logging, D3).
+        defer {
+            #if DEBUG
+            let before = keyData.withUnsafeBytes { UInt(bitPattern: $0.baseAddress) }
+            #endif
+            keyData.resetBytes(in: keyData.indices)
+            #if DEBUG
+            let after = keyData.withUnsafeBytes { UInt(bitPattern: $0.baseAddress) }
+            scratchZeroedObserver?(keyData, before == after)
+            #endif
         }
 
         guard keyData.count == 64 else {
@@ -431,9 +452,10 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
             throw PrizmCryptoServiceError.invalidSymmetricKeyLength
         }
 
+        let start = keyData.startIndex
         return CryptoKeys(
-            encryptionKey: keyData[0..<32],
-            macKey:        keyData[32..<64]
+            encryptionKey: keyData.subdata(in: start..<(start + 32)),
+            macKey:        keyData.subdata(in: (start + 32)..<(start + 64))
         )
     }
 
@@ -527,9 +549,12 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
             throw PrizmCryptoServiceError.invalidSymmetricKeyLength
         }
 
+        // Own buffers for the two halves: slices would share one buffer, and zeroing the first
+        // half on lock would then zero a copy-on-write copy (harden-key-lifecycle-and-logging).
+        let start = orgKeyData.startIndex
         return CryptoKeys(
-            encryptionKey: orgKeyData[0..<32],
-            macKey:        orgKeyData[32..<64]
+            encryptionKey: orgKeyData.subdata(in: start..<(start + 32)),
+            macKey:        orgKeyData.subdata(in: (start + 32)..<(start + 64))
         )
     }
 
@@ -690,6 +715,8 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
             length:      32,
             type:        .id
         )
+        // The result's arrays hold the derived master key; zero them once the caller's copy is made.
+        defer { result.zero() }
         return result.hashData()
     }
 }

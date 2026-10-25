@@ -33,8 +33,9 @@ enum Config {
 /// Enable by adding `--debug-mode` to the Xcode scheme's Run → Arguments section,
 /// or by passing it on the command line when launching from Terminal.
 ///
-/// **Never enable in production builds** — debug output may contain sensitive field
-/// names, cipher counts, and HTTP response structure (though never key material or tokens).
+/// **Never enable in production builds** — debug output may contain field names, cipher counts
+/// and HTTP response structure. It never contains key material, tokens, the password hash, the
+/// email, two-factor codes or the device identifier; server-provided text is logged as private.
 enum DebugConfig {
     // Safe to access from any isolation domain — Bool is Sendable and this is a let constant.
     static nonisolated let isEnabled: Bool = CommandLine.arguments.contains("--debug-mode")

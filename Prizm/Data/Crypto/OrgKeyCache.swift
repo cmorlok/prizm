@@ -10,7 +10,8 @@ import os.log
 ///   (Constitution §III) to reduce the heap-residency window after lock.
 ///
 /// - Populated at sync time by `SyncRepositoryImpl` after unwrapping each org's RSA-encrypted
-///   symmetric key. Cleared alongside `VaultKeyCache` on vault lock and sign-out.
+///   symmetric key, and replaced in one step on every sync (`replaceAll`). Zeroed and cleared
+///   by `AuthRepositoryImpl.lockVault()`, the teardown for lock and sign-out.
 ///   Reference: Bitwarden Security Whitepaper §4 — "Organization Key Wrapping".
 ///
 /// - Thread safety: declared as `actor` because it is written from the sync path
@@ -49,11 +50,11 @@ actor OrgKeyCache {
 
     /// Zeros all org key material and clears the cache.
     ///
-    /// Called on vault lock and sign-out alongside `VaultKeyCache.clear()`.
+    /// Called by `AuthRepositoryImpl.lockVault()` (lock and sign-out) alongside `VaultKeyCache.clear()`.
     /// Zeroing before clearing reduces the window during which key bytes remain on the
     /// heap after the cache is discarded (Constitution §III).
     func clear() {
-        Self.zero(&cache)
+        zero(&cache)
         cache.removeAll()
         logger.info("OrgKeyCache cleared — key material zeroed")
     }
@@ -67,22 +68,53 @@ actor OrgKeyCache {
     func replaceAll(with newKeys: [String: CryptoKeys]) {
         var replaced = cache
         cache = newKeys
-        Self.zero(&replaced)
+        zero(&replaced)
         logger.info("OrgKeyCache replaced: \(newKeys.count, privacy: .public) org key(s)")
     }
 
+    #if DEBUG
+    /// A key as it was right after zeroing, and whether both halves were zeroed in place.
+    struct ZeroedOrgKey: Sendable {
+        let encryptionKey: Data
+        let macKey: Data
+        let inPlace: Bool
+    }
+    /// Test seam: called for each org key after it is zeroed.
+    private var zeroedObserver: (@Sendable (ZeroedOrgKey) -> Void)?
+    func setZeroedObserver(_ observer: (@Sendable (ZeroedOrgKey) -> Void)?) {
+        zeroedObserver = observer
+    }
+    #endif
+
     /// Zeroes the key bytes in `keys` in place.
-    private static func zero(_ keys: inout [String: CryptoKeys]) {
+    private func zero(_ keys: inout [String: CryptoKeys]) {
         // Data slices retain their original indices (the RSA-unwrapped MAC key
         // starts at 32). A zero-based range can overwrite memory outside the slice.
         // Capture ranges before mutation to avoid overlapping dictionary accesses.
         // CoW means outstanding snapshots retain their own buffers (see SECURITY.md).
-        for key in keys.keys {
+        // Iterate over a copy of the ids: a live `keys.keys` view holds the dictionary's storage,
+        // so the first write would copy the dictionary and its key buffers and zero only the copy.
+        for key in Array(keys.keys) {
             if let encRange = keys[key]?.encryptionKey.indices,
                let macRange = keys[key]?.macKey.indices {
+                #if DEBUG
+                let before = keys[key].map(Self.addresses)
+                #endif
                 keys[key]?.encryptionKey.resetBytes(in: encRange)
                 keys[key]?.macKey.resetBytes(in: macRange)
+                #if DEBUG
+                if let zeroed = keys[key] {
+                    zeroedObserver?(ZeroedOrgKey(encryptionKey: zeroed.encryptionKey, macKey: zeroed.macKey,
+                                                 inPlace: before.map { $0 == Self.addresses(zeroed) } ?? false))
+                }
+                #endif
             }
         }
     }
+
+    #if DEBUG
+    private static func addresses(_ keys: CryptoKeys) -> [UInt] {
+        [keys.encryptionKey, keys.macKey].map { data in data.withUnsafeBytes { UInt(bitPattern: $0.baseAddress) } }
+    }
+    #endif
 }

@@ -79,12 +79,16 @@ calls `lockVault()`, so sign-out and "sign in with a different account" are cove
 **Rejected:** add `orgKeyCache.clear()` to `PrizmApp.signOut()`. It fixes C-13 but leaves three
 call sites that must stay in sync, which is how the bug arose.
 
-### D2. Sync clears org keys first
+### D2. Sync replaces org keys (reconciled with `fix-org-key-required-on-write`)
 
-`await orgKeyCache.clear()` moves before the `if`. If the response has no orgs, or the private key
-does not decrypt, the cache is empty afterwards and org items are excluded, as in official
-clients. Snapshots taken by an in-flight mapping keep their own copy until they finish (existing
-behaviour, documented in SECURITY.md).
+That change already swaps the org keys in one step (`OrgKeyCache.replaceAll`) and replaces them with
+an empty map when the response has no organizations or no private key. Clearing at the start of the
+sync, as first planned here, would reopen the empty window it closed, so it is not done.
+
+This change adds the remaining case: when the org step fails (the private key does not decrypt),
+the sync still completes without org items, so the cache is replaced with an empty map too. Only a
+sync that fails as a whole keeps the previous keys, together with the previous items. Snapshots
+taken by an in-flight mapping keep their own copy until they finish (documented in SECURITY.md).
 
 ### D3. Zero what Prizm owns, on every path
 
@@ -133,9 +137,8 @@ output itself cannot be captured in XCTest.
 
 ## Risks / Trade-offs
 
-- **[Low] Clearing org keys at sync start** briefly leaves no org keys if the sync then fails; org
-  items are hidden until the next good sync. → Same as official clients; the sync status already
-  shows the failure.
+- **[Low] Org keys after a failed org step** are dropped; org items stay hidden until the next good
+  sync. → Same as official clients; the sync status already shows the failure.
 - **[Low] Zeroing a shared buffer** zeroes a live key by mistake. → D3 copies first; tests check
   that the vault still decrypts after login and unlock.
 - **[Low] Editing the vendored Argon2Swift.** → A two-line change with a note and a test that
