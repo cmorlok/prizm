@@ -10,9 +10,17 @@
 //   3. The Team ID is the 10-character code in parentheses, e.g. AB12CD34EF
 //   Or: developer.apple.com → Account → Membership → Team ID
 //
-// A free Apple ID (Personal Team) works fine for local development.
-// You do NOT need a paid developer account to build and run locally.
+// A free Apple ID (Personal Team) works for local development if you also set your own
+// PRIZM_BUNDLE_IDENTIFIER (below). You do NOT need a paid developer account to build and run
+// locally.
 //
 // LocalConfig.xcconfig is git-ignored — your Team ID never touches the repo.
 
 DEVELOPMENT_TEAM =
+
+// Bundle identifier (optional). The default, de.b0x42.Prizm, is registered to the maintainer's
+// team, and Apple allows each identifier in only one team. If you sign with any other team,
+// uncomment this and use an identifier you own, for example a reverse domain name of yours.
+// Leave it commented out for unsigned builds (CI, releases), which use the default.
+//
+// PRIZM_BUNDLE_IDENTIFIER = com.example.Prizm

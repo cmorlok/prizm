@@ -40,6 +40,14 @@ bundle identifier then, which is why both regressions went unnoticed.
 | Same, with `-allowProvisioningUpdates` | `The app identifier "de.b0x42.Prizm" cannot be registered to your development team because it is not available.` |
 | `$(PRIZM_BUNDLE_IDENTIFIER:default=de.b0x42.Prizm)`, variable unset | Resolves to `de.b0x42.Prizm` (same error as above), so the default syntax works |
 
+**Released v1.5.0, checked on 2026-10-25** (installed from the release DMG on a Mac that never had
+another release; all other Prizm preferences removed first):
+- `plutil -p /Applications/Prizm.app/Contents/Info.plist` lists no `CFBundleIdentifier`.
+- After one launch and quit, the only new preferences are the defaults domain `Prizm`
+  (`~/Library/Preferences/Prizm.plist`). No sandbox container is created (unsigned build).
+- v1.0.0 to v1.3.0 had `de.b0x42.Prizm` (`c95e172`), so users who started on those still have
+  their older values in `de.b0x42.Prizm`.
+
 ## Goals / Non-Goals
 
 **Goals**
@@ -81,11 +89,16 @@ base configuration, as `DEVELOPMENT.md` and the template already describe. The m
 ### D3. CI guards
 
 In `.github/workflows/ci.yml`:
-1. **After the unsigned build:** read `CFBundleIdentifier` from the built
-   `Prizm.app/Contents/Info.plist` with `PlistBuddy`, and fail if it is empty or missing. This
-   catches issue 1, which only signed builds detect today.
-2. **Before building:** fail if `project.pbxproj` contains `DEVELOPMENT_TEAM = <value>;` with a
-   non-empty value. This catches issue 2, and enforces "Team ID excluded from repo" mechanically.
+1. **After the unsigned build:** fail with its own message if the built
+   `Prizm.app/Contents/Info.plist` does not exist. Then read `CFBundleIdentifier` with `PlistBuddy`. Fail if it is empty or missing, which
+   catches issue 1 (only signed builds detect it today). Also fail if it is not exactly
+   `de.b0x42.Prizm`: CI builds with the unchanged template, so any other value means a typo in
+   the default or a personal identifier committed to the template. A release with such an
+   identifier would read its settings from another domain (see D4).
+2. **Before building:** fail if `project.pbxproj` sets a non-empty team: `DEVELOPMENT_TEAM =
+   <value>;`, the conditional form `"DEVELOPMENT_TEAM[sdk=…]" = <value>;`, or
+   `DevelopmentTeam = <value>;` under TargetAttributes (the forms Xcode writes). This catches
+   issue 2, and enforces "Team ID excluded from repo" mechanically.
 
 The same `CFBundleIdentifier` property is also checked by a unit test (task 2.1), so a local test
 run catches it too.
@@ -93,15 +106,33 @@ run catches it too.
 ### D4. No migration of v1.4.0–v1.5.0 settings
 
 After the fix, `UserDefaults` is read from `de.b0x42.Prizm` again, the domain of v1.0.0 to v1.3.0.
-Settings written by v1.4.0 to v1.5.0 stay where those builds put them. Task 1.1 confirms where that
-is.
+v1.4.0 to v1.5.0 wrote to the domain `Prizm` (Context), which the fixed app does not read.
 
-The impact is small and errs on the safe side:
-- "Unlock with Touch ID" shows as off until the user enables it again.
-- "Last synced" is empty until the next sync.
+What users of v1.4.0 to v1.5.0 lose on updating:
+- "Unlock with Touch ID" (`biometricUnlockEnabled`) is off until they enable it again.
+- The Touch ID enrollment offer (`biometricEnrollmentPromptShown`) may appear once more.
+- Password generator options (`PasswordGeneratorConfig`, `Domain/Utilities/PasswordGeneratorConfig.swift:48-62`)
+  are back to their defaults.
+- "Last synced" (`SyncTimestampRepositoryImpl`) is empty until the next sync.
 
-Migrating would mean reading another app's preferences domain, which a sandboxed signed build
-can't do. The CHANGELOG states the impact instead.
+Vault data and credentials are in the keychain and are not affected.
+
+**The Touch ID keychain item.** The biometric vault-key item written by v1.4.0 to v1.5.0
+(`KeychainKey.biometricVaultKey`) survives the update while the switch shows "off". It is replaced
+when the user enables Touch ID again (`enableBiometricUnlock`) and deleted on sign-out
+(`signOut` calls `disableBiometricUnlock`, `Data/Repositories/AuthRepositoryImpl.swift:384-396`).
+It stays protected by Touch ID (`.biometryCurrentSet`) until then.
+
+Users who started on v1.0.0 to v1.3.0 get their older values from `de.b0x42.Prizm` back. A stale
+"Touch ID on" without a matching keychain item is already handled: unlock finds no item, clears
+the flag and offers re-enrollment after the next password unlock
+(`Data/Repositories/AuthRepositoryImpl.swift:521-531`).
+
+**Rejected alternative:** a one-time migration of the known keys from `Prizm` to
+`de.b0x42.Prizm` at launch. It is feasible (releases are unsigned and not sandboxed, so they can
+read the old domain) and would also keep the Touch ID switch consistent with the surviving item.
+Decided on 2026-10-25 to keep this fix free of migration code and state the impact in the
+CHANGELOG instead.
 
 ### D5. Command-line builds need `-allowProvisioningUpdates`
 
@@ -117,7 +148,7 @@ implicitly. It requires the developer's Apple ID in Xcode → Settings → Accou
 - **[Low] `:default=` is an Xcode build-setting operator.** Verified with the current Xcode
   (2026-10-25). It has existed for several Xcode versions, but it isn't documented in the build
   settings reference.
-- **[Low] Users of v1.4.0–v1.5.0 see two settings reset** (D4). Stated in the CHANGELOG.
+- **[Low] Users of v1.4.0–v1.5.0 see two settings reset** (D4, confirmed). Stated in the CHANGELOG.
 
 ## Open Questions
 

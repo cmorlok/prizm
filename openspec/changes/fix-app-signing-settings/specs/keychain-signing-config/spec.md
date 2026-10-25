@@ -30,12 +30,17 @@ The app target SHALL NOT set `DEVELOPMENT_TEAM` in the project file. The team SH
 - **THEN** it SHALL be signed with that team, not with any team from the project file
 
 ### Requirement: CI rejects broken signing settings
-CI SHALL fail when the built app has no bundle identifier, or when the project file contains a non-empty `DEVELOPMENT_TEAM`.
+CI SHALL fail when the built app has no bundle identifier or a bundle identifier other than `de.b0x42.Prizm`, or when the project file contains a non-empty `DEVELOPMENT_TEAM`.
 
 #### Scenario: Bundle identifier removed again
 - **GIVEN** a change that removes the app target's bundle identifier
 - **WHEN** CI runs its unsigned build
 - **THEN** the run SHALL fail with a message naming the missing `CFBundleIdentifier`
+
+#### Scenario: Wrong default identifier
+- **GIVEN** a change that alters the default identifier, or commits a personal `PRIZM_BUNDLE_IDENTIFIER` to the template
+- **WHEN** CI runs its unsigned build with the unchanged template
+- **THEN** the run SHALL fail with a message naming the actual and the expected identifier
 
 #### Scenario: Team ID committed
 - **GIVEN** a change that adds `DEVELOPMENT_TEAM = AB12CD34EF;` to the project file

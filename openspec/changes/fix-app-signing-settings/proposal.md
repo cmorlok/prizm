@@ -16,8 +16,9 @@ caught by CI, because CI and the release workflow build with `CODE_SIGNING_ALLOW
   identifier."
 - Unsigned builds don't check this. **v1.4.0 to v1.5.0 were therefore built without a bundle
   identifier.** `Info.plist` is generated (`GENERATE_INFOPLIST_FILE = YES`), and the committed
-  `Prizm/Prizm/Info.plist` is empty, so `CFBundleIdentifier` is empty or missing in those
-  releases (to be confirmed on a released build, task 1.1).
+  `Prizm/Prizm/Info.plist` is empty. Confirmed on an installed v1.5.0: its `Info.plist` has no
+  `CFBundleIdentifier`, and it stores its settings in the defaults domain `Prizm`
+  (`~/Library/Preferences/Prizm.plist`) instead of `de.b0x42.Prizm`.
 
 **2. The maintainer's Team ID is hard-coded in the app target.**
 - `c95e172` (v1-release-prep, 2026-04-03, in every release since v1.0.0) put
@@ -73,11 +74,10 @@ _None._
 
 - Signing or notarizing releases. Releases stay unsigned as today; signing is the maintainer's
   decision.
-- Migrating settings written by v1.4.0 to v1.5.0. See design.md, D4: the affected settings are
-  small and safe to lose, and the old storage location is not confirmed yet.
-- The test targets' identifiers (`de.b0x42.de.PrizmTests`, `de.b0x42.de.PrizmUITests`). They are
-  not registered as App IDs for unit tests. Whether UI tests need an override is checked in task
-  4.3, and changed only if they do.
+- Migrating settings written by v1.4.0 to v1.5.0 from the `Prizm` domain. Decided against to keep
+  the fix free of migration code; the CHANGELOG states the impact (design.md, D4).
+- The test targets' identifiers (`de.b0x42.de.PrizmTests`, `de.b0x42.de.PrizmUITests`). Unit and
+  UI tests run with a non-maintainer team without an override (tasks 4.1, 4.3).
 - The keychain access group. It is `$(AppIdentifierPrefix)com.prizm`, independent of the bundle
   identifier, so stored credentials are not affected.
 
@@ -92,9 +92,10 @@ None. It blocks every change that needs a signed local build or test run.
 - **CI:** `.github/workflows/ci.yml` gets two guard steps.
 - **Tests:** one unit test that the app bundle has a non-empty bundle identifier.
 - **Users of v1.4.0 to v1.5.0:** after the update, `UserDefaults` is read from the
-  `de.b0x42.Prizm` domain again. "Unlock with Touch ID" may show as off until re-enabled, and the
-  "Last synced" time is empty until the next sync. Vault data and credentials are in the keychain
-  and are not affected. Covered in the CHANGELOG entry.
+  `de.b0x42.Prizm` domain again, so the values 1.4.0 to 1.5.0 wrote to `Prizm` are not seen:
+  "Unlock with Touch ID", the Touch ID enrollment offer, the password generator options and the
+  "Last synced" time (design.md, D4). Vault data and credentials are in the keychain and are not
+  affected. Covered in the CHANGELOG entry.
 - **Security review:** not required. No code path changes; signing settings and CI only.
 
 ## Estimate
