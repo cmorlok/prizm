@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: Org items are never encrypted with the personal vault key
-When the user creates or updates an item that has an `organizationId`, the system SHALL encrypt it with that organization's key. If that key is not available, the system SHALL NOT send any request, SHALL keep the sheet open with the user's input, and SHALL show "This item's organization can't be accessed right now. Sync and try again."
+When the user creates or updates an item that has an `organizationId`, the system SHALL encrypt it with that organization's key. If that key is not available, the system SHALL NOT send any request, SHALL keep the sheet open with the user's input, and SHALL show "This item's organization can't be accessed right now. Lock and unlock Prizm, then try again."
 
 #### Scenario: Update with the org key missing
 - **GIVEN** an org item whose organization key is not in the key cache

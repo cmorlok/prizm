@@ -243,7 +243,8 @@ actor VaultRepositoryImpl: VaultRepository {
     /// - Data flow (re-encryption boundary):
     ///   1. Obtain current symmetric keys from `PrizmCryptoService` — throws immediately
     ///      if the vault is locked, preventing writes from a locked state.
-    ///   2. `CipherMapper.toRawCipher` encrypts every sensitive field with the vault key.
+    ///   2. `CipherMapper.toRawCipher` encrypts every sensitive field with the vault key, or with
+    ///      the organization key for an org item (`encryptionKeys(for:)`, which never falls back).
     ///      No plaintext value crosses this call boundary in the outbound direction.
     ///   3. The encrypted `RawCipher` is sent via `PUT /api/ciphers/{id}`.
     ///   4. The server response is decoded and re-mapped to a `VaultItem` — we use the
@@ -272,12 +273,7 @@ actor VaultRepositoryImpl: VaultRepository {
         }
 
         let orgKeysSnapshot = await orgKeyCache.snapshot()
-        let encryptionKeys: CryptoKeys
-        if let orgId = draft.organizationId, let orgKey = orgKeysSnapshot[orgId] {
-            encryptionKeys = orgKey
-        } else {
-            encryptionKeys = vaultKeys
-        }
+        let encryptionKeys = try encryptionKeys(for: draft, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot)
 
         let rawCipher = try mapper.toRawCipher(draft, encryptedWith: encryptionKeys)
 
@@ -323,12 +319,7 @@ actor VaultRepositoryImpl: VaultRepository {
         }
 
         let orgKeysSnapshot = await orgKeyCache.snapshot()
-        let encryptionKeys: CryptoKeys
-        if let orgId = draft.organizationId, let orgKey = orgKeysSnapshot[orgId] {
-            encryptionKeys = orgKey
-        } else {
-            encryptionKeys = vaultKeys
-        }
+        let encryptionKeys = try encryptionKeys(for: draft, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot)
 
         let rawCipher = try mapper.toRawCipher(draft, encryptedWith: encryptionKeys)
 
@@ -567,6 +558,25 @@ actor VaultRepositoryImpl: VaultRepository {
     }
 
     // MARK: - Private helpers
+
+    /// The key an item must be encrypted with: its organization's key for an org item, the vault
+    /// key otherwise.
+    ///
+    /// Security goal: an org item must only ever be encrypted with its organization key.
+    /// Encrypting it with the user's key makes it unreadable for every other member and for this
+    /// user's next sync, while the server stores it as is. Mirrors the SDK's
+    /// `Cipher::key_identifier` (`bitwarden-vault/src/cipher/cipher.rs`), which has no fallback.
+    /// Intentionally NOT done: falling back to the vault key when the org key is missing (before
+    /// fix-org-key-required-on-write it did, for example while a sync rebuilt the key cache).
+    private func encryptionKeys(for draft: DraftVaultItem, vaultKeys: CryptoKeys,
+                                orgKeys: [String: CryptoKeys]) throws -> CryptoKeys {
+        guard let orgId = draft.organizationId else { return vaultKeys }
+        guard let orgKey = orgKeys[orgId] else {
+            logger.error("No key for org \(orgId.prefix(8), privacy: .public)…; save refused")
+            throw VaultError.organizationKeyUnavailable
+        }
+        return orgKey
+    }
 
     private func sorted(_ input: [VaultItem]) -> [VaultItem] {
         input.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }

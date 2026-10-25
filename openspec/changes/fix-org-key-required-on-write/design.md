@@ -22,8 +22,8 @@ encrypted with the wrong key as is. (Vaultwarden 1.37.4 checks `encryptedByKeyId
 - `SyncRepositoryImpl.swift:148-160`: `await orgKeyCache.clear()`, then one `store` per org. A
   failed unwrap is logged at `.fault` and skipped.
 - `OrgKeyCache` (`Prizm/Data/Crypto/OrgKeyCache.swift`) is an actor with `store`, `snapshot` and
-  `clear`. `clear()` zeroes the key bytes before removing them. It is also cleared on lock and
-  sign-out (`Prizm/App/PrizmApp.swift:485`).
+  `clear`. `clear()` zeroes the key bytes before removing them. It was cleared on lock only, not on sign-out
+  (`Prizm/App/PrizmApp.swift`); this change adds the sign-out clear.
 - Writes take a snapshot once at the start (`VaultRepositoryImpl.swift:274`, `:325`), so a save
   that starts before a swap keeps using the old, still valid key.
 
@@ -80,7 +80,7 @@ repository to sync state, and a failed sync still leaves an empty cache.
 ### D3. Error message
 
 `VaultError.organizationKeyUnavailable` → "This item's organization can't be accessed right now.
-Sync and try again." The edit and create sheets show it inline, keep the user's input, and announce
+Lock and unlock Prizm, then try again." (Prizm syncs on unlock; it has no separate sync command.) The edit and create sheets show it inline, keep the user's input, and announce
 it to VoiceOver. The log entry is `.error` with the org id prefix (8 chars), like the existing
 sync logs. No key material is logged.
 
@@ -97,4 +97,6 @@ sync logs. No key material is logged.
 1. A failed org key unwrap is only logged at `.fault` (`SyncRepositoryImpl.swift:158`). Its items
    and collections are skipped, so the UI cannot reach a save for that org, and D1 blocks it anyway.
    Should the sync status also tell the user that an organization could not be unlocked? Left to the
-   sync-status work.
+   sync-status work. Decided 2026-10-26 (Christian): such an organization is no longer listed
+   (`SyncRepositoryImpl` skips orgs without a key), so the create sheet doesn't offer it as a
+   target whose save always fails.

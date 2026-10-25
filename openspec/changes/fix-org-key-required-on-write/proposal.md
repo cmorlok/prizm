@@ -39,7 +39,7 @@ commented "Fresh slate for this sync" and does not consider concurrent saves.
 
 - **No fallback.** If an item has an `organizationId` and its org key is not available, create
   and update throw `VaultError.organizationKeyUnavailable` before anything is encrypted or sent.
-  The user sees "This item's organization can't be accessed right now. Sync and try again." and the
+  The user sees "This item's organization can't be accessed right now. Lock and unlock Prizm, then try again." and the
   sheet stays open with their input.
 - **No empty window during sync.** Sync builds the new org-key map on the side and swaps it into
   `OrgKeyCache` in one actor call. A save sees either the old keys or the new ones, never none. If
