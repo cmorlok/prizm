@@ -19,11 +19,12 @@ final class AppContainer: ObservableObject {
     let vaultStore:    VaultRepositoryImpl
     let faviconLoader: FaviconLoader
     /// In-memory cache mapping cipher ID → 64-byte effective key.
-    /// Populated at sync time by `SyncRepositoryImpl`; cleared on vault lock alongside
-    /// `vaultStore` so key material does not outlive the vault session (Constitution §III).
+    /// Populated at sync time by `SyncRepositoryImpl`; cleared by `AuthRepositoryImpl.lockVault()`
+    /// on lock and sign-out so key material does not outlive the vault session (Constitution §III).
     let vaultKeyCache: VaultKeyCache
     /// In-memory cache mapping organization ID → unwrapped 64-byte symmetric key.
-    /// Populated at sync time; cleared on vault lock alongside `vaultKeyCache` (Constitution §III).
+    /// Replaced at sync time; cleared by `AuthRepositoryImpl.lockVault()` on lock and sign-out
+    /// (Constitution §III).
     let orgKeyCache: OrgKeyCache
 
     // MARK: - Domain repositories (Data implementations)
@@ -98,7 +99,9 @@ final class AppContainer: ObservableObject {
             apiClient: api,
             crypto:    crypto,
             keychain:  keychain,
-            biometricKeychain: biometricKeychain
+            biometricKeychain: biometricKeychain,
+            vaultKeyCache: keyCache,
+            orgKeyCache:   orgKeyCache
         )
         let sync = SyncRepositoryImpl(
             apiClient:       api,

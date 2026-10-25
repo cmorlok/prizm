@@ -222,10 +222,6 @@ protocol RootViewModelDependencies: AnyObject {
     var vaultRepo: any VaultRepository { get }
     /// Generates the current TOTP code for the "Copy Code" command.
     var generateTOTPCode: any GenerateTOTPCodeUseCase { get }
-    /// The per-cipher attachment key cache. Cleared on vault lock alongside the vault store.
-    var vaultKeyCache: VaultKeyCache { get }
-    /// The per-organisation symmetric key cache. Cleared on vault lock alongside the vault store.
-    var orgKeyCache: OrgKeyCache { get }
     func makeLoginViewModel() -> LoginViewModel
     func makeUnlockViewModel(account: Account) -> UnlockViewModel
     func makeVaultBrowserViewModel() -> VaultBrowserViewModel
@@ -474,10 +470,8 @@ final class RootViewModel: ObservableObject {
             } catch {
                 logger.error("Sign-out error: \(error.localizedDescription, privacy: .public)")
             }
+            // authRepo.signOut() zeroes and clears every key cache through its lockVault().
             await container.vaultRepo.clearVault()
-            await container.vaultKeyCache.clear()
-            // Org keys must not outlive the session either (Constitution §III); lock clears them too.
-            await container.orgKeyCache.clear()
             // The next account must not start in a folder or collection of this one.
             vaultBrowserVM.sidebarSelection = .allItems
             unlockVM = nil
@@ -495,12 +489,10 @@ final class RootViewModel: ObservableObject {
         // Drop the vault browser's decrypted copies right away, not after the awaits below.
         vaultBrowserVM.clearSession()
         Task {
+            // Zeroes and clears every key cache (Constitution §III): one teardown path in the
+            // Data layer for lock and sign-out (harden-key-lifecycle-and-logging, D1).
             await container.authRepo.lockVault()
             await container.vaultRepo.clearVault()
-            // Clear all key caches in the same lock path as the vault store.
-            // Key material must not outlive the vault session (Constitution §III).
-            await container.vaultKeyCache.clear()
-            await container.orgKeyCache.clear()
             if let account = container.authRepo.storedAccount() {
                 unlockVM = container.makeUnlockViewModel(account: account)
                 screen = .unlock

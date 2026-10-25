@@ -28,20 +28,26 @@ actor MockPrizmCryptoService: PrizmCryptoService {
 
     // MARK: - PrizmCryptoService
 
+    // Fresh buffers on every call, as the real service returns: a shared buffer would make every
+    // caller's in-place zeroing a copy-on-write copy instead (harden-key-lifecycle-and-logging).
     func makeMasterKey(password: Data, email: String, kdf: KdfParams) async throws -> Data {
-        stubbedMasterKey
+        Data(Array(stubbedMasterKey))
     }
 
     func stretchKey(masterKey: Data) async throws -> CryptoKeys {
-        stubbedStretchedKeys
+        CryptoKeys(encryptionKey: Data(Array(stubbedStretchedKeys.encryptionKey)),
+                   macKey: Data(Array(stubbedStretchedKeys.macKey)))
     }
 
     func makeServerHash(masterKey: Data, password: Data) async throws -> String {
         stubbedServerHash
     }
 
+    nonisolated(unsafe) var decryptSymmetricKeyError: Error?
+
     func decryptSymmetricKey(encUserKey: String, stretchedKeys: CryptoKeys) async throws -> CryptoKeys {
-        stubbedVaultKeys
+        if let decryptSymmetricKeyError { throw decryptSymmetricKeyError }
+        return stubbedVaultKeys
     }
 
     func decryptList(ciphers: [RawCipher]) async throws -> (items: [VaultItem], failedCount: Int, cipherKeys: [String: Data]) {

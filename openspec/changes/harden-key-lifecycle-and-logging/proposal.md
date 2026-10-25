@@ -53,8 +53,8 @@ it breaks Constitution §III and the project's public security claims.
 - **One teardown path.** `AuthRepositoryImpl.lockVault()` zeroes and clears the vault key, the
   per-item key cache and the org key cache. Lock, sign-out and "sign in with a different account"
   all go through it.
-- **Sync replaces org keys.** `OrgKeyCache` is cleared at the start of every sync's org-key step,
-  whether or not the response has orgs or the private key decrypts.
+- **Sync replaces org keys.** Built on the atomic swap of `fix-org-key-required-on-write`: when
+  the org step fails (private key not decryptable), the keys are replaced with an empty map too.
 - **Transient keys are zeroed.** Master key, stretched keys, the decrypted user-key buffer and the
   pending-2FA keys are zeroed as soon as they are no longer needed, on every path (success, error,
   2FA, cancel, sign-out). The vendored Argon2 wrapper zeroes its buffers before freeing them.

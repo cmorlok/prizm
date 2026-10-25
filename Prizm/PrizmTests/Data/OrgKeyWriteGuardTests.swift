@@ -199,16 +199,26 @@ final class SyncOrgKeySwapTests: XCTestCase {
 
     // MARK: - 2.3 A failure before the swap keeps the previous keys
 
-    /// Regression guard: the old code also kept the keys here, because it cleared them only after
-    /// decrypting the private key.
-    func testSync_privateKeyFailure_keepsThePreviousKeys() async throws {
-        mockAPI.syncResponse = syncResponse(organizations: [RawOrganization(id: "org-1", name: "One", key: "2.k1", type: 2)])
-        mockCrypto.decryptRSAPrivateKeyError = PrizmCryptoServiceError.vaultLocked
+    /// A sync that fails as a whole keeps the previous keys, together with the previous items.
+    func testSync_failingSync_keepsThePreviousKeys() async throws {
+        mockAPI.syncShouldThrow = URLError(.notConnectedToInternet)
 
         _ = try? await sut.sync(progress: { _ in })
 
         let keys = await orgKeyCache.snapshot()
         XCTAssertEqual(keys["org-1"]?.encryptionKey, previousKey.encryptionKey)
+    }
+
+    /// When the org step fails, the sync still completes without org items, so the old org keys
+    /// have no use and go (harden-key-lifecycle-and-logging, D2).
+    func testSync_privateKeyFailure_dropsTheOrgKeys() async throws {
+        mockAPI.syncResponse = syncResponse(organizations: [RawOrganization(id: "org-1", name: "One", key: "2.k1", type: 2)])
+        mockCrypto.decryptRSAPrivateKeyError = PrizmCryptoServiceError.invalidEncUserKey
+
+        _ = try await sut.sync(progress: { _ in })
+
+        let keys = await orgKeyCache.snapshot()
+        XCTAssertTrue(keys.isEmpty)
     }
 
     // MARK: - 2.4 An org that left the sync has no key afterwards

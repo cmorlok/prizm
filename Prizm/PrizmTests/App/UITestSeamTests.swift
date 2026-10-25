@@ -39,7 +39,9 @@ final class UITestSeamTests: XCTestCase {
                 apiClient: MockPrizmAPIClient(),
                 crypto: MockPrizmCryptoService(),
                 keychain: keychain,
-                biometricKeychain: InMemoryBiometricKeychainService()
+                biometricKeychain: InMemoryBiometricKeychainService(),
+                vaultKeyCache: VaultKeyCache(),
+                orgKeyCache: OrgKeyCache()
             )
             let account = try XCTUnwrap(auth.storedAccount(), "state \(state)")
             XCTAssertEqual(account.email, UITestFixtures.accountEmail)

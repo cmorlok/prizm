@@ -418,22 +418,26 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
             throw PrizmCryptoServiceError.invalidEncUserKey
         }
 
-        let keyData: Data
+        var keyData: Data
         do {
             keyData = try enc.decrypt(keys: stretchedKeys)
         } catch {
             logger.error("Failed to decrypt encUserKey: \(error, privacy: .public)")
             throw PrizmCryptoServiceError.invalidEncUserKey
         }
+        // The returned keys get their own buffers (`subdata` copies), so this 64-byte scratch
+        // buffer can be zeroed; slices would share it (harden-key-lifecycle-and-logging, D3).
+        defer { keyData.resetBytes(in: keyData.indices) }
 
         guard keyData.count == 64 else {
             logger.error("Decrypted symmetric key has wrong length: \(keyData.count, privacy: .public) bytes (expected 64)")
             throw PrizmCryptoServiceError.invalidSymmetricKeyLength
         }
 
+        let start = keyData.startIndex
         return CryptoKeys(
-            encryptionKey: keyData[0..<32],
-            macKey:        keyData[32..<64]
+            encryptionKey: keyData.subdata(in: start..<(start + 32)),
+            macKey:        keyData.subdata(in: (start + 32)..<(start + 64))
         )
     }
 
@@ -527,9 +531,12 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
             throw PrizmCryptoServiceError.invalidSymmetricKeyLength
         }
 
+        // Own buffers for the two halves: slices would share one buffer, and zeroing the first
+        // half on lock would then zero a copy-on-write copy (harden-key-lifecycle-and-logging).
+        let start = orgKeyData.startIndex
         return CryptoKeys(
-            encryptionKey: orgKeyData[0..<32],
-            macKey:        orgKeyData[32..<64]
+            encryptionKey: orgKeyData.subdata(in: start..<(start + 32)),
+            macKey:        orgKeyData.subdata(in: (start + 32)..<(start + 64))
         )
     }
 
@@ -690,6 +697,8 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
             length:      32,
             type:        .id
         )
+        // The result's arrays hold the derived master key; zero them once the caller's copy is made.
+        defer { result.zero() }
         return result.hashData()
     }
 }

@@ -234,8 +234,10 @@ actor SyncRepositoryImpl: SyncRepository {
                 logger.info("Org sync: \(organizations.count) org(s), \(collections.count) collection(s), \(orgCipherFailedCount, privacy: .public) org cipher(s) skipped")
             } catch {
                 logger.error("Org key sync failed — org ciphers unavailable this session: \(error, privacy: .public)")
-                // Non-fatal: personal items still work without org support. The previous org keys
-                // stay; no org items are listed from this sync.
+                // Non-fatal: personal items still work without org support. No org item is listed
+                // from this sync, so the old org keys have no use and go
+                // (harden-key-lifecycle-and-logging, D2).
+                await orgKeyCache.replaceAll(with: [:])
             }
         } else {
             // No organizations (or no private key to unwrap them): drop the keys of orgs the user

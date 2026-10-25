@@ -17,7 +17,7 @@ The system SHALL zero and clear the vault key, every cached item key and every c
 - **THEN** no key of the previous account SHALL remain in the vault key, item key or organization key caches
 
 ### Requirement: Organization keys follow the latest sync
-The system SHALL clear the organization key cache at the start of each sync's organization step, so that afterwards it holds keys only for organizations in that sync response whose keys could be unwrapped.
+After each sync that completes, the organization key cache SHALL hold keys only for organizations in that sync response whose keys could be unwrapped. The cache SHALL be replaced in one step (`fix-org-key-required-on-write`), never cleared before the new keys are ready. A sync that fails as a whole SHALL leave the previous keys, as it leaves the previous items.
 
 #### Scenario: User left their last organization
 - **GIVEN** a previous sync stored the key of organization A

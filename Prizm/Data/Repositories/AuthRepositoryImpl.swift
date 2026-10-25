@@ -49,18 +49,70 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
     }
     private var pendingTwoFactor: PendingTwoFactor?
 
+    // MARK: - Key caches
+    // Cleared by lockVault(), the one teardown path for lock, sign-out and "sign in with a
+    // different account" (harden-key-lifecycle-and-logging, D1).
+
+    private let vaultKeyCache: VaultKeyCache
+    private let orgKeyCache:   OrgKeyCache
+
     // MARK: - Init
 
     init(
         apiClient: any PrizmAPIClientProtocol,
         crypto:    any PrizmCryptoService,
         keychain:  any KeychainService,
-        biometricKeychain: any BiometricKeychainService
+        biometricKeychain: any BiometricKeychainService,
+        vaultKeyCache: VaultKeyCache,
+        orgKeyCache:   OrgKeyCache
     ) {
         self.apiClient = apiClient
         self.crypto    = crypto
         self.keychain  = keychain
         self.biometricKeychain = biometricKeychain
+        self.vaultKeyCache = vaultKeyCache
+        self.orgKeyCache   = orgKeyCache
+    }
+
+    // MARK: - Zeroing transient keys
+
+    /// A key buffer as it was right after zeroing; reported to `zeroedKeyObserver` in DEBUG builds.
+    struct ZeroedKey {
+        let label: String
+        let bytes: Data
+        /// False when copy-on-write gave the zeroing its own copy, which leaves the original intact.
+        let inPlace: Bool
+    }
+
+    #if DEBUG
+    /// Test seam: called after each transient key buffer is zeroed.
+    var zeroedKeyObserver: ((ZeroedKey) -> Void)?
+    #endif
+
+    /// Zeroes a transient key buffer (master key, stretched keys, pending 2FA keys) in place.
+    ///
+    /// Security goal: derived key material does not stay on the heap after use (Constitution §III).
+    /// Swift `Data` is copy-on-write: zeroing reaches the original only while this is its sole
+    /// reference, so callers zero after every other holder is gone. Intentionally NOT done:
+    /// copies made inside Foundation, CommonCrypto or the crypto actor cannot be reached.
+    private func zero(_ data: inout Data, _ label: String) {
+        #if DEBUG
+        let before = data.withUnsafeBytes { UInt(bitPattern: $0.baseAddress) }
+        #endif
+        data.resetBytes(in: data.indices)
+        #if DEBUG
+        let after = data.withUnsafeBytes { UInt(bitPattern: $0.baseAddress) }
+        zeroedKeyObserver?(ZeroedKey(label: label, bytes: data, inPlace: before == after))
+        #endif
+    }
+
+    /// Zeroes the keys held for the two-factor step and ends it. Mutates the stored struct, so the
+    /// stored buffers are zeroed, not a copy.
+    private func clearPendingTwoFactor() {
+        guard pendingTwoFactor != nil else { return }
+        zero(&pendingTwoFactor!.stretchedKeys.encryptionKey, "pendingEncryptionKey")
+        zero(&pendingTwoFactor!.stretchedKeys.macKey, "pendingMacKey")
+        pendingTwoFactor = nil
     }
 
     // MARK: - Server configuration
@@ -90,6 +142,8 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         guard let env = serverEnvironment else {
             throw AuthError.serverUnreachable
         }
+        // A new attempt replaces an unfinished two-factor step; zero its keys first.
+        clearPendingTwoFactor()
 
         // Step 1: Fetch KDF params.
         logger.info("Step 1: fetching KDF params for \(email, privacy: .private)")
@@ -102,18 +156,28 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         // Step 2: Derive master key locally — never sent to server.
         // `masterPassword` is `Data` so we can zero it after the KDF call (Constitution §III).
         logger.info("Step 2: deriving master key (KDF)")
-        let masterKey  = try await crypto.makeMasterKey(
+        var masterKey  = try await crypto.makeMasterKey(
             password: masterPassword,
             email:    email.lowercased(),
             kdf:      kdfParams
         )
+        defer { zero(&masterKey, "masterKey") }
         if DebugConfig.isEnabled {
             logger.debug("[debug] master key derived (\(masterKey.count, privacy: .public) bytes)")
         }
 
         // Step 3: Stretch master key into separate enc + mac keys (HKDF).
         logger.info("Step 3: stretching master key (HKDF)")
-        let stretched  = try await crypto.stretchKey(masterKey: masterKey)
+        var stretched  = try await crypto.stretchKey(masterKey: masterKey)
+        // Zeroed on every exit, unless handed over to the two-factor step, which then owns them
+        // (zeroing this copy there would only zero a copy-on-write duplicate).
+        var stretchedHandedOver = false
+        defer {
+            if !stretchedHandedOver {
+                zero(&stretched.encryptionKey, "stretchedEncryptionKey")
+                zero(&stretched.macKey, "stretchedMacKey")
+            }
+        }
         if DebugConfig.isEnabled {
             logger.debug("[debug] stretched key: encKey=\(stretched.encryptionKey.count, privacy: .public) bytes, macKey=\(stretched.macKey.count, privacy: .public) bytes")
         }
@@ -155,6 +219,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
                     stretchedKeys: stretched,
                     deviceId:      deviceId
                 )
+                stretchedHandedOver = true
                 logger.info("2FA required")
                 return .requiresTwoFactor(twoFactorMethod(from: providers))
             case .twoFactorCodeInvalid:
@@ -175,6 +240,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
                 stretchedKeys: stretched,
                 deviceId:      deviceId
             )
+            stretchedHandedOver = true
             logger.info("2FA required")
             return .requiresTwoFactor(twoFactorMethod(from: providers))
         }
@@ -195,17 +261,21 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
 
     func loginWithTOTP(code: String, rememberDevice: Bool) async throws -> Account {
         logger.info("Submitting TOTP code")
-        guard let pending = pendingTwoFactor,
-              let env     = serverEnvironment else {
+        // Read the fields, not the whole struct: a local copy of it would share the key buffers
+        // and keep clearPendingTwoFactor() from zeroing them in place.
+        guard let email        = pendingTwoFactor?.email,
+              let passwordHash = pendingTwoFactor?.passwordHash,
+              let deviceId     = pendingTwoFactor?.deviceId,
+              let env          = serverEnvironment else {
             throw AuthError.invalidCredentials
         }
 
         let tokenResp: TokenResponse
         do {
             tokenResp = try await apiClient.identityToken(
-                email:             pending.email,
-                passwordHash:      pending.passwordHash,
-                deviceIdentifier:  pending.deviceId,
+                email:             email,
+                passwordHash:      passwordHash,
+                deviceIdentifier:  deviceId,
                 twoFactorToken:    code,
                 twoFactorProvider: 0,   // authenticatorApp
                 twoFactorRemember: rememberDevice
@@ -224,34 +294,24 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
             }
         }
 
-        pendingTwoFactor = nil
         logger.info("TOTP accepted")
-        return try await finalizeSession(
-            tokenResp:   tokenResp,
-            stretched:   pending.stretchedKeys,
-            environment: env
-        )
+        // The two-factor step ends here, whether the session can be finalized or not. The keys
+        // move out of the stored struct into this local, its only owner, so a cancel or sign-out
+        // during the await below finds nothing to zero and cannot zero a mere copy.
+        guard var stretched = pendingTwoFactor?.stretchedKeys else { throw AuthError.invalidCredentials }
+        pendingTwoFactor = nil
+        defer {
+            zero(&stretched.encryptionKey, "pendingEncryptionKey")
+            zero(&stretched.macKey, "pendingMacKey")
+        }
+        return try await finalizeSession(tokenResp: tokenResp, stretched: stretched, environment: env)
     }
 
     // MARK: - Unlock
 
     func cancelTwoFactor() {
-        // Explicitly zero the stretched key buffers before releasing the struct.
-        // Setting pendingTwoFactor = nil alone does not guarantee immediate deallocation —
-        // ARC may defer it. Zeroing the Data buffers in-place reduces the window during
-        // which derived key material lives in the heap (Constitution §III).
         // Note: passwordHash (String) cannot be zeroed — String storage is immutable.
-        // `pendingTwoFactor!` is used for the mutations rather than the local `pending`
-        // copy produced by `if let` — zeroing `pending` would only zero the copy's CoW
-        // buffer, not the stored struct's. In-place mutation through `pendingTwoFactor!`
-        // is safe here because we verified non-nil one line above.
-        // Data slices keep their original indices, so zero via `.indices`, not `0..<count`.
-        if let encRange = pendingTwoFactor?.stretchedKeys.encryptionKey.indices,
-           let macRange = pendingTwoFactor?.stretchedKeys.macKey.indices {
-            pendingTwoFactor!.stretchedKeys.encryptionKey.resetBytes(in: encRange)
-            pendingTwoFactor!.stretchedKeys.macKey.resetBytes(in: macRange)
-        }
-        pendingTwoFactor = nil
+        clearPendingTwoFactor()
         logger.info("Pending 2FA state cleared — stretched keys zeroed")
     }
 
@@ -305,12 +365,17 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
             logger.debug("[debug] unlock: KDF type=\(String(describing: kdfParams.type), privacy: .public) iterations=\(kdfParams.iterations, privacy: .public) encUserKey prefix=\(String(encUserKey.prefix(2)), privacy: .public)")
         }
         // `masterPassword` is already `Data`; pass directly to KDF (Constitution §III).
-        let masterKey  = try await crypto.makeMasterKey(
+        var masterKey  = try await crypto.makeMasterKey(
             password: masterPassword,
             email:    restoredAccount.email.lowercased(),
             kdf:      kdfParams
         )
-        let stretched  = try await crypto.stretchKey(masterKey: masterKey)
+        defer { zero(&masterKey, "masterKey") }
+        var stretched  = try await crypto.stretchKey(masterKey: masterKey)
+        defer {
+            zero(&stretched.encryptionKey, "stretchedEncryptionKey")
+            zero(&stretched.macKey, "stretchedMacKey")
+        }
         let vaultKeys  = try await crypto.decryptSymmetricKey(
             encUserKey:    encUserKey,
             stretchedKeys: stretched
@@ -422,13 +487,17 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         await apiClient.clearAccessToken()
 
         serverEnvironment = nil
-        pendingTwoFactor  = nil
+        clearPendingTwoFactor()
     }
 
     // MARK: - Lock
 
+    /// Zeroes and drops all key material: the vault key, every per-item key and every org key.
+    /// The one teardown path; `signOut()` calls it too.
     func lockVault() async {
         await crypto.lockVault()
+        await vaultKeyCache.clear()
+        await orgKeyCache.clear()
         // Notify any open edit sheets to dismiss immediately (no confirmation prompt).
         // Posted on the main queue because subscribers are @MainActor UI components.
         await MainActor.run {
@@ -478,7 +547,8 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
             throw AuthError.biometricUnavailable
         }
         let keys = try await crypto.currentKeys()
-        let data = keys.toData()
+        var data = keys.toData()
+        defer { data.resetBytes(in: data.indices) }
         guard let userId = try? readString(key: KeychainKey.activeUserId) else {
             throw AuthError.biometricUnavailable
         }
@@ -514,7 +584,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
 
         // Read the biometric Keychain item — evaluatePolicy runs inside readBiometric,
         // producing the inline Touch ID prompt (no security-agent modal).
-        let keyData: Data
+        var keyData: Data
         do {
             keyData = try await biometricKeychain.readBiometric(
                 key: KeychainKey.biometricVaultKey(userId)
@@ -552,6 +622,8 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         }
 
         // Deserialize CryptoKeys from the 64-byte blob (design Decision 1).
+        // The keys get their own buffers; the 64-byte blob read from the keychain is zeroed.
+        defer { keyData.resetBytes(in: keyData.indices) }
         guard let vaultKeys = CryptoKeys(data: keyData) else {
             logger.error("Biometric Keychain item has invalid format")
             throw AuthError.biometricUnavailable
@@ -607,7 +679,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
 
         // readBiometric(key:context:) calls evaluatePolicy on the provided context.
         // Because LAAuthenticationView is paired with it, no modal appears.
-        let keyData: Data
+        var keyData: Data
         do {
             keyData = try await biometricKeychain.readBiometric(
                 key: KeychainKey.biometricVaultKey(userId),
@@ -623,6 +695,8 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
             throw error
         }
 
+        // The keys get their own buffers; the 64-byte blob read from the keychain is zeroed.
+        defer { keyData.resetBytes(in: keyData.indices) }
         guard let vaultKeys = CryptoKeys(data: keyData) else {
             logger.error("Embedded biometric Keychain item has invalid format")
             throw AuthError.biometricUnavailable

@@ -10,7 +10,8 @@ import os.log
 ///   (Constitution §III) to reduce the heap-residency window after lock.
 ///
 /// - Populated at sync time by `SyncRepositoryImpl` after unwrapping each org's RSA-encrypted
-///   symmetric key. Cleared alongside `VaultKeyCache` on vault lock and sign-out.
+///   symmetric key, and replaced in one step on every sync (`replaceAll`). Zeroed and cleared
+///   by `AuthRepositoryImpl.lockVault()`, the teardown for lock and sign-out.
 ///   Reference: Bitwarden Security Whitepaper §4 — "Organization Key Wrapping".
 ///
 /// - Thread safety: declared as `actor` because it is written from the sync path
@@ -49,7 +50,7 @@ actor OrgKeyCache {
 
     /// Zeros all org key material and clears the cache.
     ///
-    /// Called on vault lock and sign-out alongside `VaultKeyCache.clear()`.
+    /// Called by `AuthRepositoryImpl.lockVault()` (lock and sign-out) alongside `VaultKeyCache.clear()`.
     /// Zeroing before clearing reduces the window during which key bytes remain on the
     /// heap after the cache is discarded (Constitution §III).
     func clear() {

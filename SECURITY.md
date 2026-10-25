@@ -69,17 +69,17 @@ frameworks).
 
 | Key material | Storage | Lifetime |
 |---|---|---|
-| Master key (32 bytes) | In-memory only | Derived on login/unlock; zeroed on lock or sign-out |
-| Stretched keys (enc + mac, 64 bytes) | In-memory only | Derived from master key; zeroed on lock |
+| Master key (32 bytes) | In-memory only | Derived on login/unlock; zeroed right after use (login, unlock, also on error); the Argon2id buffers are zeroed before they are freed |
+| Stretched keys (enc + mac, 64 bytes) | In-memory only | Derived from master key; zeroed right after use. During a two-factor login they are kept until the two-factor step ends (the code is accepted, the login is cancelled or restarted, or the user signs out) and then zeroed; a wrong code keeps them so the user can retry |
 | Vault symmetric keys (enc + mac) | In-memory only | Decrypted from `encUserKey`; zeroed on lock |
-| RSA private key (PKCS#8, variable) | In-memory only (`actor` state) | Decrypted from `profile.privateKey` EncString during sync; zeroed on lock |
-| Organisation symmetric keys (64 bytes each) | In-memory only (`OrgKeyCache` actor) | RSA-OAEP-SHA1 unwrapped from `RawOrganization.key` during sync; zeroed and cleared from `OrgKeyCache` on lock |
+| RSA private key (PKCS#8, variable) | In-memory only | Decrypted from `profile.privateKey` EncString during sync; zeroed at the end of the sync's organisation step |
+| Organisation symmetric keys (64 bytes each) | In-memory only (`OrgKeyCache` actor) | RSA-OAEP-SHA1 unwrapped from `RawOrganization.key` during sync; replaced in one step by every sync (an organisation the user left, or whose key cannot be unwrapped, has no key afterwards); zeroed and cleared on lock and sign-out |
 | Encrypted user key (`encUserKey`) | macOS Keychain | Persisted across sessions; deleted on sign-out |
 | Biometric vault key (64 bytes) | macOS Keychain (biometric-gated) | Created on user opt-in; deleted on sign-out, disable, or biometric invalidation |
 | Access token | macOS Keychain | Persisted across sessions; deleted on sign-out |
 | Refresh token | macOS Keychain | Persisted across sessions; deleted on sign-out |
 | KDF parameters | macOS Keychain | Persisted across sessions; deleted on sign-out |
-| Device identifier (UUID) | macOS Keychain | Stable across sessions; deleted on sign-out |
+| Device identifier (UUID) | macOS Keychain | Stable across sessions; kept on sign-out, as in the official clients, so the server keeps recognising the device |
 
 ### Key lifecycle
 
@@ -91,12 +91,32 @@ frameworks).
    b. For each `RawOrganization` in the sync response, strip the PKCS#8 wrapper, import the RSA private key via `SecKeyCreateWithData`, and decrypt `RawOrganization.key` (a Type-4 EncString) with `SecKeyCreateDecryptedData` / `kSecKeyAlgorithmRSAEncryptionOAEPSHA1` → 64-byte org symmetric key.
    c. Store each org key in `OrgKeyCache` keyed by `organizationId`.
    d. Org cipher fields are then decrypted using the org symmetric key rather than the personal vault key, with collection names decrypted via the same org key.
-3. **Lock** — all in-memory key material is zeroed. `OrgKeyCache` is cleared: each
-   `CryptoKeys` entry's underlying `Data` bytes are overwritten with zeros before the
-   dictionary entry is removed. Keychain entries are retained so the vault can be
-   unlocked offline without re-authenticating to the server.
-4. **Sign out** — all in-memory key material is zeroed and all Keychain entries for
-   the account are deleted. The app returns to a blank login screen.
+3. **Lock** — `AuthRepositoryImpl.lockVault()` zeroes the vault keys and clears the
+   per-item key cache and `OrgKeyCache`: each `CryptoKeys` entry's underlying `Data` bytes
+   are overwritten with zeros before the dictionary entry is removed. Keychain entries are
+   retained so the vault can be unlocked offline without re-authenticating to the server.
+4. **Sign out** — the same teardown as lock (sign-out calls `lockVault()`, also when
+   "Sign in with a different account" is chosen on the unlock screen), and all Keychain
+   entries for the account except the device identifier are deleted. The app returns to a
+   blank login screen.
+
+### Limits of zeroing in Swift
+
+Prizm zeroes the key buffers it owns. Swift's `Data` is copy-on-write: a buffer is zeroed in
+place only while Prizm holds its sole reference, so the code zeroes after every other holder is
+gone, and each key's two halves have their own buffers (tests check the in-place zeroing for the
+master, stretched and two-factor keys). Copies made inside system frameworks (Foundation,
+CommonCrypto, Security, for example the buffer an RSA decryption returns) or held by work still in
+flight cannot be reached and stay until the memory is reused. `String` values, such as the server password hash kept during a
+two-factor login, cannot be zeroed at all. Keys are not held in locked (`mlock`) memory.
+
+### Debug logging
+
+`--debug-mode` writes extra lines to the unified log. They never contain key material, tokens,
+the password hash, the email, two-factor codes or the device identifier; token request
+parameters are logged from an allow-list. Text that comes from the server is logged as private in
+these debug lines. (Outside debug mode, some error messages that contain a server response are
+still logged; see the open item in the change `harden-key-lifecycle-and-logging`.)
 
 ### Biometric vault key (Touch ID / Face ID)
 
@@ -113,6 +133,12 @@ Keychain item protected by `SecAccessControl` with `.biometryCurrentSet`.
 | Access group | Inferred from `keychain-access-groups` entitlement — not accessible to other apps |
 | Created when | User explicitly opts in (enrollment prompt or Settings toggle), vault must be unlocked |
 | Deleted when | Sign-out, user disables toggle, or biometric enrollment changes (`.biometryCurrentSet` invalidation) |
+
+How this compares with the official apps: the Bitwarden iOS app uses the same model (a keychain
+item with a biometric access control). The Bitwarden desktop app on macOS stores the user key in
+the login keychain without a biometric access control and asks for Touch ID in the app
+(`apps/desktop/src/key-management/biometrics/os-biometrics-mac.service.ts`). In Prizm the access
+control is evaluated with the Secure Enclave; the key itself is not stored in the Secure Enclave.
 
 The master password is **never** stored in the biometric Keychain item. Only the
 already-derived vault symmetric keys are cached. On biometric unlock, the keys are

@@ -186,20 +186,6 @@ final class RootViewModelLockTests: XCTestCase {
                        "The next account must not start in the previous account's folder")
     }
 
-    func testSignOut_clearsTheOrgKeys() async throws {
-        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault)
-        await deps.orgKeyCache.replaceAll(with: ["org-1": CryptoKeys(encryptionKey: Data(repeating: 1, count: 32),
-                                                                     macKey: Data(repeating: 2, count: 32))])
-        let root = RootViewModel(container: deps)
-        root.screen = .vault
-
-        root.signOut()
-        try await waitUntil { if case .login = root.screen { return true }; return false }
-
-        let keys = await deps.orgKeyCache.snapshot()
-        XCTAssertTrue(keys.isEmpty, "Account A's org keys must not stay in memory after sign-out")
-    }
-
     func testCopyCommands_unavailableWhileLocked() async throws {
         sut.screen = .unlock
         // Even if a decrypted item were still selected, nothing may be copied while locked.
@@ -233,8 +219,6 @@ final class MockRootDependencies: RootViewModelDependencies {
     var generateTOTPCode: any GenerateTOTPCodeUseCase = UnusedGenerateTOTPCode()
     let authRepo: any AuthRepository
     let vaultRepo: any VaultRepository
-    let vaultKeyCache = VaultKeyCache()
-    let orgKeyCache   = OrgKeyCache()
 
     private let mockLoginUseCase = MockLoginUseCase()
     private let mockSyncUseCase = MockSyncUseCase()
