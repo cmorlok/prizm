@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fix signing in on Vaultwarden 1.37.4 and current Bitwarden self-hosted servers: Prizm now asks
+  for the account's key settings at the Identity service (`/identity/accounts/prelogin/password`),
+  like the official apps. Older servers that lack this route keep working through the older
+  Identity route (`/identity/accounts/prelogin`).
 - Fix File → New Window (⌥⌘N): it showed "No document could be opened" instead of opening a new
   window.
 - **Changed**: "Sign Out…" no longer has a keyboard shortcut. ⌘⇧Q is macOS's own Log Out shortcut.

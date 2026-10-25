@@ -90,6 +90,8 @@ today. Vaultwarden 1.32.0–1.35.x and Bitwarden servers before v2025.12.0 do no
   call `LegacyPreloginEndpoint` (new file `Prizm/Data/Network/Legacy/LegacyPreloginEndpoint.swift`).
 - The adapter sends the same body to `{base}/identity/accounts/prelogin` and decodes the same
   `PreLoginResponse`. It logs at `.info` that the legacy route was used (no email).
+- The primary route's 404 or 405 is logged at `.info`, not `.error`: it is expected on these
+  servers.
 - It carries the marker
   `// LEGACY(Vaultwarden < 1.36.0, Bitwarden server < v2025.12.0): remove when those versions are no longer supported`.
 - Any other failure of the primary route (network error, 400, 5xx, decode error) is surfaced as
@@ -106,6 +108,9 @@ including 1.35.4, the version README names as tested.
 ### D3. Response decoding unchanged
 
 Both routes on both servers still send the flat `kdf*` fields, so `PreLoginResponse` keeps working.
+On the official server they are nullable and marked for removal ("PM-28143 Remove with cleanup",
+`PasswordPreloginResponseModel.cs:29-32`), and `salt` carries the email. Once they are removed,
+decoding fails; `fix-kdf-derivation-and-validation` must read `kdfSettings` before that.
 Switching to `kdfSettings` and `salt` is a behaviour change with its own tests and belongs to
 `fix-kdf-derivation-and-validation`.
 

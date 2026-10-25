@@ -19,7 +19,7 @@ protocol AuthRepository: AnyObject {
     // MARK: - Login
 
     /// Performs the full login flow:
-    /// 1. POST `/accounts/prelogin` → fetch KDF params.
+    /// 1. POST `/identity/accounts/prelogin/password` → fetch KDF params.
     /// 2. Derive master key locally (PBKDF2 or Argon2id).
     /// 3. POST `/connect/token` → obtain access + refresh tokens.
     /// 4. Persist tokens + encrypted user key in Keychain.
