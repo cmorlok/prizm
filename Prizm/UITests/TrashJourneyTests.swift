@@ -5,121 +5,87 @@ import XCTest
 /// Validates the full delete → trash → restore flow and the permanent delete + empty-trash
 /// flows through the UI.
 ///
-/// Prerequisites: App launched with `--ui-testing`, `--inject-session`, `--inject-vault`,
-/// `--skip-sync` so a pre-populated vault (including at least one active item and one
-/// pre-trashed item) is available without a network round-trip.
-final class TrashJourneyTests: XCTestCase {
+/// Runs on the seeded test vault (`UITestLaunch.vault`), which has active items and one trashed
+/// item. Menus and confirmations are checked locally; the actions themselves are server calls and
+/// are reported as skipped at that step.
+final class TrashJourneyTests: PrizmUITestCase {
 
     private var app: XCUIApplication!
 
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments = ["--ui-testing", "--inject-session", "--inject-vault", "--skip-sync"]
-        app.launch()
+        app.launch(in: UITestLaunch.vault)
 
-        let vaultNav = app.otherElements["vault.navigationSplit"]
-        XCTAssertTrue(vaultNav.waitForExistence(timeout: 30), "Vault browser must be visible")
+        XCTAssertTrue(app.waitForVaultBrowser(), "Vault browser must be visible")
     }
 
     override func tearDownWithError() throws {
         app = nil
     }
 
+    private func openTrash() {
+        let trash = app.sidebarRow("Trash")
+        XCTAssertTrue(trash.waitForExistence(timeout: 5))
+        trash.click()
+    }
+
     // MARK: - 7.1: Soft-delete from list, verify item appears in Trash
 
-    /// Soft-deletes the first item via the list context menu and verifies it appears
-    /// in the Trash sidebar selection.
+    /// The context menu offers Delete and asks for confirmation. Confirming moves the item to the
+    /// trash on the server.
     func testSoftDelete_fromListContextMenu_itemAppearsInTrash() throws {
-        let list     = app.tables["itemList.list"]
-        let firstRow = list.cells.firstMatch
-        XCTAssertTrue(firstRow.waitForExistence(timeout: 5), "Vault list must have at least one item")
+        let row = app.element(Fixture.row(Fixture.alpha))
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "Fixture item Alpha Bank should be listed")
 
-        let itemName = firstRow.staticTexts.firstMatch.label
-
-        // Right-click to open the context menu and choose Delete.
-        firstRow.rightClick()
-        let deleteMenuItem = app.menuItems["Delete"]
+        row.rightClick()
+        // The context menu's "Delete" also exists in the Edit menu of the menu bar; take the
+        // context menu's.
+        let deleteMenuItem = app.windows.menuItems["Delete"].firstMatch
         XCTAssertTrue(deleteMenuItem.waitForExistence(timeout: 3))
         deleteMenuItem.click()
 
-        // Confirm the "Move to Trash?" alert.
-        let moveToTrashButton = app.buttons["Move to Trash"]
-        XCTAssertTrue(moveToTrashButton.waitForExistence(timeout: 3))
-        moveToTrashButton.click()
+        XCTAssertTrue(app.buttons["Move to Trash"].waitForExistence(timeout: 3),
+                      "Deleting should ask for confirmation")
 
-        // Navigate to Trash.
-        let trashSidebarRow = app.buttons["sidebar.trash"]
-        XCTAssertTrue(trashSidebarRow.waitForExistence(timeout: 3))
-        trashSidebarRow.click()
-
-        // Verify the deleted item now appears in the Trash list.
-        let trashedRow = app.tables["itemList.list"].cells.containing(.staticText, identifier: itemName).firstMatch
-        XCTAssertTrue(trashedRow.waitForExistence(timeout: 5), "Deleted item should appear in Trash")
+        try UITestPrerequisite.serverWrites()
     }
 
     // MARK: - 7.2: Restore from Trash, verify item reappears in active vault
 
-    /// Restores a trashed item via the Trash context menu and verifies it reappears
-    /// in the active vault's All Items list.
+    /// The trash lists the trashed item, and its context menu offers Restore. Restoring is a
+    /// server call.
     func testRestore_fromTrashContextMenu_itemReappearsInActiveVault() throws {
-        // Navigate to Trash.
-        let trashSidebarRow = app.buttons["sidebar.trash"]
-        XCTAssertTrue(trashSidebarRow.waitForExistence(timeout: 5))
-        trashSidebarRow.click()
+        openTrash()
+        let row = app.element(Fixture.row(Fixture.trashed))
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "The trash should list the trashed fixture item")
+        XCTAssertFalse(app.element(Fixture.row(Fixture.alpha)).exists, "The trash should not list active items")
 
-        let trashList = app.tables["itemList.list"]
-        let firstTrashed = trashList.cells.firstMatch
-        XCTAssertTrue(firstTrashed.waitForExistence(timeout: 5), "Trash must have at least one item")
+        row.rightClick()
+        XCTAssertTrue(app.menuItems["Restore"].waitForExistence(timeout: 3),
+                      "The trash context menu should offer Restore")
+        app.typeKey(.escape, modifierFlags: [])
 
-        let itemName = firstTrashed.staticTexts.firstMatch.label
-
-        // Right-click to open context menu and choose Restore.
-        firstTrashed.rightClick()
-        let restoreMenuItem = app.menuItems["Restore"]
-        XCTAssertTrue(restoreMenuItem.waitForExistence(timeout: 3))
-        restoreMenuItem.click()
-
-        // Navigate back to All Items.
-        let allItemsRow = app.buttons["sidebar.allItems"]
-        XCTAssertTrue(allItemsRow.waitForExistence(timeout: 3))
-        allItemsRow.click()
-
-        // Verify the restored item appears in the active vault.
-        let restoredRow = app.tables["itemList.list"].cells.containing(.staticText, identifier: itemName).firstMatch
-        XCTAssertTrue(restoredRow.waitForExistence(timeout: 5), "Restored item should appear in active vault")
+        try UITestPrerequisite.serverWrites()
     }
 
     // MARK: - 7.3: Permanently delete a trashed item
 
-    /// Permanently deletes a trashed item via the context menu and verifies it is
-    /// removed from the Trash list entirely.
+    /// The trash context menu offers Delete Permanently and asks for confirmation. Confirming is a
+    /// server call.
     func testPermanentDelete_fromTrashContextMenu_itemDisappears() throws {
-        // Navigate to Trash.
-        let trashSidebarRow = app.buttons["sidebar.trash"]
-        XCTAssertTrue(trashSidebarRow.waitForExistence(timeout: 5))
-        trashSidebarRow.click()
+        openTrash()
+        let row = app.element(Fixture.row(Fixture.trashed))
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "The trash should list the trashed fixture item")
 
-        let trashList = app.tables["itemList.list"]
-        let firstTrashed = trashList.cells.firstMatch
-        XCTAssertTrue(firstTrashed.waitForExistence(timeout: 5), "Trash must have at least one item")
-
-        let itemName = firstTrashed.staticTexts.firstMatch.label
-
-        // Right-click → "Delete Permanently".
-        firstTrashed.rightClick()
+        row.rightClick()
         let permanentDeleteMenuItem = app.menuItems["Delete Permanently"]
         XCTAssertTrue(permanentDeleteMenuItem.waitForExistence(timeout: 3))
         permanentDeleteMenuItem.click()
 
-        // Confirm the destructive alert.
-        let confirmButton = app.buttons["Delete Permanently"]
-        XCTAssertTrue(confirmButton.waitForExistence(timeout: 3))
-        confirmButton.click()
+        XCTAssertTrue(app.buttons["Delete Permanently"].waitForExistence(timeout: 3),
+                      "Deleting permanently should ask for confirmation")
 
-        // Verify the item is gone from Trash.
-        let stillPresent = app.tables["itemList.list"].cells.containing(.staticText, identifier: itemName).firstMatch
-        XCTAssertFalse(stillPresent.waitForExistence(timeout: 3), "Permanently deleted item should not appear in Trash")
+        try UITestPrerequisite.serverWrites()
     }
-
 }

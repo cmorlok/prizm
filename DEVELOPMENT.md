@@ -88,6 +88,45 @@ xcodebuild test \
 
 All tests must pass before merging to `main`. The CI workflow enforces this on every push and pull request.
 
+### UI tests
+
+The `Prizm` scheme runs the unit tests only. The UI journeys in `Prizm/UITests/` have their own
+scheme, `PrizmUITests`, and CI does not run them:
+
+```bash
+xcodebuild test \
+  -project "Prizm/Prizm.xcodeproj" \
+  -scheme "PrizmUITests" \
+  -destination "platform=macOS" \
+  -allowProvisioningUpdates
+```
+
+- **They take over the screen.** A full run takes about 10–15 minutes and moves the mouse and types
+  into the app. Don't use the Mac meanwhile; a click elsewhere can make a test fail.
+- **They don't touch your data.** The tests start a Debug build in one of three test states, set
+  with launch arguments that exist only in Debug builds (`App/UITestFixtures.swift`):
+  `--ui-test-vault` (a seeded vault, unlocked, no server), `--ui-test-locked` (the unlock screen for
+  a fixture account) and `--ui-test-signed-out` (the login screen). In every test state the app
+  uses an in-memory keychain, so your stored Prizm login is never read or deleted. The password
+  generator options you change in a test run are kept, though.
+- **Skipped tests say why.** Saving, downloading attachments and Touch ID need a test backend or
+  simulated Touch ID that does not exist yet; those steps are reported as skipped with the reason.
+- **Journeys with a real account** (sign in, unlock) run only when you pass an account. `xcodebuild`
+  forwards variables to the test runner only with the `TEST_RUNNER_` prefix:
+
+  ```bash
+  TEST_RUNNER_BW_TEST_SERVER_URL=https://vault.example.com \
+  TEST_RUNNER_BW_TEST_EMAIL=you@example.com \
+  TEST_RUNNER_BW_TEST_PASSWORD='…' \
+  xcodebuild test -project "Prizm/Prizm.xcodeproj" -scheme "PrizmUITests" \
+    -destination "platform=macOS" -allowProvisioningUpdates
+  ```
+
+  Use a test account, not your own vault. The two-factor journey needs a second account with
+  two-step login enabled, in `TEST_RUNNER_BW_TEST_2FA_EMAIL` and `TEST_RUNNER_BW_TEST_2FA_PASSWORD`.
+- **No system-wide shortcuts.** A UI test must never send key combinations that macOS handles
+  itself: ⌘⇧Q logs you out of macOS, ⌃⌘Q locks the screen.
+
 ## Architecture
 
 Three-layer Clean Architecture with strict dependency direction:
