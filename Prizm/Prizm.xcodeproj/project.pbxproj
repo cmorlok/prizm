@@ -193,6 +193,8 @@
 		918757C4B8FDA02ACD662167 /* SetFavoriteUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47EF6BBB6170F5C4F6D7AB9B /* SetFavoriteUseCaseImpl.swift */; };
 		5FB03807205EB54F055B4317 /* CollectionAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C7F64FECEB4D5C21395C438 /* CollectionAccess.swift */; };
 		EC7F582F249CF763AEA0B40E /* LegacyCollectionCreateWithoutMembership.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7755C404FA07652871D0869 /* LegacyCollectionCreateWithoutMembership.swift */; };
+		9CE03FAF8938D6B276BF6CD0 /* EmptyTrashUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E0CC4D012DF5134640ADADD /* EmptyTrashUseCase.swift */; };
+		9C69F0563C110E769255D12E /* EmptyTrashUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17EED397A28B285C0BD7FF6A /* EmptyTrashUseCaseImpl.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -401,6 +403,8 @@
 		47EF6BBB6170F5C4F6D7AB9B /* SetFavoriteUseCaseImpl.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SetFavoriteUseCaseImpl.swift; sourceTree = "<group>"; };
 		0C7F64FECEB4D5C21395C438 /* CollectionAccess.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CollectionAccess.swift; sourceTree = "<group>"; };
 		C7755C404FA07652871D0869 /* LegacyCollectionCreateWithoutMembership.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LegacyCollectionCreateWithoutMembership.swift; sourceTree = "<group>"; };
+		4E0CC4D012DF5134640ADADD /* EmptyTrashUseCase.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EmptyTrashUseCase.swift; sourceTree = "<group>"; };
+		17EED397A28B285C0BD7FF6A /* EmptyTrashUseCaseImpl.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EmptyTrashUseCaseImpl.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -540,6 +544,7 @@
 				6EDCDA57D3434985AC25FF5F /* DeleteCollectionUseCase.swift */,
 				B790BCA90C074D3E6B407DF4 /* GenerateTOTPCodeUseCase.swift */,
 				33F70D5AD25DD2A43576733F /* SetFavoriteUseCase.swift */,
+				4E0CC4D012DF5134640ADADD /* EmptyTrashUseCase.swift */,
 			);
 			path = UseCases;
 			sourceTree = "<group>";
@@ -913,6 +918,7 @@
 				AA100F00000000000000000F /* DeleteAttachmentUseCaseImpl.swift */,
 				4DCCEC04E9695CEDB593662E /* GenerateTOTPCodeUseCaseImpl.swift */,
 				47EF6BBB6170F5C4F6D7AB9B /* SetFavoriteUseCaseImpl.swift */,
+				17EED397A28B285C0BD7FF6A /* EmptyTrashUseCaseImpl.swift */,
 			);
 			path = UseCases;
 			sourceTree = "<group>";
@@ -1248,6 +1254,8 @@
 				918757C4B8FDA02ACD662167 /* SetFavoriteUseCaseImpl.swift in Sources */,
 				5FB03807205EB54F055B4317 /* CollectionAccess.swift in Sources */,
 				EC7F582F249CF763AEA0B40E /* LegacyCollectionCreateWithoutMembership.swift in Sources */,
+				9CE03FAF8938D6B276BF6CD0 /* EmptyTrashUseCase.swift in Sources */,
+				9C69F0563C110E769255D12E /* EmptyTrashUseCaseImpl.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

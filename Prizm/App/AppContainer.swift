@@ -48,6 +48,7 @@ final class AppContainer: ObservableObject {
     let deleteFolderUseCase:             DeleteFolderUseCaseImpl
     let moveItemToFolderUseCase:         MoveItemToFolderUseCaseImpl
     let setFavoriteUseCase:              SetFavoriteUseCaseImpl
+    let emptyTrashUseCase:               EmptyTrashUseCaseImpl
     let createCollectionUseCase:         CreateCollectionUseCaseImpl
     let renameCollectionUseCase:         RenameCollectionUseCaseImpl
     let deleteCollectionUseCase:         DeleteCollectionUseCaseImpl
@@ -129,7 +130,9 @@ final class AppContainer: ObservableObject {
         self.orgKeyCache     = orgKeyCache
         self.authRepository  = auth
         self.syncRepository  = sync
-        self.syncUseCase                     = SyncUseCaseImpl(sync: sync)
+        let syncUseCase                      = SyncUseCaseImpl(sync: sync)
+        self.syncUseCase                     = syncUseCase
+        self.emptyTrashUseCase               = EmptyTrashUseCaseImpl(repository: vault, sync: syncUseCase)
         self.loginUseCase                    = LoginUseCaseImpl(auth: auth, sync: sync)
         self.unlockUseCase                   = UnlockUseCaseImpl(auth: auth, sync: sync)
         self.searchVaultUseCase              = SearchVaultUseCaseImpl(vault: vault)
@@ -198,6 +201,7 @@ final class AppContainer: ObservableObject {
             deleteFolder:     deleteFolderUseCase,
             moveItem:         moveItemToFolderUseCase,
             setFavorite:      setFavoriteUseCase,
+            emptyTrash:       emptyTrashUseCase,
             createCollection: createCollectionUseCase,
             renameCollection: renameCollectionUseCase,
             deleteCollection: deleteCollectionUseCase,

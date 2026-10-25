@@ -161,6 +161,15 @@ struct VaultBrowserView: View {
                                     .opacity(0)
                             }
                         }
+                    } else {
+                        ToolbarItem(placement: .primaryAction) {
+                            Button("Empty Trash", role: .destructive) {
+                                viewModel.beginEmptyTrash()
+                            }
+                            .foregroundStyle(.red)
+                            .disabled(!viewModel.canEmptyTrash)
+                            .accessibilityIdentifier(AccessibilityID.Trash.emptyTrashButton)
+                        }
                     }
                 }
                 // The Verification Codes list shows name, code, countdown, and COPY on one line,
@@ -238,6 +247,22 @@ struct VaultBrowserView: View {
         } message: {
             Text("\"\(viewModel.itemSelection?.name ?? "")\" will be permanently deleted and cannot be recovered.")
         }
+        // Empty Trash asks only after a sync, with the fresh count (fix-empty-trash, D2–D3).
+        .alert(
+            viewModel.emptyTrashConfirmation?.title ?? "",
+            isPresented: Binding(
+                get: { viewModel.emptyTrashConfirmation != nil },
+                // Also called when "Delete Permanently" closes the alert; that action gets its
+                // confirmation passed in, so the order does not matter.
+                set: { if !$0 { viewModel.cancelEmptyTrash() } }
+            ),
+            presenting: viewModel.emptyTrashConfirmation
+        ) { confirmation in
+            Button("Delete Permanently", role: .destructive) { viewModel.confirmEmptyTrash(confirmation) }
+            Button("Cancel", role: .cancel) { viewModel.cancelEmptyTrash() }
+        } message: { confirmation in
+            Text(confirmation.message)
+        }
         .alert("Delete Folder?", isPresented: $showDeleteFolderAlert) {
             Button("Delete Folder", role: .destructive) {
                 if let folder = folderToDelete {
@@ -264,6 +289,11 @@ struct VaultBrowserView: View {
             if !isActive { isSearchFieldFocused = false }
         }
         .onChange(of: viewModel.syncErrorMessage) { _, newMessage in
+            if let message = newMessage {
+                AccessibilityNotification.Announcement(message).post()
+            }
+        }
+        .onChange(of: viewModel.announcement) { _, newMessage in
             if let message = newMessage {
                 AccessibilityNotification.Announcement(message).post()
             }

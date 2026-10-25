@@ -143,6 +143,8 @@ nonisolated enum AccessibilityID {
         static let restoreButton     = "trash.button.restore"
         /// The "Delete Permanently" toolbar button in ItemDetailView for trashed items.
         static let permanentDeleteButton = "trash.button.permanentDelete"
+        /// The "Empty Trash" toolbar button of the Trash list.
+        static let emptyTrashButton  = "trash.button.emptyTrash"
     }
 
     // MARK: - Create Item (add-vault-items)

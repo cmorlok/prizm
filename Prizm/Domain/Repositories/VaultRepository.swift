@@ -56,6 +56,11 @@ protocol VaultRepository: AnyObject, Sendable {
 
     /// Permanently removes the trashed item with `id` by calling `DELETE /ciphers/{id}`.
     func permanentDeleteItem(id: String) async throws
+    /// Permanently deletes the given items if they are in Trash; ids of items that are not in
+    /// Trash are ignored. Deleted items leave the cache. Returns how many were deleted; if a
+    /// request fails, throws `PermanentDeleteError` after trying the rest.
+    @discardableResult
+    func permanentDeleteItems(ids: [String]) async throws -> Int
 
     /// Restores a trashed item by calling `PUT /ciphers/{id}/restore`.
     func restoreItem(id: String) async throws
@@ -90,6 +95,14 @@ protocol VaultRepository: AnyObject, Sendable {
 }
 
 // MARK: - Errors
+
+/// A bulk permanent delete in which at least one request failed.
+nonisolated struct PermanentDeleteError: Error {
+    /// Items deleted by the requests that succeeded.
+    let deleted: Int
+    /// The first failure.
+    let underlying: Error
+}
 
 nonisolated enum VaultError: Error, LocalizedError {
     case vaultLocked
