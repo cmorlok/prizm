@@ -123,7 +123,9 @@ The error is logged with the HTTP status, never with names.
 
 `createCollection` sends `users: [{id: membershipId, readOnly: false, hidePasswords: false,
 manage: true}]`, `groups: []`, `externalId: null`. `membershipId` is the profile's
-`organizationUserId`, decoded in `RawOrganization` and carried on the Domain `Organization`.
+`organizationUserId`, decoded in `RawOrganization` and carried on the Domain `Organization` as
+`OrgMembershipId`: `.known(id)`, `.notSent` (the legacy case below) or `.unreadable` (present but
+not decodable). Three states, because "not sent" and "unreadable" lead to different behaviour.
 
 Vaultwarden 1.32.0+ and official v2025.1.0+ always send `organizationUserId` (Context). If the
 field is present but can't be decoded, the create is not sent and the user sees the existing

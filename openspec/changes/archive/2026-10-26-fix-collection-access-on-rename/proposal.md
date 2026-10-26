@@ -88,7 +88,7 @@ rename resends the current access list.
   - `SyncResponse.swift` `RawOrganization`: decode `organizationUserId`.
   - `VaultRepositoryImpl.renameCollection` / `createCollection`: read, then write.
   - New `Data/Repositories/Legacy/LegacyCollectionCreateWithoutMembership.swift`.
-- **Domain:** `Organization` gains `membershipId: String?` (the org-user id, not a secret).
+- **Domain:** `Organization` gains `membershipId: OrgMembershipId` (the org-user id, not a secret), with the states `.known(id)`, `.notSent` and `.unreadable` (design D3).
 - **Presentation:** none, apart from the existing error path for rename and create.
 - **No new dependencies.**
 - **Security review: yes.** No crypto change, but the change touches access control on shared
