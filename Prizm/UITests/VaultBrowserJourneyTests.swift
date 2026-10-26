@@ -124,6 +124,21 @@ final class VaultBrowserJourneyTests: PrizmUITestCase {
                        "Accessibility should expose the second item's username")
     }
 
+    // MARK: - Open in browser (safe-uri-launch)
+
+    /// Gamma has a `file:` website, which must get no open button, and `example.com/login`, which
+    /// opens as http. The row's identifier overrides its children's, so the button is found by its
+    /// label, among links and buttons only (its image child carries the same label).
+    func testOpenInBrowser_onlyForAllowedSchemes() {
+        openItem(Fixture.gamma)
+        // One predicate per query: an NSPredicate is not Sendable, so it can't be shared.
+        let links = app.descendants(matching: .link).matching(NSPredicate(format: "label == %@", "Open Website"))
+        let buttons = app.descendants(matching: .button).matching(NSPredicate(format: "label == %@", "Open Website"))
+        let openButtons = links.count > 0 ? links : buttons
+        XCTAssertTrue(openButtons.firstMatch.waitForExistence(timeout: 5), "example.com/login should be openable")
+        XCTAssertEqual(openButtons.count, 1, "The file: website must not get an open button")
+    }
+
     // MARK: - US3 Scenario 7: Item change resets mask state
 
     /// Verifies that navigating to a different item resets the reveal state to masked (FR-027).

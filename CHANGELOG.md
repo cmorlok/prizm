@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fix: "Open in browser" on a website now opens only web and other safe link types (the official
+  Bitwarden apps' list), never `file:` or custom app links from a shared item, and works for
+  addresses saved without `http://`. There is no button when no app on the Mac can open the link.
 - Fix: a password copied from the password generator was not hidden from clipboard history and
   could stay on the clipboard indefinitely once the edit sheet closed. All copies now go through
   one clipboard service.

@@ -61,7 +61,8 @@ struct LoginDetailView: View {
                                 label:  "Website",
                                 value:  uri.uri,
                                 itemId: item.id,
-                                url:    URL(string: uri.uri),
+                                // Only allow-listed schemes, as in the official apps (safe-uri-launch).
+                                url:    URILaunchTarget.url(for: uri),
                                 onCopy: onCopy
                             )
                         }

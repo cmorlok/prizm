@@ -14,7 +14,7 @@ import SwiftUI
 /// ```swift
 /// FieldRowView(label: "Username", value: item.username, itemId: item.id)
 /// FieldRowView(label: "Password", value: item.password, itemId: item.id, isMasked: true)
-/// FieldRowView(label: "Website", value: uri.uri, itemId: item.id, url: URL(string: uri.uri))
+/// FieldRowView(label: "Website", value: uri.uri, itemId: item.id, url: URILaunchTarget.url(for: uri))
 /// ```
 struct FieldRowView: View {
 
