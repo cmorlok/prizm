@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Fix: an organization item could be saved encrypted with your personal key when the
+  organization's key was unavailable (for example after it could not be unlocked during sign-in,
+  or during a sync), which made it unreadable for everyone else. Such saves now stop with an error
+  and keep your input. Signing out now also removes the organization keys from memory. If an organization item became
+  unreadable this way, open it in an official Bitwarden app as the user who saved it and save it
+  again.
 - Fix: the favorite star no longer re-saves the whole item, which could remove data Prizm does not
   show yet, such as passkeys or password history. It no longer needs edit rights for organization
   items, and a failed change shows an error. Bitwarden self-hosted servers on MySQL, PostgreSQL or

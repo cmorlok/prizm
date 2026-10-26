@@ -145,24 +145,32 @@ actor SyncRepositoryImpl: SyncRepository {
                     rsaPrivateKeyBytes.resetBytes(in: rsaPrivateKeyBytes.indices)
                 }
 
-                // Unwrap each org key into OrgKeyCache.
-                // Failure for a single org is logged and skipped; other orgs proceed.
-                await orgKeyCache.clear()  // Fresh slate for this sync.
+                // Unwrap every org key on the side, then swap them into OrgKeyCache in one step,
+                // so a save during the sync never finds the cache empty (fix-org-key-required-
+                // on-write). Failure for a single org is logged and skipped; that org has no key
+                // afterwards, and saving its items fails instead of using the vault key.
+                var unwrappedOrgKeys: [String: CryptoKeys] = [:]
                 for rawOrg in syncResponse.organizations {
                     do {
-                        let orgKeys = try await crypto.unwrapOrgKey(
+                        unwrappedOrgKeys[rawOrg.id] = try await crypto.unwrapOrgKey(
                             encOrgKey: rawOrg.key,
                             rsaPrivateKey: rsaPrivateKeyBytes
                         )
-                        await orgKeyCache.store(key: orgKeys, for: rawOrg.id)
                     } catch {
                         logger.fault("Failed to unwrap org key for org \(rawOrg.id.prefix(8), privacy: .public)… — org ciphers will be skipped: \(error, privacy: .public)")
                     }
                 }
+                await orgKeyCache.replaceAll(with: unwrappedOrgKeys)
 
                 // Build domain Organization entities.
                 let orgKeysSnapshot = await orgKeyCache.snapshot()
                 organizations = syncResponse.organizations.compactMap { (raw: RawOrganization) in
+                    // An org without a key can't show or save anything; listing it would only offer
+                    // a create target whose save always fails.
+                    guard orgKeysSnapshot[raw.id] != nil else {
+                        logger.error("Org \(raw.id.prefix(8), privacy: .public)… not listed: its key could not be unwrapped")
+                        return nil
+                    }
                     guard let role = OrgRole(rawValue: raw.type) else {
                         logger.error("Unknown org role type \(raw.type, privacy: .public) for org \(raw.id.prefix(8), privacy: .public)")
                         return nil
@@ -223,8 +231,13 @@ actor SyncRepositoryImpl: SyncRepository {
                 logger.info("Org sync: \(organizations.count) org(s), \(collections.count) collection(s), \(orgCipherFailedCount, privacy: .public) org cipher(s) skipped")
             } catch {
                 logger.error("Org key sync failed — org ciphers unavailable this session: \(error, privacy: .public)")
-                // Non-fatal: personal items still work without org support.
+                // Non-fatal: personal items still work without org support. The previous org keys
+                // stay; no org items are listed from this sync.
             }
+        } else {
+            // No organizations (or no private key to unwrap them): drop the keys of orgs the user
+            // has left.
+            await orgKeyCache.replaceAll(with: [:])
         }
 
         // Phase 3: Populate the in-memory vault store.

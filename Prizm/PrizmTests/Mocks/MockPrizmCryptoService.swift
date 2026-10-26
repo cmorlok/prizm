@@ -70,13 +70,23 @@ actor MockPrizmCryptoService: PrizmCryptoService {
     nonisolated(unsafe) var stubbedRSAPrivateKey: Data = Data(count: 32)
     nonisolated(unsafe) var stubbedOrgKeys: [String: CryptoKeys] = [:]
 
+    nonisolated(unsafe) var decryptRSAPrivateKeyError: Error?
+    /// Blocks each org key unwrap this long, to hold a sync in the unwrap phase.
+    nonisolated(unsafe) var unwrapOrgKeyDelay: TimeInterval = 0
+
     func decryptRSAPrivateKey(encPrivateKey: String, vaultKeys: CryptoKeys) throws -> Data {
-        stubbedRSAPrivateKey
+        if let decryptRSAPrivateKeyError { throw decryptRSAPrivateKeyError }
+        return stubbedRSAPrivateKey
     }
 
+    /// Returns `stubbedOrgKeys[encOrgKey]`, or a deterministic zero key for any other value.
+    /// Encrypted org keys whose unwrap fails, as for a corrupt or foreign key.
+    nonisolated(unsafe) var failingOrgKeys: Set<String> = []
+
     func unwrapOrgKey(encOrgKey: String, rsaPrivateKey: Data) throws -> CryptoKeys {
-        // Return a deterministic stub org key for tests.
-        CryptoKeys(encryptionKey: Data(count: 32), macKey: Data(count: 32))
+        if unwrapOrgKeyDelay > 0 { Thread.sleep(forTimeInterval: unwrapOrgKeyDelay) }
+        if failingOrgKeys.contains(encOrgKey) { throw PrizmCryptoServiceError.invalidSymmetricKeyLength }
+        return stubbedOrgKeys[encOrgKey] ?? CryptoKeys(encryptionKey: Data(count: 32), macKey: Data(count: 32))
     }
 
     // MARK: - Attachment crypto stubs
