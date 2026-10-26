@@ -34,6 +34,13 @@ Estimates are ideal engineer-days. Write a failing test first (§IV). One commit
 - [ ] 5.1 Remove the shortcut (design D5). UI tests cannot read a menu item's key equivalent, so check by hand: the Prizm menu shows "Sign Out…" without a shortcut.
 - [x] 5.2 CHANGELOG.
 
+## 7. New Window (added 2026-10-26)
+
+- [x] 7.1 Implement design D6 (`PrizmApp`: `WindowGroup(id:)`, "New Window" opens it; `UITestSupport.openWindowIfNone()`).
+- [x] 7.2 UI check: `AccessibilityLabelTests` with no window restored: the fallback opens one, 3 of 3 pass (0 of 4 before).
+- [ ] 7.3 By hand: close the window, File → New Window opens a new one.
+- [x] 7.4 CHANGELOG.
+
 ## 6. Verify (0.25 d)
 
 - [x] 6.1 `PrizmTests` pass.

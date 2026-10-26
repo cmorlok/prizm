@@ -26,6 +26,9 @@ fixed together here, one commit per bug, so each can be reviewed or cherry-picke
    click itself. The arrow keys go to the window, or to the list that had focus before.
 5. **"Sign Out…" uses ⌘⇧Q,** the system's Log Out shortcut. A UI test that sent it logged the
    developer out of macOS.
+6. **File → New Window shows "No document could be opened"** (found 2026-10-26). The command sends
+   `NSDocumentController.newDocument(_:)`, but Prizm is not document-based. Under XCUITest this
+   also left the UI tests without any way to get a window when macOS restored none.
 
 ## Origin of the current behaviour
 
@@ -36,6 +39,7 @@ fixed together here, one commit per bug, so each can be reviewed or cherry-picke
 | 3 Stale VoiceOver values | Platform behaviour, unnoticed | `.textSelection(.enabled)` texts since `c95e172`; no test read the accessibility value |
 | 4 Arrow keys | Side effect | `.onMove` in the sidebar (`a09a2eb`) and `.draggable` on item rows (`61398f1`, folder drag and drop) |
 | 5 ⌘⇧Q | Unexplained choice | Added in `c95e172` without a stated reason; no spec mentions it |
+| 6 New Window | Implementation gap | `newDocument(_:)` in `PrizmApp.swift` since `c95e172`; the `WindowGroup` had no id to open |
 
 ## What Changes
 
@@ -48,6 +52,8 @@ fixed together here, one commit per bug, so each can be reviewed or cherry-picke
    text.
 4. The sidebar and the item list take keyboard focus on every click on a row.
 5. "Sign Out…" has no keyboard shortcut, as "Log out" in the official Bitwarden desktop client.
+6. "New Window" opens the main window scene by id. `waitForVaultBrowser()` uses it when the app
+   starts without a window.
 
 ## Non-Goals
 

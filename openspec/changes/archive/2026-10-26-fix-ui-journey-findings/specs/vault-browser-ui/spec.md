@@ -26,3 +26,11 @@ No menu command SHALL use a key combination that macOS reserves system-wide, suc
 #### Scenario: Sign Out menu item
 - **WHEN** the user opens the Prizm menu
 - **THEN** "Sign Out…" SHALL show no keyboard shortcut
+
+### Requirement: File → New Window opens a main window
+The "New Window" command (⌥⌘N) SHALL open a new main window, also when no window is open.
+
+#### Scenario: No window open
+- **GIVEN** Prizm is running with no window open
+- **WHEN** the user chooses File → New Window
+- **THEN** a main window SHALL open, showing the current screen (login, unlock or vault)
