@@ -38,6 +38,13 @@ Estimates are ideal engineer-days. Write a failing test first for each task (§I
   is checked; the Device-Type comment and CHANGELOG now say the "unknown browser" effect is
   Vaultwarden's (the official server reads the device type from the token claim). Note for future
   Duo work: the official server reads `Bitwarden-Client-Name` to pick the Duo redirect.
-- Built on the Mac; **unit tests not run there yet** (test runner hung).
+- **Verified on the Mac (2026-10-26):** all 679 unit tests pass on this branch; the full UI suite passes on the top of the series (`fix/017`).
 - Open: 3.1 needs the rig (event log shows macOS desktop; SSH key items still sync).
+
+## Verification (2026-10-26, `/opsx:verify`)
+
+- Tasks 1.1 and 1.3 claimed tests that were missing; added: the cipher update request carries the
+  identification, a favicon request carries none, and the token form sends `client_id=desktop` and
+  `deviceType=7`. The code was already right.
+- Open by design: 3.1 (test server; the Vaultwarden event log scenario can only be checked there).
 
