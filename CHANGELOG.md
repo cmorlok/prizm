@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fix: a password copied from the password generator was not hidden from clipboard history and
+  could stay on the clipboard indefinitely once the edit sheet closed. All copies now go through
+  one clipboard service.
+- Add a "Clear clipboard" setting in Settings → Security (Never to 5 minutes; default 30 seconds).
+  Locking, signing out and quitting Prizm now also clear a secret Prizm copied.
 - Security: master and stretched keys are zeroed right after use, including the keys kept during
   a two-factor login, and the Argon2id buffers before they are freed. Locking and signing out now
   clear every key cache through one path, including "Sign in with a different account". Debug mode

@@ -31,6 +31,7 @@ final class VaultBrowserViewModelSyncStatusTests: XCTestCase {
             moveItem:         StubMoveItem(),
             setFavorite:      SetFavoriteUseCaseImpl(repository: vault),
             emptyTrash:       EmptyTrashUseCaseImpl(repository: vault, sync: MockSyncUseCase()),
+            clipboard:        ClipboardServiceImpl(pasteboard: FakePasteboard()),
             createCollection: StubCreateCollection(),
             renameCollection: StubRenameCollection(),
             deleteCollection: StubDeleteCollection(),

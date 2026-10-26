@@ -77,9 +77,11 @@ struct MaskedEditFieldRow: View {
     @State private var maskTask: Task<Void, Never>?
     @State private var showGenerator = false
     @State private var generatorVM: PasswordGeneratorViewModel?
+    /// The app's one clipboard service; the generator's copies must survive this row (clipboard-hardening).
+    @Environment(ClipboardServiceImpl.self) private var clipboard
 
     // TODO: make the timeout app-wide configurable (UserDefaults pref) — deferred to v2.
-    // Using 30 s as a sensible default, matching the clipboard auto-clear interval.
+    // Using 30 s as a sensible default, the clipboard auto-clear's default delay.
     private let revealTimeout: Duration = .seconds(30)
 
     var body: some View {
@@ -116,7 +118,8 @@ struct MaskedEditFieldRow: View {
             if generatorBinding != nil {
                 Button {
                     if generatorVM == nil {
-                        generatorVM = PasswordGeneratorViewModel(provider: CryptographicRandomnessProvider())
+                        generatorVM = PasswordGeneratorViewModel(provider: CryptographicRandomnessProvider(),
+                                                                 clipboard: clipboard)
                     }
                     showGenerator.toggle()
                 } label: {

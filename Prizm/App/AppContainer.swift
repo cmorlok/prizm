@@ -50,6 +50,9 @@ final class AppContainer: ObservableObject {
     let moveItemToFolderUseCase:         MoveItemToFolderUseCaseImpl
     let setFavoriteUseCase:              SetFavoriteUseCaseImpl
     let emptyTrashUseCase:               EmptyTrashUseCaseImpl
+    /// The one clipboard service: every copy of a secret goes through it (clipboard-hardening).
+    let clipboardService = ClipboardServiceImpl()
+    var clipboard: any ClipboardService { clipboardService }
     let createCollectionUseCase:         CreateCollectionUseCaseImpl
     let renameCollectionUseCase:         RenameCollectionUseCaseImpl
     let deleteCollectionUseCase:         DeleteCollectionUseCaseImpl
@@ -205,6 +208,7 @@ final class AppContainer: ObservableObject {
             moveItem:         moveItemToFolderUseCase,
             setFavorite:      setFavoriteUseCase,
             emptyTrash:       emptyTrashUseCase,
+            clipboard:        clipboardService,
             createCollection: createCollectionUseCase,
             renameCollection: renameCollectionUseCase,
             deleteCollection: deleteCollectionUseCase,

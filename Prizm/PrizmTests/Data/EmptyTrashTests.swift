@@ -351,6 +351,7 @@ private func makeEmptyTrashTestViewModel(emptyTrash: any EmptyTrashUseCase) -> V
         moveItem:         MoveItemToFolderUseCaseImpl(repository: vault),
         setFavorite:      SetFavoriteUseCaseImpl(repository: vault),
         emptyTrash:       emptyTrash,
+        clipboard:        ClipboardServiceImpl(pasteboard: FakePasteboard()),
         createCollection: CreateCollectionUseCaseImpl(repository: vault),
         renameCollection: RenameCollectionUseCaseImpl(repository: vault),
         deleteCollection: DeleteCollectionUseCaseImpl(repository: vault),
