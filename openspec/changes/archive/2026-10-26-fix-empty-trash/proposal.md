@@ -52,10 +52,8 @@ by hand or the server's auto-purge runs (Bitwarden after 30 days; Vaultwarden on
 - `empty-trash`: Empty Trash permanently deletes exactly the items in Trash, never anything else.
 
 ### Modified Capabilities
-_None in this change_ (MODIFIED deltas against `vault-item-delete` are avoided because that spec
-does not pass strict validation). The requirement in this change replaces
-`vault-item-delete/spec.md` "User can empty trash" in full, including all five scenarios that name
-`DELETE /ciphers/purge`.
+- `vault-item-delete`: the requirement "User can empty trash" (which names the non-existent
+  `DELETE /ciphers/purge`) is REMOVED; the new `empty-trash` capability replaces it.
 
 ## Non-Goals
 
@@ -74,8 +72,9 @@ does not pass strict validation). The requirement in this change replaces
 ## Impact
 
 - **Data:** `PrizmAPIClient.permanentDeleteCiphers(ids:)` (bulk `DELETE /api/ciphers`);
-  `VaultRepositoryImpl.emptyTrash()`.
-- **Domain:** `EmptyTrashUseCase`; `VaultRepository.emptyTrash() -> EmptyTrashResult`.
+  `VaultRepositoryImpl.permanentDeleteItems(ids:)`.
+- **Domain:** `EmptyTrashUseCase` (`prepare()` syncs and returns the trashed ids, `execute(ids:)`
+  deletes and syncs again, returning `EmptyTrashResult`); `VaultRepository.permanentDeleteItems(ids:)`.
 - **Presentation:** Trash toolbar button, confirmation, result message; `VaultBrowserViewModel`.
 - **No new dependencies.**
 - **Security review: yes.** Irreversible deletion of vault data (§III, vault-touching code).

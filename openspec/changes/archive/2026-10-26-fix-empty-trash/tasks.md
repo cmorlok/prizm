@@ -17,7 +17,7 @@ dependencies. Task 2.1 (purge guard) comes first and can merge on its own.
 
 - [x] 3.1 Failing test (mock API): `emptyTrash()` (implemented as `VaultRepository.permanentDeleteItems(ids:)` plus `EmptyTrashUseCase`) sends only the ids of items with `isDeleted == true`, in chunks of 500; active items are never in a request.
 - [x] 3.2 Failing test: after the delete calls (success or error), a sync runs and `EmptyTrashResult.remaining` is the trash count after that sync.
-- [x] 3.3 Implement `VaultRepository.emptyTrash()`, `EmptyTrashUseCase` (Domain) and its Data impl; wire in `AppContainer`.
+- [x] 3.3 Implement `VaultRepository.permanentDeleteItems(ids:)` (planned as `emptyTrash()`), `EmptyTrashUseCase` (Domain) and its Data impl; wire in `AppContainer`.
 
 ## 4. Trash UI (0.5 d)
 
@@ -32,7 +32,8 @@ dependencies. Task 2.1 (purge guard) comes first and can merge on its own.
 
 ## 6. Release (0.25–0.5 d)
 
-- [ ] 6.1 Mandatory security review: no path to `/purge`; only trashed ids are sent; sync-before-confirm in place; nothing but HTTP status in logs.
+- [x] 6.1 Mandatory security review: no path to `/purge`; only trashed ids are sent; sync-before-confirm in place; nothing but HTTP status in logs.
+  Done; see Results.
 - [x] 6.2 CHANGELOG "Added": Empty Trash in the Trash view.
 - [x] 6.3 The change removes the requirement "User can empty trash" from `vault-item-delete` (REMOVED, with reason and migration), so archiving replaces it with this change's `empty-trash` requirements. No warning line in the living spec is needed (decided 2026-10-26: archive in the same PR).
 - [x] 6.4 `openspec validate fix-empty-trash --type change --strict`.
@@ -50,13 +51,28 @@ dependencies. Task 2.1 (purge guard) comes first and can merge on its own.
 - If the follow-up sync fails, the result comes from the cache, which already reflects every chunk
   that succeeded.
 - 4.3: XCUITests added (`TrashJourneyTests.testEmptyTrash_refreshFails_deletesNothing`,
-  `testEmptyTrash_notOfferedOutsideTrash`) but not run yet: the Mac's UI automation timed out
-  (screen locked). Without a server, the test vault takes the refresh-failure path.
+  `testEmptyTrash_notOfferedOutsideTrash`); both pass (2026-10-26). Without a server, the test vault
+  takes the refresh-failure path, so the full journey (delete, empty state) still needs a test server.
 - 6.1 security review: no path to `/purge`, only trashed ids, sync before confirm. Fixed after
   review (design D6): state reset on lock, alert passes its confirmation, chunks continue after a
   failure, failure cause and sync status in the result, logs with HTTP status only, and the sync
   no longer writes after a lock. Not tested: the button's disabled state with an empty Trash.
-- **Not verified on the Mac yet:** the review fixes were written while the Mac's test runner hung
-  (screen locked). Run `PrizmTests` and `TrashJourneyTests` before the PR.
-- Open: 1.1 (rig), 4.3 run.
+- **Verified on the Mac (2026-10-26):** all 642 unit tests pass on this branch; the full UI suite passes on the top of the series (`fix/017`). The test run found two test bugs, fixed here: `SyncRepositoryImplTests` never unlocked
+  the mock, and one `EmptyTrashTests` case set the sync error too late.
+- Open: 1.1 (rig); 4.3's full journey (needs a test server).
+
+## Verification (2026-10-26, `/opsx:verify`)
+
+- Spec: the connection-failure message is now part of the requirement (scenario "Server not
+  reachable"); the deletion is announced only when something was deleted (it announced "0 items
+  permanently deleted" before).
+- Button state: `canEmptyTrash` in the view model, tested by `EmptyTrashButtonStateTests`.
+- Proposal and design name `permanentDeleteItems(ids:)` and `EmptyTrashUseCase` instead of the
+  planned `emptyTrash()`.
+- Open by design: 1.1 (test server); 4.3's full journey (test server) and the VoiceOver hand check.
+- Second round (2026-10-26): the announced count came from the delete calls, which can be wrong
+  both ways (the official server answers 200 for items it skips; Vaultwarden may have deleted part
+  of a failed chunk). After a successful follow-up sync it is now the number of requested items
+  that are gone. The proposal lists the REMOVED delta; the `empty-trash` spec no longer points to
+  the removed requirement.
 

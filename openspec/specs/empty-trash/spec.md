@@ -1,9 +1,12 @@
-# Spec Delta
+# empty-trash Specification
 
-## ADDED Requirements
+## Purpose
+Empty the trash by deleting exactly the trashed items, never through a purge endpoint.
+
+## Requirements
 
 ### Requirement: Empty Trash deletes exactly the trashed items
-The system SHALL provide an "Empty Trash" action in the Trash view. It SHALL permanently delete the items that are in Trash by sending their ids with `DELETE /api/ciphers` and body `{"ids": [...]}`, in requests of at most 500 ids. It SHALL NOT delete any item that is not in Trash. This requirement supersedes "User can empty trash" in `openspec/specs/vault-item-delete/spec.md`, which names the non-existent `DELETE /ciphers/purge`.
+The system SHALL provide an "Empty Trash" action in the Trash view. It SHALL permanently delete the items that are in Trash by sending their ids with `DELETE /api/ciphers` and body `{"ids": [...]}`, in requests of at most 500 ids. It SHALL NOT delete any item that is not in Trash.
 
 #### Scenario: Empty a trash with three items
 - **GIVEN** three items are in Trash and ten items are active
@@ -44,10 +47,16 @@ Before asking for confirmation, the system SHALL sync, compute the trashed items
 - **AND** the message "Couldn't refresh the trash. Try again." SHALL be shown
 
 ### Requirement: The outcome is reported, including partial failure
-After deleting, the system SHALL sync again. It SHALL announce "N items permanently deleted" to VoiceOver on success. If items remain in Trash, it SHALL show "N items could not be deleted. You may not have permission to delete them."
+After deleting, the system SHALL sync again. It SHALL announce "N items permanently deleted" to VoiceOver when at least one item was deleted. If items remain in Trash, it SHALL show "N items could not be deleted. You may not have permission to delete them.", or "N items could not be deleted. Check your connection and try again." when the server could not be reached.
 
 #### Scenario: One item may not be deleted
 - **GIVEN** Trash holds two personal items and one org item the user may not delete
 - **WHEN** the user empties the trash
 - **THEN** after the follow-up sync the Trash view SHALL list only the org item
 - **AND** the user SHALL see "1 item could not be deleted. You may not have permission to delete them."
+
+#### Scenario: Server not reachable
+- **GIVEN** Trash holds one item
+- **WHEN** the user empties the trash and the server cannot be reached
+- **THEN** the user SHALL see "1 item could not be deleted. Check your connection and try again."
+- **AND** nothing SHALL be announced as deleted

@@ -64,7 +64,8 @@ Sources: `$SRC` checkouts of 2026-10-23 (clients, sdk-internal, server) and Vaul
 ### D1. Bulk `DELETE /api/ciphers` with the trashed ids
 
 `permanentDeleteCiphers(ids: [String])` sends `DELETE /api/ciphers` with JSON `{"ids": [...]}`.
-`emptyTrash()` sends the ids of all items with `isDeleted == true`, in chunks of 500 (the official
+`VaultRepository.permanentDeleteItems(ids:)`, called by `EmptyTrashUseCase.execute(ids:)` with the
+ids the user confirmed (all items with `isDeleted == true`), sends them in chunks of 500 (the official
 cloud limit; harmless on self-hosted servers). `organizationId` is not sent; Prizm uses the
 non-admin path.
 
@@ -100,7 +101,9 @@ window the web vault has between loading the list and confirming.
 
 After the delete calls (success or error), Prizm syncs again, so the local state matches the server
 in both server behaviours (official skips, Vaultwarden stops at the first error).
-`EmptyTrashResult {requested, remaining}` is computed from the post-sync trash. When `remaining > 0`,
+`EmptyTrashResult {requested, remaining}` is computed from the post-sync trash, and `deleted` is
+`requested - remaining`. If the follow-up sync fails, `deleted` is the count the delete calls
+reported, and `remaining` comes from the cache. When `remaining > 0`,
 the user sees "N items could not be deleted. You may not have permission to delete them." The
 underlying error is logged at `.error` with HTTP status only.
 
