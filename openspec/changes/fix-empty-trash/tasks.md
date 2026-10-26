@@ -34,7 +34,7 @@ dependencies. Task 2.1 (purge guard) comes first and can merge on its own.
 
 - [ ] 6.1 Mandatory security review: no path to `/purge`; only trashed ids are sent; sync-before-confirm in place; nothing but HTTP status in logs.
 - [x] 6.2 CHANGELOG "Added": Empty Trash in the Trash view.
-- [ ] 6.3 At archive time, replace the requirement "User can empty trash" in `openspec/specs/vault-item-delete/spec.md:53-70` with this change's `empty-trash` requirements, removing every mention of `DELETE /ciphers/purge`. Until then, add a one-line warning under that requirement pointing to this change (needs the maintainer's agreement, since it edits a living spec before archive).
+- [x] 6.3 The change removes the requirement "User can empty trash" from `vault-item-delete` (REMOVED, with reason and migration), so archiving replaces it with this change's `empty-trash` requirements. No warning line in the living spec is needed (decided 2026-10-26: archive in the same PR).
 - [x] 6.4 `openspec validate fix-empty-trash --type change --strict`.
 
 ## Results (2026-10-25)
@@ -58,5 +58,5 @@ dependencies. Task 2.1 (purge guard) comes first and can merge on its own.
   no longer writes after a lock. Not tested: the button's disabled state with an empty Trash.
 - **Not verified on the Mac yet:** the review fixes were written while the Mac's test runner hung
   (screen locked). Run `PrizmTests` and `TrashJourneyTests` before the PR.
-- Open: 1.1 (rig), 4.3 run, 6.3 at archive time.
+- Open: 1.1 (rig), 4.3 run.
 
