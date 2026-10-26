@@ -14,8 +14,8 @@ final class AppContainer: ObservableObject {
 
     let apiClient:     PrizmAPIClientImpl
     let crypto:        PrizmCryptoServiceImpl
-    let keychain:      KeychainServiceImpl
-    let biometricKeychain: BiometricKeychainServiceImpl
+    let keychain:      any KeychainService
+    let biometricKeychain: any BiometricKeychainService
     let vaultStore:    VaultRepositoryImpl
     let faviconLoader: FaviconLoader
     /// In-memory cache mapping cipher ID → 64-byte effective key.
@@ -70,8 +70,23 @@ final class AppContainer: ObservableObject {
     init() {
         let api           = PrizmAPIClientImpl()
         let crypto        = PrizmCryptoServiceImpl()
-        let keychain      = KeychainServiceImpl()
-        let biometricKeychain = BiometricKeychainServiceImpl()
+        let keychain: any KeychainService
+        let biometricKeychain: any BiometricKeychainService
+        #if DEBUG
+        // XCUITest seam (UITestFixtures, design D2 of fix-ui-test-target): in a test state, use
+        // in-memory keychains so a UI test never reads or deletes the developer's stored login.
+        if let testState = UITestFixtures.launchState {
+            keychain          = UITestFixtures.keychain(for: testState)
+            biometricKeychain = InMemoryBiometricKeychainService()
+            UITestFixtures.isolateBiometricDefaults()
+        } else {
+            keychain          = KeychainServiceImpl()
+            biometricKeychain = BiometricKeychainServiceImpl()
+        }
+        #else
+        keychain          = KeychainServiceImpl()
+        biometricKeychain = BiometricKeychainServiceImpl()
+        #endif
         let keyCache      = VaultKeyCache()
         let orgKeyCache   = OrgKeyCache()
         let vault         = VaultRepositoryImpl(apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache)

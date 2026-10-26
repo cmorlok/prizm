@@ -65,6 +65,20 @@
 		7B5A0F4C3D1E69A8C2B7F4DA /* PermanentDeleteVaultItemUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C6B1A5D4E2F70B9D3C8A5EB /* PermanentDeleteVaultItemUseCaseImpl.swift */; };
 		7F0FEAC3BB77445D9BCE9F99 /* CardDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 850DDD79F86D4651A98ADD0A /* CardDetailView.swift */; };
 		8146C3217048FFCA2F6C0DE7 /* VerificationCodeJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF7B98A38676009D444D7092 /* VerificationCodeJourneyTests.swift */; };
+		5049082877EF9EBC398A520D /* UITestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CC1EE485D4953514FDA892C /* UITestSupport.swift */; };
+		24AE531CF829C73CE1DBF89A /* AccessibilityLabelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3ADC3D12DA7BC48ACF2743A9 /* AccessibilityLabelTests.swift */; };
+		E4965FAE169D07437AC82DF7 /* AttachmentJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28B08E6107497AA4AEADD2D7 /* AttachmentJourneyTests.swift */; };
+		C50C3B18F9FBD6D8F952693E /* BiometricEnrollmentJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BA11D3B368812DBE88A5C42 /* BiometricEnrollmentJourneyTests.swift */; };
+		F8D054CB416678D9ECDC7E4A /* BiometricUnlockJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9D6BE7B092656FA79ACA4D4 /* BiometricUnlockJourneyTests.swift */; };
+		53D703D1E7F5204C0B1F2861 /* CreateItemJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5DA157731CED7E933B1DAD7 /* CreateItemJourneyTests.swift */; };
+		325397BA09D8899F1EBC9757 /* EditItemJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF584A61C3A4EC6ADA18A608 /* EditItemJourneyTests.swift */; };
+		6A01DCC1DFA27ADC42961580 /* KeyboardNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62BD63C6311650DC365E4EB0 /* KeyboardNavigationTests.swift */; };
+		DB96B1ECE6D3842D47240F3C /* LoginJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF759512918D91F966308B59 /* LoginJourneyTests.swift */; };
+		3BE22F45B780FDA1B6E80B08 /* PasswordGeneratorJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79CCCB32E2618189C4DD4D1F /* PasswordGeneratorJourneyTests.swift */; };
+		F62328FD94F1D8223058FF7C /* SearchJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02299C70661DD0B96C7BF209 /* SearchJourneyTests.swift */; };
+		8C58A633FC00CE6E9CE5415B /* TrashJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C90A17E35451A7F47AB64D3 /* TrashJourneyTests.swift */; };
+		6A5AF6522DD13BAA19E4E1E9 /* UnlockJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CC5AD5FEF700754ADEEB673 /* UnlockJourneyTests.swift */; };
+		C48F674CF4AD31CF453E285F /* VaultBrowserJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97A0D045745D21E3FC8280E3 /* VaultBrowserJourneyTests.swift */; };
 		81E68A60DF0441BE9D6487BF /* RenameCollectionUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C53A49FF8CB462DBB0E474A /* RenameCollectionUseCase.swift */; };
 		839B201DD1B0447FABC35E38 /* Presentation/Unlock/EnrollmentReason.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88A47FABF899471394B5F56B /* Presentation/Unlock/EnrollmentReason.swift */; };
 		87146F7FF9C64EEA974FE521 /* CreateFolderUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9EA3A6C1A304AAF9510682E /* CreateFolderUseCase.swift */; };
@@ -100,6 +114,7 @@
 		AA001CC0001CC0001CC0006A /* DeleteCollectionUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA001CC0001CC0001CC0005A /* DeleteCollectionUseCaseImpl.swift */; };
 		AA1122334455667788990011 /* OptionKeyMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2233445566778899001122 /* OptionKeyMonitor.swift */; };
 		AA11BB22CC3344DD55EE66FF /* AccessibilityIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB22CC33DD4455EE66FF7700 /* AccessibilityIdentifiers.swift */; };
+		A5AC5E40144FD6E5EBA99F72 /* AccessibilityIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB22CC33DD4455EE66FF7700 /* AccessibilityIdentifiers.swift */; };
 		AB64508ED7804841AAC551A0 /* KdfParams.swift in Sources */ = {isa = PBXBuildFile; fileRef = E25C290F2D7A470EB4AB8698 /* KdfParams.swift */; };
 		AC24869F5C544E82B60C54E0 /* DeleteCollectionUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EDCDA57D3434985AC25FF5F /* DeleteCollectionUseCase.swift */; };
 		AC3EC95F694247B5A5809233 /* CreateVaultItemUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A335CC7B3C743B59A7630D8 /* CreateVaultItemUseCase.swift */; };
@@ -110,6 +125,7 @@
 		B2C3D4E5F6A748B9C0D1E2F3 /* EncString.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FBB82A6241244DD890E615C /* EncString.swift */; };
 		B7C8D9E0F1A24894B8C9D0E1 /* GetLastSyncDateUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6B7C8D9E0F14894A7B8C9D0 /* GetLastSyncDateUseCaseImpl.swift */; };
 		B829B2FAD4A10495AB2E6C9C /* UITestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DD1F54F8440612D286DD3AE /* UITestFixtures.swift */; };
+		0B034375259B7FF245D7120F /* UITestKeychains.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DEB5EA40BDE0A6D92D172C1 /* UITestKeychains.swift */; };
 		BB1001000000000000000001 /* Attachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1001000000000000000001 /* Attachment.swift */; };
 		BB1002000000000000000002 /* AttachmentRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1002000000000000000002 /* AttachmentRepository.swift */; };
 		BB1003000000000000000003 /* VaultKeyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1003000000000000000003 /* VaultKeyService.swift */; };
@@ -269,6 +285,7 @@
 		97110A2C639680F83C39DE8E /* TOTPCode.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TOTPCode.swift; sourceTree = "<group>"; };
 		9AED13455B194BB48EDC3459 /* VaultRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultRepositoryImpl.swift; sourceTree = "<group>"; };
 		9DD1F54F8440612D286DD3AE /* UITestFixtures.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = UITestFixtures.swift; sourceTree = "<group>"; };
+		5DEB5EA40BDE0A6D92D172C1 /* UITestKeychains.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = UITestKeychains.swift; sourceTree = "<group>"; };
 		A1B2C4D5E6F74891A2B3C4D5 /* SyncTimestampRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncTimestampRepository.swift; sourceTree = "<group>"; };
 		A311A2F8DDF196C25E9DE2FD /* VerificationCodeCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VerificationCodeCard.swift; sourceTree = "<group>"; };
 		A3AF8078B4F847EBACB42331 /* MoveItemToFolderUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoveItemToFolderUseCase.swift; sourceTree = "<group>"; };
@@ -342,6 +359,20 @@
 		EDB0E4B753854AFF89FFFAA2 /* DeleteVaultItemUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeleteVaultItemUseCase.swift; sourceTree = "<group>"; };
 		EEBF74B2F57C4B2D9FAA790B /* About/AboutViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = About/AboutViewModel.swift; sourceTree = "<group>"; };
 		EF7B98A38676009D444D7092 /* VerificationCodeJourneyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VerificationCodeJourneyTests.swift; sourceTree = "<group>"; };
+		9CC1EE485D4953514FDA892C /* UITestSupport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = UITestSupport.swift; sourceTree = "<group>"; };
+		3ADC3D12DA7BC48ACF2743A9 /* AccessibilityLabelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AccessibilityLabelTests.swift; sourceTree = "<group>"; };
+		28B08E6107497AA4AEADD2D7 /* AttachmentJourneyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AttachmentJourneyTests.swift; sourceTree = "<group>"; };
+		6BA11D3B368812DBE88A5C42 /* BiometricEnrollmentJourneyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BiometricEnrollmentJourneyTests.swift; sourceTree = "<group>"; };
+		E9D6BE7B092656FA79ACA4D4 /* BiometricUnlockJourneyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BiometricUnlockJourneyTests.swift; sourceTree = "<group>"; };
+		A5DA157731CED7E933B1DAD7 /* CreateItemJourneyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CreateItemJourneyTests.swift; sourceTree = "<group>"; };
+		FF584A61C3A4EC6ADA18A608 /* EditItemJourneyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EditItemJourneyTests.swift; sourceTree = "<group>"; };
+		62BD63C6311650DC365E4EB0 /* KeyboardNavigationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyboardNavigationTests.swift; sourceTree = "<group>"; };
+		FF759512918D91F966308B59 /* LoginJourneyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LoginJourneyTests.swift; sourceTree = "<group>"; };
+		79CCCB32E2618189C4DD4D1F /* PasswordGeneratorJourneyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PasswordGeneratorJourneyTests.swift; sourceTree = "<group>"; };
+		02299C70661DD0B96C7BF209 /* SearchJourneyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SearchJourneyTests.swift; sourceTree = "<group>"; };
+		4C90A17E35451A7F47AB64D3 /* TrashJourneyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TrashJourneyTests.swift; sourceTree = "<group>"; };
+		2CC5AD5FEF700754ADEEB673 /* UnlockJourneyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = UnlockJourneyTests.swift; sourceTree = "<group>"; };
+		97A0D045745D21E3FC8280E3 /* VaultBrowserJourneyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultBrowserJourneyTests.swift; sourceTree = "<group>"; };
 		EF90E0F31DF248FB9D12F74D /* VaultItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultItem.swift; sourceTree = "<group>"; };
 		F0DA2B1AD4924580BCE20BF3 /* AuthRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthRepositoryImpl.swift; sourceTree = "<group>"; };
 		F0E5C8073B744BF79C30A5E1 /* CipherMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CipherMapper.swift; sourceTree = "<group>"; };
@@ -424,6 +455,7 @@
 				4309FCE92F6809C10031C9F4 /* Config.swift */,
 				AA1018000000000000000018 /* AttachmentTempFileManager.swift */,
 				9DD1F54F8440612D286DD3AE /* UITestFixtures.swift */,
+				5DEB5EA40BDE0A6D92D172C1 /* UITestKeychains.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -719,6 +751,20 @@
 			isa = PBXGroup;
 			children = (
 				EF7B98A38676009D444D7092 /* VerificationCodeJourneyTests.swift */,
+				9CC1EE485D4953514FDA892C /* UITestSupport.swift */,
+				3ADC3D12DA7BC48ACF2743A9 /* AccessibilityLabelTests.swift */,
+				28B08E6107497AA4AEADD2D7 /* AttachmentJourneyTests.swift */,
+				6BA11D3B368812DBE88A5C42 /* BiometricEnrollmentJourneyTests.swift */,
+				E9D6BE7B092656FA79ACA4D4 /* BiometricUnlockJourneyTests.swift */,
+				A5DA157731CED7E933B1DAD7 /* CreateItemJourneyTests.swift */,
+				FF584A61C3A4EC6ADA18A608 /* EditItemJourneyTests.swift */,
+				62BD63C6311650DC365E4EB0 /* KeyboardNavigationTests.swift */,
+				FF759512918D91F966308B59 /* LoginJourneyTests.swift */,
+				79CCCB32E2618189C4DD4D1F /* PasswordGeneratorJourneyTests.swift */,
+				02299C70661DD0B96C7BF209 /* SearchJourneyTests.swift */,
+				4C90A17E35451A7F47AB64D3 /* TrashJourneyTests.swift */,
+				2CC5AD5FEF700754ADEEB673 /* UnlockJourneyTests.swift */,
+				97A0D045745D21E3FC8280E3 /* VaultBrowserJourneyTests.swift */,
 			);
 			path = UITests;
 			sourceTree = "<group>";
@@ -1162,6 +1208,7 @@
 				677A9343F8F61D0ADC9A113D /* TOTPCodesViewModel.swift in Sources */,
 				4A9486247F451D087DAA5B20 /* TOTPCodeRowView.swift in Sources */,
 				B829B2FAD4A10495AB2E6C9C /* UITestFixtures.swift in Sources */,
+				0B034375259B7FF245D7120F /* UITestKeychains.swift in Sources */,
 				71DD2CFC91D400C2EBF1A434 /* AppVisibility.swift in Sources */,
 				EC92BFB78809ACD1946D76CB /* VerificationCodeCard.swift in Sources */,
 				0710CED60B2C5AE731226A72 /* VerificationCodesListView.swift in Sources */,
@@ -1173,6 +1220,21 @@
 			buildActionMask = 2147483647;
 			files = (
 				8146C3217048FFCA2F6C0DE7 /* VerificationCodeJourneyTests.swift in Sources */,
+				A5AC5E40144FD6E5EBA99F72 /* AccessibilityIdentifiers.swift in Sources */,
+				5049082877EF9EBC398A520D /* UITestSupport.swift in Sources */,
+				24AE531CF829C73CE1DBF89A /* AccessibilityLabelTests.swift in Sources */,
+				E4965FAE169D07437AC82DF7 /* AttachmentJourneyTests.swift in Sources */,
+				C50C3B18F9FBD6D8F952693E /* BiometricEnrollmentJourneyTests.swift in Sources */,
+				F8D054CB416678D9ECDC7E4A /* BiometricUnlockJourneyTests.swift in Sources */,
+				53D703D1E7F5204C0B1F2861 /* CreateItemJourneyTests.swift in Sources */,
+				325397BA09D8899F1EBC9757 /* EditItemJourneyTests.swift in Sources */,
+				6A01DCC1DFA27ADC42961580 /* KeyboardNavigationTests.swift in Sources */,
+				DB96B1ECE6D3842D47240F3C /* LoginJourneyTests.swift in Sources */,
+				3BE22F45B780FDA1B6E80B08 /* PasswordGeneratorJourneyTests.swift in Sources */,
+				F62328FD94F1D8223058FF7C /* SearchJourneyTests.swift in Sources */,
+				8C58A633FC00CE6E9CE5415B /* TrashJourneyTests.swift in Sources */,
+				6A5AF6522DD13BAA19E4E1E9 /* UnlockJourneyTests.swift in Sources */,
+				C48F674CF4AD31CF453E285F /* VaultBrowserJourneyTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

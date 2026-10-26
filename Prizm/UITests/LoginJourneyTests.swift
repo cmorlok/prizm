@@ -11,16 +11,16 @@ import XCTest
 /// - Note: These tests require a running Vaultwarden instance or a mock server.
 ///   Configure the server URL via the `BW_TEST_SERVER_URL`, `BW_TEST_EMAIL`,
 ///   and `BW_TEST_PASSWORD` environment variables in the test scheme.
-final class LoginJourneyTests: XCTestCase {
+final class LoginJourneyTests: PrizmUITestCase {
 
     private var app: XCUIApplication!
 
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        // Pass launch argument to reset stored session for a clean login test.
-        app.launchArguments = ["--ui-testing", "--reset-session"]
-        app.launch()
+        // Signed-out test state: the login screen, with an in-memory keychain, so a stored login on
+        // this Mac is neither shown nor touched.
+        app.launch(in: UITestLaunch.signedOut)
     }
 
     override func tearDownWithError() throws {
@@ -84,9 +84,9 @@ final class LoginJourneyTests: XCTestCase {
 
     /// Verifies that wrong credentials show an error message without crashing.
     func testInvalidCredentialsShowsError() throws {
-        let serverURL = try XCTUnwrap(envVar("BW_TEST_SERVER_URL"), "BW_TEST_SERVER_URL required")
+        let account = try UITestPrerequisite.realAccount()
 
-        fillLoginForm(serverURL: serverURL, email: "wrong@example.com", password: "wrongpassword")
+        fillLoginForm(serverURL: account.serverURL, email: "wrong@example.com", password: "wrongpassword")
         app.buttons["login.signIn"].click()
 
         let error = app.staticTexts["login.error"]
@@ -98,25 +98,23 @@ final class LoginJourneyTests: XCTestCase {
     /// Verifies a valid login flow transitions through sync and reaches the vault browser.
     /// Measures total login time against SC-001 (≤60s).
     func testSuccessfulLoginReachesVaultBrowser() throws {
-        let serverURL = try XCTUnwrap(envVar("BW_TEST_SERVER_URL"), "BW_TEST_SERVER_URL required")
-        let email     = try XCTUnwrap(envVar("BW_TEST_EMAIL"), "BW_TEST_EMAIL required")
-        let password  = try XCTUnwrap(envVar("BW_TEST_PASSWORD"), "BW_TEST_PASSWORD required")
+        let account = try UITestPrerequisite.realAccount()
 
         let startTime = CFAbsoluteTimeGetCurrent()
 
-        fillLoginForm(serverURL: serverURL, email: email, password: password)
+        fillLoginForm(serverURL: account.serverURL, email: account.email, password: account.password)
         app.buttons["login.signIn"].click()
 
         // If TOTP is required, the TOTP prompt appears.
         let totpField = app.textFields["totp.code"]
         if totpField.waitForExistence(timeout: 10) {
-            // TOTP required — test cannot proceed without a valid code.
-            // Skip with a message; the TOTP-specific test handles this.
-            throw XCTSkip("TOTP required — use testLoginWithTOTPReachesVaultBrowser instead")
+            // Two-step login needs a current code, which a test run cannot provide.
+            // testTOTPPromptAppearsWhen2FARequired covers the prompt itself.
+            throw XCTSkip("Needs a real account without two-step login (BW_TEST_EMAIL has two-step login enabled)")
         }
 
         // Wait for sync progress to complete and vault browser to appear.
-        let vaultNav = app.otherElements["vault.navigationSplit"]
+        let vaultNav = app.sidebar
         XCTAssertTrue(
             vaultNav.waitForExistence(timeout: 60),
             "Vault browser should appear after successful login"
@@ -130,11 +128,10 @@ final class LoginJourneyTests: XCTestCase {
 
     /// Verifies the TOTP prompt view appears after credential submission when 2FA is enabled.
     func testTOTPPromptAppearsWhen2FARequired() throws {
-        let serverURL = try XCTUnwrap(envVar("BW_TEST_SERVER_URL"), "BW_TEST_SERVER_URL required")
-        let email     = try XCTUnwrap(envVar("BW_TEST_2FA_EMAIL"), "BW_TEST_2FA_EMAIL required")
-        let password  = try XCTUnwrap(envVar("BW_TEST_2FA_PASSWORD"), "BW_TEST_2FA_PASSWORD required")
+        let account = try UITestPrerequisite.realAccount(emailVariable: "BW_TEST_2FA_EMAIL",
+                                                         passwordVariable: "BW_TEST_2FA_PASSWORD")
 
-        fillLoginForm(serverURL: serverURL, email: email, password: password)
+        fillLoginForm(serverURL: account.serverURL, email: account.email, password: account.password)
         app.buttons["login.signIn"].click()
 
         let totpHeader = app.staticTexts["totp.headerTitle"]
@@ -156,11 +153,9 @@ final class LoginJourneyTests: XCTestCase {
 
     /// Verifies that sync progress messages appear after successful authentication.
     func testSyncProgressShownAfterAuth() throws {
-        let serverURL = try XCTUnwrap(envVar("BW_TEST_SERVER_URL"), "BW_TEST_SERVER_URL required")
-        let email     = try XCTUnwrap(envVar("BW_TEST_EMAIL"), "BW_TEST_EMAIL required")
-        let password  = try XCTUnwrap(envVar("BW_TEST_PASSWORD"), "BW_TEST_PASSWORD required")
+        let account = try UITestPrerequisite.realAccount()
 
-        fillLoginForm(serverURL: serverURL, email: email, password: password)
+        fillLoginForm(serverURL: account.serverURL, email: account.email, password: account.password)
         app.buttons["login.signIn"].click()
 
         // The sync progress message should appear during the sync phase.
@@ -168,10 +163,10 @@ final class LoginJourneyTests: XCTestCase {
         // This may be transient — use a short timeout.
         if progressMsg.waitForExistence(timeout: 15) {
             // Progress message appeared — sync is in progress. Good.
-            XCTAssertFalse(progressMsg.label.isEmpty, "Sync progress should display a message")
+            XCTAssertFalse(progressMsg.text.isEmpty, "Sync progress should display a message")
         }
         // Either way, vault should eventually appear.
-        let vaultNav = app.otherElements["vault.navigationSplit"]
+        let vaultNav = app.sidebar
         XCTAssertTrue(vaultNav.waitForExistence(timeout: 60), "Vault browser should appear after sync")
     }
 
@@ -190,10 +185,5 @@ final class LoginJourneyTests: XCTestCase {
         emailField.typeText(email)
         passField.click()
         passField.typeText(password)
-    }
-
-    private func envVar(_ name: String) -> String? {
-        let value = ProcessInfo.processInfo.environment[name]
-        return (value?.isEmpty == false) ? value : nil
     }
 }

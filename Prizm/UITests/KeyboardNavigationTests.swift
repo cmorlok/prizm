@@ -2,182 +2,136 @@ import XCTest
 
 /// XCUITest: Keyboard-Only Navigation (T073)
 ///
-/// Validates that all vault browser interactions are keyboard-accessible (SC-007):
-/// - Tab cycles between sidebar, list, and detail panes
-/// - Arrow keys navigate the item list
-/// - Enter selects the focused item
-/// - Escape returns focus to the list
-/// - All interactive elements (buttons, fields) are reachable via keyboard
-///
-/// **Prerequisites**: App must be launched with a populated vault.
-final class KeyboardNavigationTests: XCTestCase {
+/// Validates that the vault browser can be used from the keyboard (SC-007), on the seeded test
+/// vault (`UITestLaunch.vault`, see `Fixture`). Where XCUITest cannot observe keyboard focus
+/// directly (Tab, Escape), the journey checks that the browser stays usable afterwards.
+final class KeyboardNavigationTests: PrizmUITestCase {
 
     private var app: XCUIApplication!
 
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments = ["--ui-testing", "--inject-session", "--inject-vault", "--skip-sync"]
-        app.launch()
+        app.launch(in: UITestLaunch.vault)
 
-        // Ensure vault browser is visible.
-        let vaultNav = app.otherElements["vault.navigationSplit"]
-        XCTAssertTrue(vaultNav.waitForExistence(timeout: 30), "Vault browser must be visible")
+        XCTAssertTrue(app.waitForVaultBrowser(), "Vault browser must be visible")
     }
 
     override func tearDownWithError() throws {
         app = nil
     }
 
+    private var detailName: XCUIElement { app.element(AccessibilityID.Detail.itemName) }
+
+    private func openItem(_ id: String) {
+        let row = app.element(Fixture.row(id))
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "Row \(id) should exist")
+        row.click()
+    }
+
+    /// After keyboard input whose focus effect XCUITest cannot read, the browser must still work:
+    /// selecting an item shows it.
+    private func assertBrowserStillUsable(file: StaticString = #filePath, line: UInt = #line) {
+        openItem(Fixture.alpha)
+        XCTAssertTrue(detailName.waitForExistence(timeout: 5), file: file, line: line)
+        XCTAssertEqual(detailName.text, "Alpha Bank", file: file, line: line)
+    }
+
     // MARK: - SC-007 Scenario 1: Tab cycles between panes
 
-    /// Verifies that pressing Tab moves focus between the sidebar, item list, and detail panes.
     func testTabCyclesBetweenPanes() {
-        // Tab into the sidebar.
-        app.typeKey(.tab, modifierFlags: [])
-        // Tab into the item list.
-        app.typeKey(.tab, modifierFlags: [])
-        // Tab into the detail pane.
-        app.typeKey(.tab, modifierFlags: [])
-        // No assertion on exact focus target since macOS focus behavior varies;
-        // verifying no crash and responsive keyboard navigation.
+        for _ in 0..<3 { app.typeKey(.tab, modifierFlags: []) }
+        assertBrowserStillUsable()
     }
 
     // MARK: - SC-007 Scenario 2: Arrow keys navigate sidebar
 
-    /// Verifies that arrow keys navigate between sidebar categories.
+    /// All Items is followed by Favorites, which lists only the favourite item.
     func testArrowKeysNavigateSidebar() {
-        // Click sidebar to focus it.
-        let allItems = app.descendants(matching: .any)["sidebar.allItems"]
-        guard allItems.waitForExistence(timeout: 5) else { return }
+        let allItems = app.sidebarRow("All Items")
+        XCTAssertTrue(allItems.waitForExistence(timeout: 5))
         allItems.click()
+        XCTAssertTrue(app.element(Fixture.row(Fixture.alpha)).waitForExistence(timeout: 5))
 
-        // Down arrow should move to the next sidebar item.
-        app.typeKey(.downArrow, modifierFlags: [])
-        // Up arrow should move back.
-        app.typeKey(.upArrow, modifierFlags: [])
+        // Press the key in the app, as a user does after clicking the row. Sending it to the
+        // sidebar element directly moved the selection in some runs, which no user can do.
+        // Known app bug, confirmed by hand on 2026-10-25: the arrow keys do not move the sidebar
+        // selection.
+        XCTExpectFailure("Known app bug: arrow keys do not navigate the sidebar (change fix-ui-journey-findings)") {
+            app.typeKey(.downArrow, modifierFlags: [])
+            XCTAssertTrue(app.element(Fixture.row(Fixture.alpha)).waitForNonExistence(timeout: 5),
+                          "Down arrow should select Favorites, which does not list Alpha Bank")
+        }
     }
 
     // MARK: - SC-007 Scenario 3: Arrow keys navigate item list
 
-    /// Verifies that arrow keys navigate the item list after selecting it.
+    /// The list is sorted by name: Alpha Bank is followed by Beta Mail.
     func testArrowKeysNavigateItemList() {
-        let itemPredicate = NSPredicate(format: "identifier BEGINSWITH 'itemList.row.'")
-        let items = app.descendants(matching: .any).matching(itemPredicate)
-        guard items.count > 0 else {
-            // No items to navigate.
-            return
+        openItem(Fixture.alpha)
+        XCTAssertTrue(detailName.waitForExistence(timeout: 5))
+        XCTAssertEqual(detailName.text, "Alpha Bank")
+
+        // Press the key in the app, as a user does after clicking the row.
+        // Known app bug, confirmed by hand on 2026-10-25: the arrow keys do not move the list
+        // selection.
+        XCTExpectFailure("Known app bug: arrow keys do not navigate the item list (change fix-ui-journey-findings)") {
+            app.typeKey(.downArrow, modifierFlags: [])
+            XCTAssertTrue(detailName.waitForText("Beta Mail", timeout: 5),
+                          "Down arrow should show the next item")
         }
-
-        // Click the first item to focus the list.
-        items.firstMatch.click()
-
-        // Down arrow to next item.
-        app.typeKey(.downArrow, modifierFlags: [])
-        // The detail pane should update.
-        let itemName = app.staticTexts["detail.name"]
-        if items.count > 1 {
-            XCTAssertTrue(
-                itemName.waitForExistence(timeout: 3),
-                "Detail should update when navigating with arrow keys"
-            )
-        }
-
-        // Up arrow back.
-        app.typeKey(.upArrow, modifierFlags: [])
     }
 
     // MARK: - SC-007 Scenario 4: Enter selects focused item
 
-    /// Verifies that pressing Enter on a focused item opens it in the detail pane.
     func testEnterSelectsFocusedItem() {
-        let itemPredicate = NSPredicate(format: "identifier BEGINSWITH 'itemList.row.'")
-        let items = app.descendants(matching: .any).matching(itemPredicate)
-        guard items.count > 0 else { return }
-
-        items.firstMatch.click()
+        openItem(Fixture.alpha)
         app.typeKey(.return, modifierFlags: [])
 
-        let itemName = app.staticTexts["detail.name"]
-        XCTAssertTrue(
-            itemName.waitForExistence(timeout: 5),
-            "Detail pane should show the item after Enter"
-        )
+        XCTAssertTrue(detailName.waitForExistence(timeout: 5), "Detail pane should show the item after Enter")
+        XCTAssertEqual(detailName.text, "Alpha Bank")
     }
 
     // MARK: - SC-007 Scenario 5: Escape returns focus to list
 
-    /// Verifies that pressing Escape from the detail pane returns focus to the item list.
     func testEscapeReturnsFocusToList() {
-        let itemPredicate = NSPredicate(format: "identifier BEGINSWITH 'itemList.row.'")
-        let items = app.descendants(matching: .any).matching(itemPredicate)
-        guard items.count > 0 else { return }
-
-        // Select an item.
-        items.firstMatch.click()
-
-        // Tab into detail pane.
+        openItem(Fixture.alpha)
         app.typeKey(.tab, modifierFlags: [])
-
-        // Escape should return focus to list.
         app.typeKey(.escape, modifierFlags: [])
+        assertBrowserStillUsable()
     }
 
     // MARK: - SC-007 Scenario 6: Search field accessible via keyboard
 
-    /// Verifies the search field can be focused using Cmd+F or Tab.
     func testSearchFieldAccessibleViaKeyboard() {
-        // Cmd+F should focus the search field on macOS.
         app.typeKey("f", modifierFlags: .command)
 
-        let searchField = app.searchFields.firstMatch
-        // The search field should now be focused.
-        if searchField.waitForExistence(timeout: 3) {
-            searchField.typeText("test")
-            XCTAssertEqual(
-                searchField.value as? String, "test",
-                "Search field should accept keyboard input after Cmd+F"
-            )
-            // Clear search.
-            searchField.typeKey("a", modifierFlags: .command)
-            searchField.typeKey(.delete, modifierFlags: [])
-        }
-    }
-
-    // MARK: - SC-007 Scenario 7: Sign Out keyboard shortcut
-
-    /// Verifies the Sign Out keyboard shortcut (Cmd+Shift+Q) is registered.
-    func testSignOutKeyboardShortcut() {
-        // We don't actually trigger sign-out in the test, but verify the menu item exists
-        // and has the expected shortcut.
-        let signOutMenu = app.menuItems["Sign Out…"]
-        // Menu items may not be directly queryable in all XCUITest configurations.
-        // This test primarily validates no crash on shortcut.
+        let searchField = app.searchField()
+        XCTAssertTrue(searchField.waitForExistence(timeout: 3))
+        app.typeText("Alpha")
+        XCTAssertEqual(searchField.value as? String, "Alpha",
+                       "Search field should accept keyboard input after ⌘F")
     }
 
     // MARK: - SC-007 Scenario 8: Full keyboard-only journey
 
-    /// Smoke test: Navigates the vault browser using only keyboard — no mouse clicks.
+    /// Smoke test: a keyboard-only sequence through all panes leaves the browser usable.
     func testFullKeyboardOnlyJourney() {
-        // Tab to sidebar.
         app.typeKey(.tab, modifierFlags: [])
-        // Navigate down in sidebar.
         app.typeKey(.downArrow, modifierFlags: [])
         app.typeKey(.downArrow, modifierFlags: [])
-        // Select category.
         app.typeKey(.return, modifierFlags: [])
-        // Tab to item list.
         app.typeKey(.tab, modifierFlags: [])
-        // Navigate items.
         app.typeKey(.downArrow, modifierFlags: [])
-        // Select item.
         app.typeKey(.return, modifierFlags: [])
-        // Tab to detail.
         app.typeKey(.tab, modifierFlags: [])
-        // Escape back.
         app.typeKey(.escape, modifierFlags: [])
-        // Search.
         app.typeKey("f", modifierFlags: .command)
         app.typeKey(.escape, modifierFlags: [])
+
+        let allItems = app.sidebarRow("All Items")
+        XCTAssertTrue(allItems.waitForExistence(timeout: 5))
+        allItems.click()
+        assertBrowserStillUsable()
     }
 }
