@@ -99,4 +99,5 @@ above; VoiceOver reads the label and the selected value. Design tokens only.
 
 1. With "Never", should lock and quit still clear (stricter than official)? Lean: yes.
 2. Confirm that arboard's `exclude_from_history()` writes `org.nspasteboard.ConcealedType` on macOS
-   (task 1.1). If it also writes `org.nspasteboard.TransientType`, add it.
+   (task 1.1). If it also writes `org.nspasteboard.TransientType`, add it. **Answered 2026-10-26:** arboard 3.6.1
+   writes only `org.nspasteboard.ConcealedType` (empty string), the same as Prizm.

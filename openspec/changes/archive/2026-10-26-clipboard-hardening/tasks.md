@@ -4,7 +4,8 @@ Estimates are ideal engineer-days. Write a failing test first for each task (§I
 
 ## 1. Service (1 d)
 
-- [ ] 1.1 Inspect the arboard source of the version the desktop app pins and record in design.md which pasteboard types `exclude_from_history()` writes on macOS (Open Question 2).
+- [x] 1.1 Inspect the arboard source of the version the desktop app pins and record in design.md which pasteboard types `exclude_from_history()` writes on macOS (Open Question 2).
+  arboard 3.6.1 (pinned by the desktop app) writes only `org.nspasteboard.ConcealedType` with an empty string on macOS (`src/platform/osx.rs`, `add_clipboard_exclusions`). Prizm writes the same. Design Open Question 2 closed.
 - [x] 1.2 Write the regression test for today's bug first: generator Copy, then release the view model; after 30 s of test clock, the clipboard still holds the password (fails after the fix).
 - [x] 1.3 `ClipboardServiceImpl` tests with a fake pasteboard and clock: concealed marker written; clear after the delay; no clear when `changeCount` changed; a new copy replaces the pending clear; `.never` schedules nothing.
 - [x] 1.4 Implement (design.md D1). §VII comment: security goal, what is not done (other processes can read the pasteboard during the delay; Universal Clipboard not blocked).
@@ -27,7 +28,8 @@ Estimates are ideal engineer-days. Write a failing test first for each task (§I
 ## 5. Verify and document (0.5 d)
 
 - [ ] 5.1 Manual check with a clipboard manager that honours nspasteboard.org (for example Maccy): generator copies do not appear in its history.
-- [ ] 5.2 Mandatory security review: no secret retained by the service beyond the pasteboard itself; all copy paths use the service.
+- [x] 5.2 Mandatory security review: no secret retained by the service beyond the pasteboard itself; all copy paths use the service.
+  Done by the review subagent; see Results.
 - [x] 5.3 SECURITY.md (clipboard section), CHANGELOG "Fixed: generated passwords are hidden from clipboard history and cleared after closing the sheet"; "Added: clipboard clear delay setting; the clipboard is cleared on lock and quit".
 - [x] 5.4 `openspec validate clipboard-hardening --type change --strict`.
 
@@ -50,7 +52,7 @@ Estimates are ideal engineer-days. Write a failing test first for each task (§I
 - The service reaches the generator through the SwiftUI environment (`EditFieldRow`), like
   `OptionKeyMonitor`; the vault browser gets it through its initializer. One instance, created by
   `AppContainer`.
-- **Not verified on the Mac yet** (test runner hung): `PrizmTests`.
+- **Verified on the Mac (2026-10-26):** all 666 unit tests pass on this branch; the full UI suite passes on the top of the series (`fix/017`).
 - Open: 1.1 (arboard source of the desktop app, Open Question 2), 5.1 (manual check with a
   clipboard manager), 5.2 security review.
 
