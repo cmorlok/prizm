@@ -71,13 +71,19 @@ public class Argon2Swift {
 
         // Free the previously created pointers when the function exits (backport from 1.0.4).
         // Without defer, a thrown exception would leak the allocated memory.
+        // Prizm patch (1.0.1-bw3): zero both buffers first; they hold the derived key.
         defer {
+            _ = memset_s(hash, length, 0, length)
+            _ = memset_s(encoded, encodedLen, 0, encodedLen)
             freePtr(pointer: hash, length: length)
             freePtr(pointer: encoded, length: encodedLen)
         }
 
-        // Perform the actual hash operation
-        let errorCode = argon2_hash(UInt32(iterations), UInt32(memory), UInt32(parallelism), [UInt8](password), password.count, [UInt8](salt.bytes), salt.bytes.count, hash, length, encoded, encodedLen, getArgon2Type(type: type), UInt32(version.rawValue))
+        // Perform the actual hash operation. Prizm patch (1.0.1-bw3): the password is passed by
+        // pointer instead of as a `[UInt8]` copy that nothing would zero.
+        let errorCode = password.withUnsafeBytes { passwordBytes in
+            argon2_hash(UInt32(iterations), UInt32(memory), UInt32(parallelism), passwordBytes.baseAddress, password.count, [UInt8](salt.bytes), salt.bytes.count, hash, length, encoded, encodedLen, getArgon2Type(type: type), UInt32(version.rawValue))
+        }
 
         // Check if there were any errors
         if errorCode != Argon2SwiftErrorCode.ARGON2_OK.rawValue {
@@ -85,12 +91,11 @@ public class Argon2Swift {
             throw Argon2SwiftException(errorMsg, errorCode: Argon2SwiftErrorCode(rawValue: errorCode) ?? Argon2SwiftErrorCode.ARGON2_UNKNOWN_ERROR)
         }
 
-        // Create copy arrays for the hash and encoded results
-        let hashArray = Array(UnsafeBufferPointer(start: hash, count: length))
-        let encodedArray = Array(UnsafeBufferPointer(start: encoded, count: encodedLen))
-
-        // Return the result from above
-        return Argon2SwiftResult(hashBytes: hashArray, encodedBytes: encodedArray)
+        // Copy the hash and encoded results straight into the result's own arrays (Prizm patch
+        // 1.0.1-bw3: no intermediate copies), which the caller can zero with `zero()`.
+        let hashBytes = Array(UnsafeRawBufferPointer(start: hash, count: length))
+        let encodedBytes = Array(UnsafeRawBufferPointer(start: encoded, count: encodedLen))
+        return Argon2SwiftResult(hashBytes: hashBytes, encodedBytes: encodedBytes)
     }
     
     /**

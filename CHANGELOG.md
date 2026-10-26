@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Security: master and stretched keys are zeroed right after use, including the keys kept during
+  a two-factor login, and the Argon2id buffers before they are freed. Locking and signing out now
+  clear every key cache through one path, including "Sign in with a different account". Debug mode
+  no longer logs the email, the two-factor code or the device identifier, and logs server text as
+  private. SECURITY.md now matches this, says that the device identifier is kept on sign-out, and
+  compares biometric unlock with the official apps correctly.
 - Add Empty Trash to the Trash view. Prizm syncs first, asks "Permanently delete N items?", deletes
   exactly the items in Trash and reports any it could not delete. It never uses the server's
   "purge vault" call, which would delete every item.

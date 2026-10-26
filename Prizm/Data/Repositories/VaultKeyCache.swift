@@ -28,10 +28,21 @@ actor VaultKeyCache {
 
     // MARK: - Public API
 
+    #if DEBUG
+    /// Test seam: each per-item key right after zeroing, and whether it was zeroed in place.
+    private var zeroedObserver: (@Sendable (Data, Bool) -> Void)?
+    func setZeroedObserver(_ observer: (@Sendable (Data, Bool) -> Void)?) {
+        zeroedObserver = observer
+    }
+    #endif
+
     /// Replaces the entire key cache with the provided mapping.
     ///
     /// Called by `SyncRepositoryImpl` after sync completes. This is a wholesale
     /// replace (not a merge) so stale entries from a previous sync are evicted.
+    /// Intentionally NOT done: zeroing the replaced keys. The sync passes overlapping maps (the
+    /// personal pass, then the org pass with the same buffers), so zeroing here could wipe keys
+    /// still in use; they are dropped and stay until the memory is reused (SECURITY.md).
     ///
     /// - Parameter keys: Dictionary of cipher ID → 64-byte effective key.
     func populate(keys: [String: Data]) {
@@ -56,9 +67,20 @@ actor VaultKeyCache {
     func clear() {
         // Slices need their actual indices, not 0..<count. Capture the range
         // before entering the dictionary's mutating accessor (Swift exclusivity).
-        for key in cache.keys {
+        // Iterate over a copy of the ids: a live `cache.keys` view holds the dictionary's storage,
+        // so the first write would copy the dictionary and its key buffers and zero only the copy.
+        for key in Array(cache.keys) {
             if let range = cache[key]?.indices {
+                #if DEBUG
+                let before = cache[key]?.withUnsafeBytes { UInt(bitPattern: $0.baseAddress) }
+                #endif
                 cache[key]?.resetBytes(in: range)
+                #if DEBUG
+                if let zeroed = cache[key] {
+                    let after = zeroed.withUnsafeBytes { UInt(bitPattern: $0.baseAddress) }
+                    zeroedObserver?(zeroed, before == after)
+                }
+                #endif
             }
         }
         cache.removeAll()

@@ -10,9 +10,28 @@ import Foundation
 public class Argon2SwiftResult {
     
     /// The byte array of solely the hashed result
-    let hashBytes: [UInt8]
+    private(set) var hashBytes: [UInt8]
     /// The byte array of the encoded result, containing the hash, version, salt, and Argon2 params
-    let encodedBytes: [UInt8]
+    private(set) var encodedBytes: [UInt8]
+
+    /// Prizm patch (1.0.1-bw3): takes the bytes as they are, without an intermediate `[Int8]` copy
+    /// that could not be zeroed.
+    init(hashBytes: [UInt8], encodedBytes: [UInt8]) {
+        self.hashBytes = hashBytes
+        self.encodedBytes = encodedBytes
+    }
+
+    /// Prizm patch (1.0.1-bw3): overwrites the hash and the encoded result with zeros. The hash is a
+    /// derived key; callers zero the result once they have taken their copy (`hashData()`).
+    /// `memset_s` is used because plain stores before a release may be optimized away.
+    public func zero() {
+        hashBytes.withUnsafeMutableBytes { buffer in
+            if let base = buffer.baseAddress { _ = memset_s(base, buffer.count, 0, buffer.count) }
+        }
+        encodedBytes.withUnsafeMutableBytes { buffer in
+            if let base = buffer.baseAddress { _ = memset_s(base, buffer.count, 0, buffer.count) }
+        }
+    }
     
     /**
      Initializes a new `Argon2SwiftResult` object with a given encoded byte array and hash byte array

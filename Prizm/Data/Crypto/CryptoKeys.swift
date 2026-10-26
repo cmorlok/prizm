@@ -32,11 +32,15 @@ nonisolated extension CryptoKeys {
 
     /// Deserialises a 64-byte blob into a `CryptoKeys` pair.
     /// Returns `nil` if `data` is not exactly 64 bytes.
+    ///
+    /// The halves get their own buffers (`subdata` copies), so the caller can zero `data` and
+    /// each half can be zeroed in place later; slices would share one buffer.
     init?(data: Data) {
         guard data.count == 64 else { return nil }
+        let start = data.startIndex
         self.init(
-            encryptionKey: data.prefix(32),
-            macKey: data.suffix(32)
+            encryptionKey: data.subdata(in: start..<(start + 32)),
+            macKey: data.subdata(in: (start + 32)..<(start + 64))
         )
     }
 
