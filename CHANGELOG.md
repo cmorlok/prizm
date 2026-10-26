@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Fix File → New Window (⌥⌘N): it showed "No document could be opened" instead of opening a new
+  window.
+- **Changed**: "Sign Out…" no longer has a keyboard shortcut. ⌘⇧Q is macOS's own Log Out shortcut.
+- Fix the arrow keys in the sidebar and the item list: after clicking a row, ↑ and ↓ now move the
+  selection.
+- Fix VoiceOver reading stale values: the dots of a masked password after Reveal, the previous
+  item's fields after selecting another item, and an old password generator preview.
+- Fix a crash when pressing ⌘N while Trash is selected. The "+" button is no longer shown in Trash.
+- Fix: locking the vault or signing out now also clears the selected item, the item list and the
+  search term from memory. Before, the decrypted item stayed loaded behind the unlock screen and
+  Item → Edit stayed enabled.
 - Fix signed builds from source: the app target had lost its bundle identifier (since 1.4.0) and
   carried a fixed Team ID that overrode `LocalConfig.xcconfig`. Contributors can now set their own
   bundle identifier with `PRIZM_BUNDLE_IDENTIFIER` (see DEVELOPMENT.md). If you used 1.4.0 to

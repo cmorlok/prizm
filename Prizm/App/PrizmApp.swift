@@ -27,8 +27,13 @@ struct PrizmApp: App {
         NSApplication.shared.activate()
     }
 
+    /// Identifier of the main window scene, so "New Window" can open it.
+    enum MainWindow {
+        static let id = "main"
+    }
+
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: MainWindow.id) {
             rootView
                 .frame(minWidth: 480, minHeight: 360)
                 .environment(optionKeyMonitor)
@@ -44,17 +49,23 @@ struct PrizmApp: App {
             }
 
             CommandGroup(replacing: .newItem) {
+                // Opens the main window scene. Prizm is not document-based, so the previous
+                // `NSDocumentController.newDocument(_:)` only showed "No document could be opened"
+                // (fix-ui-journey-findings, bug 6).
                 Button("New Window") {
-                    NSApp.sendAction(#selector(NSDocumentController.newDocument(_:)), to: nil, from: nil)
+                    openWindow(id: MainWindow.id)
                 }
                 .keyboardShortcut("n", modifiers: [.command, .option])
             }
 
             CommandGroup(after: .appInfo) {
+                // No keyboard shortcut, as in the official Bitwarden desktop client: signing out is
+                // rare and clears all local data. ⌘⇧Q, used before, is the system's Log Out
+                // shortcut; a UI test that sent it logged the user out of macOS
+                // (fix-ui-journey-findings).
                 Button("Sign Out…") {
                     rootVM.confirmSignOut()
                 }
-                .keyboardShortcut("q", modifiers: [.command, .shift])
                 .disabled(!rootVM.isSignedIn)
 
                 Button("Lock Vault") {
@@ -162,9 +173,8 @@ struct PrizmApp: App {
                         collections: vaultBrowserVM.collections
                     )
                     // Wire the list-pane refresh callback to the shared VaultBrowserViewModel.
-                    vm.onSaveSuccess = { [weak vaultBrowserVM] updatedItem in
-                        vaultBrowserVM?.handleItemSaved(updatedItem)
-                    }
+                    // Ignores a save that completes after the vault locked.
+                    vm.onSaveSuccess = vaultBrowserVM.saveHandler()
                     return vm
                 },
                 makeCreateViewModel: { [vaultBrowserVM = rootVM.vaultBrowserVM] type, contextId in
@@ -184,9 +194,8 @@ struct PrizmApp: App {
                             folders: vaultBrowserVM.folders, organizations: vaultBrowserVM.organizations, collections: cols
                         )
                     }
-                    vm.onSaveSuccess = { [weak vaultBrowserVM] item in
-                        vaultBrowserVM?.handleItemSaved(item)
-                    }
+                    // Ignores a save that completes after the vault locked.
+                    vm.onSaveSuccess = vaultBrowserVM.saveHandler()
                     return vm
                 },
                 makeAddAttachmentViewModel: { cipherId in
@@ -401,6 +410,7 @@ final class RootViewModel: ObservableObject {
             // be written under the fallback empty-email key. Should not occur in normal flow.
             logger.error("\(caller, privacy: .public)(.vault): no stored account; sync timestamp not re-scoped")
         }
+        vaultBrowserVM.beginSession()
         screen = .vault
         // Defer handleSyncCompleted to the next run-loop cycle so that the initial
         // VaultBrowserView layout pass (triggered by `screen = .vault` above) commits
@@ -456,6 +466,8 @@ final class RootViewModel: ObservableObject {
 
     /// Clears all session data and returns to the login screen.
     func signOut() {
+        // Drop the vault browser's decrypted copies right away, not after the awaits below.
+        vaultBrowserVM.clearSession()
         Task {
             do {
                 try await container.authRepo.signOut()
@@ -464,6 +476,8 @@ final class RootViewModel: ObservableObject {
             }
             await container.vaultRepo.clearVault()
             await container.vaultKeyCache.clear()
+            // The next account must not start in a folder or collection of this one.
+            vaultBrowserVM.sidebarSelection = .allItems
             unlockVM = nil
             screen   = .login
             logger.info("Sign out completed")
@@ -476,6 +490,8 @@ final class RootViewModel: ObservableObject {
     /// No-op if the vault is not currently unlocked.
     func lockVault() {
         guard isVaultUnlocked else { return }
+        // Drop the vault browser's decrypted copies right away, not after the awaits below.
+        vaultBrowserVM.clearSession()
         Task {
             await container.authRepo.lockVault()
             await container.vaultRepo.clearVault()
@@ -522,6 +538,7 @@ final class RootViewModel: ObservableObject {
     }
 
     func copySelectedField(_ field: CopyableField) {
+        guard isVaultUnlocked else { return }
         // Copy Code copies the *generated* code, never the stored seed (FR-016, FR-017).
         if field == .totp {
             Task { await copySelectedCode() }
@@ -532,6 +549,8 @@ final class RootViewModel: ObservableObject {
     }
 
     func selectedFieldAvailable(_ field: CopyableField) -> Bool {
+        // Defense in depth: the lock clears the selection, but nothing is copied while locked.
+        guard isVaultUnlocked else { return false }
         if field == .totp {
             guard let seed = selectedLogin?.totp else { return false }
             return (try? TOTPSeedParser.parse(seed)) != nil
@@ -545,6 +564,8 @@ final class RootViewModel: ObservableObject {
         guard let seed = selectedLogin?.totp, selectedFieldAvailable(.totp) else { return }
         do {
             let code = try await container.generateTOTPCode.execute(seed: seed, at: Date())
+            // The vault can lock while the code is generated.
+            guard isVaultUnlocked else { return }
             vaultBrowserVM.copy(code.copyValue)
         } catch {
             // Never log the seed or the error payload (Constitution §III, §V).

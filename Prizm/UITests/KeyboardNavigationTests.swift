@@ -46,7 +46,8 @@ final class KeyboardNavigationTests: PrizmUITestCase {
 
     // MARK: - SC-007 Scenario 2: Arrow keys navigate sidebar
 
-    /// All Items is followed by Favorites, which lists only the favourite item.
+    /// All Items is followed by Favorites, which lists only the favourite item. All Items is already
+    /// selected at launch, so this also covers a click that does not change the selection.
     func testArrowKeysNavigateSidebar() {
         let allItems = app.sidebarRow("All Items")
         XCTAssertTrue(allItems.waitForExistence(timeout: 5))
@@ -54,14 +55,26 @@ final class KeyboardNavigationTests: PrizmUITestCase {
         XCTAssertTrue(app.element(Fixture.row(Fixture.alpha)).waitForExistence(timeout: 5))
 
         // Press the key in the app, as a user does after clicking the row. Sending it to the
-        // sidebar element directly moved the selection in some runs, which no user can do.
-        // Known app bug, confirmed by hand on 2026-10-25: the arrow keys do not move the sidebar
-        // selection.
-        XCTExpectFailure("Known app bug: arrow keys do not navigate the sidebar (change fix-ui-journey-findings)") {
-            app.typeKey(.downArrow, modifierFlags: [])
-            XCTAssertTrue(app.element(Fixture.row(Fixture.alpha)).waitForNonExistence(timeout: 5),
-                          "Down arrow should select Favorites, which does not list Alpha Bank")
-        }
+        // sidebar element directly would give the sidebar focus, which hides the bug this checks.
+        app.typeKey(.downArrow, modifierFlags: [])
+        XCTAssertTrue(app.element(Fixture.row(Fixture.alpha)).waitForNonExistence(timeout: 5),
+                      "Down arrow should select Favorites, which does not list Alpha Bank")
+        XCTAssertTrue(app.element(Fixture.row(Fixture.kappa)).exists, "Favorites should list the favourite item")
+    }
+
+    /// After a click in the item list, a click on the sidebar's selected row gives the sidebar the
+    /// keyboard focus again.
+    func testArrowKeysNavigateSidebar_afterUsingItemList() {
+        app.selectSidebarRow("Login")
+        openItem(Fixture.alpha)
+        XCTAssertTrue(detailName.waitForText("Alpha Bank", timeout: 5))
+
+        app.selectSidebarRow("Login")
+        app.typeKey(.downArrow, modifierFlags: [])
+
+        XCTAssertTrue(app.element(Fixture.row(Fixture.card)).waitForExistence(timeout: 5),
+                      "Down arrow should select Card, which lists the card")
+        XCTAssertFalse(app.element(Fixture.row(Fixture.alpha)).exists, "Card should not list logins")
     }
 
     // MARK: - SC-007 Scenario 3: Arrow keys navigate item list
@@ -73,13 +86,10 @@ final class KeyboardNavigationTests: PrizmUITestCase {
         XCTAssertEqual(detailName.text, "Alpha Bank")
 
         // Press the key in the app, as a user does after clicking the row.
-        // Known app bug, confirmed by hand on 2026-10-25: the arrow keys do not move the list
-        // selection.
-        XCTExpectFailure("Known app bug: arrow keys do not navigate the item list (change fix-ui-journey-findings)") {
-            app.typeKey(.downArrow, modifierFlags: [])
-            XCTAssertTrue(detailName.waitForText("Beta Mail", timeout: 5),
-                          "Down arrow should show the next item")
-        }
+        app.typeKey(.downArrow, modifierFlags: [])
+        XCTAssertTrue(detailName.waitForText("Beta Mail", timeout: 5), "Down arrow should show the next item")
+        app.typeKey(.upArrow, modifierFlags: [])
+        XCTAssertTrue(detailName.waitForText("Alpha Bank", timeout: 5), "Up arrow should show the previous item")
     }
 
     // MARK: - SC-007 Scenario 4: Enter selects focused item

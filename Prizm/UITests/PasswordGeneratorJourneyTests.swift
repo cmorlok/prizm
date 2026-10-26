@@ -71,6 +71,7 @@ final class PasswordGeneratorJourneyTests: PrizmUITestCase {
         XCTAssertTrue(preview.exists, "The generator popover should still be open after moving the slider")
         XCTAssertTrue(previewText.waitForTextChange(from: initialPreview, timeout: 3),
                       "Preview should update after slider change")
+        XCTAssertEqual(preview.text, previewText.text, "VoiceOver should read the new value")
 
         // Tap "Use Password".
         let useButton = app.buttons["generator.button.use"]

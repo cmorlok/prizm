@@ -101,16 +101,28 @@ final class VaultBrowserJourneyTests: PrizmUITestCase {
         revealButton.click()
         XCTAssertTrue(maskedValue.waitForText(Fixture.password(of: Fixture.alpha), timeout: 3),
                       "Value should be revealed")
-        // Known app bug, confirmed with VoiceOver on 2026-10-25: VoiceOver reads "bullet bullet …"
-        // while the password is visible. Accessibility exposes the field's first value only (see
-        // `displayedText`).
-        XCTExpectFailure("Known app bug: VoiceOver reads the masked value after Reveal (change fix-ui-journey-findings)") {
-            XCTAssertEqual(app.fieldValue("Password").text, Fixture.password(of: Fixture.alpha),
-                           "Accessibility should expose the revealed value")
-        }
+        // What VoiceOver reads: before fix-ui-journey-findings, it read "bullet bullet …" here.
+        XCTAssertEqual(app.fieldValue("Password").text, Fixture.password(of: Fixture.alpha),
+                       "Accessibility should expose the revealed value")
 
         revealButton.click()
         XCTAssertTrue(maskedValue.waitForText("••••••••", timeout: 3), "Value should be masked after the second toggle")
+        XCTAssertEqual(app.fieldValue("Password").text, "••••••••", "VoiceOver reads the mask again after Hide")
+    }
+
+    // MARK: - Field values follow the selected item for VoiceOver
+
+    /// The detail pane reuses its rows when another item is selected; what VoiceOver reads must
+    /// follow (fix-ui-journey-findings).
+    func testFieldValuesFollowItemChange() {
+        openItem(Fixture.alpha)
+        XCTAssertTrue(app.fieldValue("Username").waitForText("user-alpha", timeout: 5))
+
+        openItem(Fixture.gamma)
+        XCTAssertTrue(app.fieldValue("Username").displayedText.waitForText("user-gamma", timeout: 5),
+                      "The second item's username should be shown")
+        XCTAssertEqual(app.fieldValue("Username").text, "user-gamma",
+                       "Accessibility should expose the second item's username")
     }
 
     // MARK: - US3 Scenario 7: Item change resets mask state

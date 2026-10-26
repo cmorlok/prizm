@@ -12,6 +12,17 @@ final class RootViewModelCopyCodeTests: XCTestCase {
         }
     }
 
+    /// Runs `whileGenerating` before returning, to lock the vault while the code is generated.
+    /// Its code is not used by any other test.
+    private struct InterruptingGenerator: GenerateTOTPCodeUseCase {
+        static let code = "975310"
+        let whileGenerating: @MainActor () -> Void
+        func execute(seed: String, at date: Date) async throws -> TOTPCode {
+            await whileGenerating()
+            return TOTPCode(digits: Self.code, period: 30, secondsRemaining: 12)
+        }
+    }
+
     private let validSeed = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
     private var sut: RootViewModel!
     private var savedPasteboard: String?
@@ -41,6 +52,9 @@ final class RootViewModelCopyCodeTests: XCTestCase {
         while sut.selectedLogin?.totp != totp, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(5))
         }
+        // Copy commands work only while the vault is unlocked. Set after the waits: the login
+        // flow's initial state arrives on the main queue and resets `screen` to `.login`.
+        sut.screen = .vault
     }
 
     private func waitForPasteboard(_ expected: String) async throws {
@@ -84,6 +98,33 @@ final class RootViewModelCopyCodeTests: XCTestCase {
         sut.copySelectedField(.totp)
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertEqual(NSPasteboard.general.string(forType: .string), "sentinel")
+    }
+
+    // The pasteboard is shared with test classes running in parallel processes, so the two
+    // tests below check that their own unique values never arrive, not that it stays unchanged.
+
+    func test_copyField_whileLocked_copiesNothing() async throws {
+        let username = "locked-user-\(UUID().uuidString)"
+        try await select(totp: validSeed, username: username)
+        sut.screen = .unlock
+
+        sut.copySelectedField(.username)
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertNotEqual(NSPasteboard.general.string(forType: .string), username)
+    }
+
+    func test_copyCode_lockedWhileGenerating_copiesNothing() async throws {
+        let deps = MockRootDependencies(auth: MockAuthRepository(), vault: MockVaultRepository())
+        sut = RootViewModel(container: deps)
+        deps.generateTOTPCode = InterruptingGenerator { [weak self] in self?.sut.screen = .unlock }
+        try await select(totp: validSeed)
+
+        sut.copySelectedField(.totp)
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertNotEqual(NSPasteboard.general.string(forType: .string), InterruptingGenerator.code,
+                          "A code generated across a lock must not be copied")
     }
 
     func test_otherFields_stillCopyTheirOwnValues() async throws {

@@ -70,13 +70,17 @@ final class VaultBrowserViewModel: ObservableObject {
     /// The Presentation layer surfaces this as an alert.
     @Published var actionError: String? = nil
 
-    /// Set to a non-nil `ItemType` to present the create sheet for that type.
-    /// Automatically cleared if the user switches to Trash.
-    @Published var createItemType: ItemType? = nil {
-        didSet {
-            if sidebarSelection == .trash { createItemType = nil }
-        }
+    /// Set to a non-nil `ItemType` to present the create sheet for that type. Ignored while Trash
+    /// is selected: nothing is created in Trash (spec list-column-header).
+    ///
+    /// The check sits in a setter over a private published value. It used to reset the value in
+    /// its own `didSet`, and a unit test showed the value stayed set; ⌘N in Trash then crashed the
+    /// app, for a reason not traced further (fix-ui-journey-findings).
+    var createItemType: ItemType? {
+        get { pendingCreateItemType }
+        set { pendingCreateItemType = sidebarSelection == .trash ? nil : newValue }
     }
+    @Published private var pendingCreateItemType: ItemType? = nil
 
     // MARK: - Dependencies
 
@@ -121,6 +125,23 @@ final class VaultBrowserViewModel: ObservableObject {
 
     /// Relative label derived from `lastSyncedAt`, refreshed every 60 seconds.
     @Published private(set) var syncStatusLabel: String = "Never synced"
+
+    // MARK: - Session lifetime
+
+    /// False between `clearSession()` and `beginSession()`, while the vault is locked or signed out.
+    /// Open at launch: the vault store stays empty until the first unlock.
+    /// Results that arrive then are dropped: the lock clears the vault store only after some awaits,
+    /// so a refresh started in between would still find decrypted items there.
+    private var isSessionOpen = true
+
+    /// Incremented by `clearSession()` and `beginSession()`. A refresh compares it with the value
+    /// from when it started, so a read from before a lock cannot deliver into the next session.
+    private var sessionGeneration = 0
+
+    /// Whether a result from a refresh started at `generation` may still be shown.
+    private func isCurrent(_ generation: Int) -> Bool {
+        isSessionOpen && generation == sessionGeneration
+    }
 
     // MARK: - Clipboard auto-clear
 
@@ -254,11 +275,48 @@ final class VaultBrowserViewModel: ObservableObject {
         syncErrorMessage = nil
     }
 
+    // MARK: - Session
+
+    /// Drops the decrypted vault data this view model holds: the selected item, the listed items,
+    /// the folder, organization and collection names, the search term, and the create and edit
+    /// sheet state. Called by `RootViewModel` when the vault locks or the user signs out.
+    ///
+    /// Security goal: after a lock, no decrypted item stays in memory or reachable from the UI
+    /// (Constitution §III). `RootViewModel` clears the vault store and the key caches, but this
+    /// view model lives as long as the app and kept its own copies, so Item → Edit stayed enabled
+    /// on the unlock screen. Until `beginSession()`, refresh results and late saves are dropped.
+    /// Intentionally kept: the sidebar category and the sync timestamp, which hold no vault content,
+    /// and the clipboard, whose 30-second auto-clear keeps running.
+    func clearSession() {
+        isSessionOpen = false
+        sessionGeneration &+= 1
+        itemSelection     = nil
+        displayedItems    = []
+        itemCounts        = [:]
+        folders           = []
+        organizations     = []
+        collections       = []
+        isGlobalSearch    = false
+        previousSelection = nil
+        // Assigning triggers a refresh, which is unnecessary when the term is already empty.
+        if !searchQuery.isEmpty { searchQuery = "" }
+        createItemType    = nil
+        editSheetOpen     = false
+        actionError       = nil
+    }
+
+    /// Accepts vault data again. Called by `RootViewModel` when it shows the unlocked vault.
+    func beginSession() {
+        sessionGeneration &+= 1
+        isSessionOpen = true
+    }
+
     // MARK: - Refresh
 
     /// Refreshes `displayedItems` from the vault store based on current selection + search query.
     /// Executes the vault read on the actor executor via a fire-and-forget `Task`.
     func refreshItems() {
+        let generation = sessionGeneration
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -269,7 +327,9 @@ final class VaultBrowserViewModel: ObservableObject {
                 } else {
                     scope = sidebarSelection
                 }
-                displayedItems = try await search.execute(query: searchQuery, in: scope)
+                let items = try await search.execute(query: searchQuery, in: scope)
+                guard isCurrent(generation) else { return }
+                displayedItems = items
             } catch {
                 logger.error("Failed to load vault items: \(error.localizedDescription, privacy: .public)")
                 displayedItems = []
@@ -284,19 +344,24 @@ final class VaultBrowserViewModel: ObservableObject {
     /// the item hasn't changed the assignment is a no-op.
     func refreshItemSelection() {
         guard let currentId = itemSelection?.id else { return }
+        let generation = sessionGeneration
         Task { [weak self] in
             guard let self else { return }
             guard let updated = try? await vault.allItems().first(where: { $0.id == currentId }) else { return }
+            guard isCurrent(generation) else { return }
             itemSelection = updated
         }
     }
 
     /// Refreshes sidebar item counts from the vault store.
     func refreshCounts() {
+        let generation = sessionGeneration
         Task { [weak self] in
             guard let self else { return }
             do {
-                itemCounts = try await vault.itemCounts()
+                let counts = try await vault.itemCounts()
+                guard isCurrent(generation) else { return }
+                itemCounts = counts
             } catch {
                 logger.error("Failed to load item counts: \(error.localizedDescription, privacy: .public)")
             }
@@ -351,11 +416,21 @@ final class VaultBrowserViewModel: ObservableObject {
         editSheetOpen = open
     }
 
-    /// Called after a successful item edit save to refresh the list pane and detail pane.
+    /// Returns the handler for a save that starts now, to be called with the saved item.
     ///
+    /// A save can complete after the vault locked, or even after the next unlock or another
+    /// account's sign-in; the handler then ignores the item instead of selecting it again.
+    func saveHandler() -> (VaultItem) -> Void {
+        let generation = sessionGeneration
+        return { [weak self] savedItem in
+            self?.handleItemSaved(savedItem, startedIn: generation)
+        }
+    }
+
     /// Updates `itemSelection` so the detail pane reflects the saved values, then
     /// refreshes the item list and sidebar counts so any name change appears immediately.
-    func handleItemSaved(_ updatedItem: VaultItem) {
+    private func handleItemSaved(_ updatedItem: VaultItem, startedIn generation: Int) {
+        guard isCurrent(generation) else { return }
         itemSelection = updatedItem
         refreshItems()
         refreshCounts()
@@ -364,12 +439,13 @@ final class VaultBrowserViewModel: ObservableObject {
     // MARK: - Toggle Favorite
 
     func toggleFavorite(item: VaultItem) {
+        let onSaved = saveHandler()
         Task {
             var draft = DraftVaultItem(item)
             draft.isFavorite.toggle()
             do {
                 let updated = try await vault.update(draft)
-                handleItemSaved(updated)
+                onSaved(updated)
             } catch {
                 logger.error("Toggle favorite failed: \(error.localizedDescription, privacy: .public)")
             }
@@ -509,10 +585,13 @@ final class VaultBrowserViewModel: ObservableObject {
     // MARK: - Refresh
 
     func refreshFolders() {
+        let generation = sessionGeneration
         Task { [weak self] in
             guard let self else { return }
             do {
-                folders = try await vault.folders()
+                let loaded = try await vault.folders()
+                guard isCurrent(generation) else { return }
+                folders = loaded
             } catch {
                 logger.error("Failed to load folders: \(error.localizedDescription, privacy: .public)")
             }
@@ -520,11 +599,15 @@ final class VaultBrowserViewModel: ObservableObject {
     }
 
     func refreshOrganizations() {
+        let generation = sessionGeneration
         Task { [weak self] in
             guard let self else { return }
             do {
-                organizations = try await vault.organizations()
-                collections   = try await vault.collections()
+                let loadedOrganizations = try await vault.organizations()
+                let loadedCollections   = try await vault.collections()
+                guard isCurrent(generation) else { return }
+                organizations = loadedOrganizations
+                collections   = loadedCollections
             } catch {
                 logger.error("Failed to load organizations: \(error.localizedDescription, privacy: .public)")
             }

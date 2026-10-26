@@ -24,6 +24,9 @@ struct ItemListView: View {
     @State private var itemToDelete:    VaultItem? = nil
     @State private var showDeleteAlert: Bool       = false
 
+    /// Keyboard focus for the list, so the arrow keys move the selection (fix-ui-journey-findings).
+    @FocusState private var isListFocused: Bool
+
     private var sections: [(letter: String, items: [VaultItem])] {
         let grouped = Dictionary(grouping: items) { item in
             let first = item.name.first.map { String($0).uppercased() } ?? "#"
@@ -72,6 +75,11 @@ struct ItemListView: View {
                         }
                     }
                 }
+                .focused($isListFocused)
+                // A click on a row does not make the list the first responder: `.draggable` lets
+                // SwiftUI handle the click itself, so the arrow keys went to whichever view had
+                // focus before. Focus the list on every click.
+                .simultaneousGesture(TapGesture().onEnded { isListFocused = true })
                 // Soft-delete confirmation alert — shown when the user selects "Delete"
                 // from a row context menu. The item is only moved to Trash, not permanently
                 // deleted; it can be recovered from the Trash view.

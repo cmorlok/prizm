@@ -234,10 +234,8 @@ final class EditItemJourneyTests: PrizmUITestCase {
 
         itemMenu.click()
         XCTAssertTrue(app.menuItems["Edit"].waitForExistence(timeout: 3))
-        // Known app bug: locking keeps the selected (decrypted) item, so Edit stays enabled.
-        XCTExpectFailure("Known app bug: Edit stays enabled after locking; the lock keeps the selected item (change fix-ui-journey-findings)") {
-            XCTAssertFalse(app.menuItems["Edit"].isEnabled, "Nothing should be editable while the vault is locked")
-        }
+        // Locking drops the selected (decrypted) item, so nothing is editable (fix-ui-journey-findings).
+        XCTAssertFalse(app.menuItems["Edit"].isEnabled, "Nothing should be editable while the vault is locked")
         app.typeKey(.escape, modifierFlags: [])
     }
 }
