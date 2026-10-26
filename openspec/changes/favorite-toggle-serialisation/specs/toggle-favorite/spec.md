@@ -13,3 +13,10 @@ When the user toggles an item's favorite state again before the previous change 
 - **GIVEN** the first change fails
 - **WHEN** the error is shown
 - **THEN** no further change SHALL be sent for that item until the user clicks again
+
+#### Scenario: A lock while a change is being saved
+- **GIVEN** a favorite change for an item is still being saved
+- **WHEN** the user locks and unlocks Prizm and clicks the star of that item again
+- **THEN** the new change SHALL be sent only after the first one ended
+- **AND** the item SHALL end in the state of the last click
+
