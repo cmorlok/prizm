@@ -225,7 +225,8 @@ item's detail pane and in a "Codes" list.
 - **Nothing is stored or logged** — Codes and parsed seeds are never written to disk, the
   Keychain, or the logs. Only a count of items whose code is unavailable is logged.
 - **Seed never shown or copied** — Only the generated code is displayed. "Copy Code" copies
-  the current code (no spaces) and clears it from the clipboard after 30 seconds. There is no
+  the current code (no spaces) and clears it from the clipboard after the chosen delay (default
+  30 seconds; see Clipboard sniffing). There is no
   command that copies the raw seed.
 - **Always visible, by design** — Codes stay visible without a hide timeout, like other
   authenticator apps. This is a documented, narrow exception in the Constitution (§III,
@@ -253,8 +254,16 @@ item's detail pane and in a "Codes" list.
   encrypted user key in the Keychain cannot be decrypted without the master password.
 - **Memory dump after lock** — All key material is zeroed on lock. A memory dump
   taken after the vault locks reveals no usable keys.
-- **Clipboard sniffing** — Copied secrets are automatically cleared from the clipboard
-  after 30 seconds (best-effort on app quit).
+- **Clipboard sniffing** — Every Copy button and menu command (detail pane, Item menu, Codes
+  list, password generator) goes through one clipboard service. It marks the item as concealed
+  (`org.nspasteboard.ConcealedType`), so clipboard managers that honour the nspasteboard.org
+  convention keep it out of their history, and clears it after the delay chosen in Settings →
+  Security (Never, 10 s, 20 s, 30 s, 1 min, 2 min or 5 min; default 30 s). Locking, signing out
+  and quitting Prizm normally clear it as well, even with "Never" (a crash or force quit does not). Prizm only clears what it put there: if
+  another app copied something since, the clipboard is left alone. Not prevented: other apps can
+  read the clipboard during the delay, Universal Clipboard (Handoff) can carry it to the user's
+  other devices, and text the user selects in a field and copies with ⌘C is copied by macOS
+  without the marker and is not cleared.
 - **Network eavesdropping** — All server communication uses HTTPS/TLS. Vault payloads
   are encrypted before transmission regardless.
 

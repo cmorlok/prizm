@@ -28,12 +28,22 @@ struct SettingsView: View {
         return capable
     }
 
+    @AppStorage(ClipboardClearDelay.defaultsKey)
+    private var clipboardClearDelay: String = ClipboardClearDelay.defaultValue.rawValue
+
     var body: some View {
         Form {
-            if deviceHasBiometrics {
-                Section("Security") {
+            Section("Security") {
+                if deviceHasBiometrics {
                     BiometricUnlockToggle(authRepository: authRepository)
                 }
+                // Read by ClipboardServiceImpl at each copy (clipboard-hardening, D2, D4).
+                Picker("Clear clipboard", selection: $clipboardClearDelay) {
+                    ForEach(ClipboardClearDelay.allCases) { delay in
+                        Text(delay.label).tag(delay.rawValue)
+                    }
+                }
+                .help("How long a copied password or code stays on the clipboard. Locking, signing out and quitting Prizm always clear it.")
             }
         }
         .formStyle(.grouped)

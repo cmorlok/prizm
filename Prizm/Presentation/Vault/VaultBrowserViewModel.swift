@@ -10,7 +10,7 @@ import os.log
 /// Responsibilities:
 ///   - Manages sidebar selection and item list content
 ///   - Runs in-memory search filter in real time (FR-012)
-///   - Provides clipboard copy with 30-second auto-clear (FR-011, SC-004)
+///   - Provides clipboard copy through `ClipboardService` (auto-clear after the chosen delay)
 ///   - Surfaces the last-synced timestamp for the toolbar (FR-037, FR-041)
 ///   - Tracks and dismisses the sync error banner (FR-049)
 @MainActor
@@ -95,6 +95,7 @@ final class VaultBrowserViewModel: ObservableObject {
     private let moveItemUseCase:          any MoveItemToFolderUseCase
     private let setFavoriteUseCase:       any SetFavoriteUseCase
     private let emptyTrashUseCase:        any EmptyTrashUseCase
+    private let clipboard:                any ClipboardService
     private let createCollectionUseCase:  any CreateCollectionUseCase
     private let renameCollectionUseCase:  any RenameCollectionUseCase
     private let deleteCollectionUseCase:  any DeleteCollectionUseCase
@@ -145,10 +146,6 @@ final class VaultBrowserViewModel: ObservableObject {
         isSessionOpen && generation == sessionGeneration
     }
 
-    // MARK: - Clipboard auto-clear
-
-    private var clipboardClearTask: Task<Void, Never>?
-
     // MARK: - Init
 
     init(
@@ -163,6 +160,7 @@ final class VaultBrowserViewModel: ObservableObject {
         moveItem:          any MoveItemToFolderUseCase,
         setFavorite:       any SetFavoriteUseCase,
         emptyTrash:        any EmptyTrashUseCase,
+        clipboard:         any ClipboardService,
         createCollection:  any CreateCollectionUseCase,
         renameCollection:  any RenameCollectionUseCase,
         deleteCollection:  any DeleteCollectionUseCase,
@@ -180,6 +178,7 @@ final class VaultBrowserViewModel: ObservableObject {
         self.moveItemUseCase        = moveItem
         self.setFavoriteUseCase     = setFavorite
         self.emptyTrashUseCase      = emptyTrash
+        self.clipboard              = clipboard
         self.createCollectionUseCase = createCollection
         self.renameCollectionUseCase = renameCollection
         self.deleteCollectionUseCase = deleteCollection
@@ -196,7 +195,6 @@ final class VaultBrowserViewModel: ObservableObject {
 
     deinit {
         labelRefreshTimer?.invalidate()
-        clipboardClearTask?.cancel()
     }
 
     // MARK: - Timer
@@ -239,41 +237,10 @@ final class VaultBrowserViewModel: ObservableObject {
         searchQuery = ""
     }
 
-    /// Pasteboard type from the nspasteboard.org convention (http://nspasteboard.org). Clipboard
-    /// managers that honor it, such as most password-aware ones, skip items carrying it.
-    nonisolated static let concealedType = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
-
-    /// Replaces the pasteboard contents with `value`, flagged as concealed.
-    ///
-    /// Security goal: copied passwords and one-time codes should not be recorded in a
-    /// clipboard manager's history. Intentionally NOT done: this does not stop a process that
-    /// reads the pasteboard directly; the 30-second auto-clear below limits that window.
-    static func writeConcealed(_ value: String, to pasteboard: NSPasteboard) {
-        pasteboard.clearContents()
-        pasteboard.setString(value, forType: .string)
-        // The marker's value is ignored by consumers; only its presence matters.
-        pasteboard.setString("", forType: concealedType)
-    }
-
-    /// Copies `value` to the pasteboard and schedules a 30-second auto-clear (FR-011).
+    /// Copies `value` through the app's clipboard service: concealed from clipboard history and
+    /// cleared after the user's chosen delay, and on lock, sign-out and quit (clipboard-hardening).
     func copy(_ value: String) {
-        let pasteboard = NSPasteboard.general
-        Self.writeConcealed(value, to: pasteboard)
-
-        // Cancel any previous clear task before scheduling a new one.
-        clipboardClearTask?.cancel()
-        clipboardClearTask = Task {
-            do {
-                try await Task.sleep(for: .seconds(30))
-                // Only clear if our value is still on the clipboard.
-                if pasteboard.string(forType: .string) == value {
-                    pasteboard.clearContents()
-                    logger.debug("Clipboard auto-cleared after 30 s")
-                }
-            } catch {
-                // Task cancelled (e.g. new copy) — do nothing.
-            }
-        }
+        clipboard.copy(value)
     }
 
     /// Dismisses the sync error banner (FR-049).
@@ -291,8 +258,8 @@ final class VaultBrowserViewModel: ObservableObject {
     /// (Constitution §III). `RootViewModel` clears the vault store and the key caches, but this
     /// view model lives as long as the app and kept its own copies, so Item → Edit stayed enabled
     /// on the unlock screen. Until `beginSession()`, refresh results and late saves are dropped.
-    /// Intentionally kept: the sidebar category and the sync timestamp, which hold no vault content,
-    /// and the clipboard, whose 30-second auto-clear keeps running.
+    /// Intentionally kept: the sidebar category and the sync timestamp, which hold no vault content.
+    /// The clipboard is cleared by `RootViewModel` on lock and sign-out (`ClipboardService`).
     func clearSession() {
         isSessionOpen = false
         sessionGeneration &+= 1

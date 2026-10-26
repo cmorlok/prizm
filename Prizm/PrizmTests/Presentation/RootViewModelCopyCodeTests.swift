@@ -25,19 +25,18 @@ final class RootViewModelCopyCodeTests: XCTestCase {
 
     private let validSeed = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
     private var sut: RootViewModel!
-    private var savedPasteboard: String?
+    /// The fake pasteboard behind the vault browser's clipboard service.
+    private var pasteboard: FakePasteboard!
 
     override func setUp() async throws {
         try await super.setUp()
-        savedPasteboard = NSPasteboard.general.string(forType: .string)
         let deps = MockRootDependencies(auth: MockAuthRepository(), vault: MockVaultRepository())
         deps.generateTOTPCode = FixedGenerator()
         sut = RootViewModel(container: deps)
+        pasteboard = deps.fakePasteboard
     }
 
     override func tearDown() async throws {
-        NSPasteboard.general.clearContents()
-        if let savedPasteboard { NSPasteboard.general.setString(savedPasteboard, forType: .string) }
         try await super.tearDown()
     }
 
@@ -59,7 +58,7 @@ final class RootViewModelCopyCodeTests: XCTestCase {
 
     private func waitForPasteboard(_ expected: String) async throws {
         let deadline = ContinuousClock.now + .milliseconds(500)
-        while NSPasteboard.general.string(forType: .string) != expected, ContinuousClock.now < deadline {
+        while pasteboard.string != expected, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(5))
         }
     }
@@ -68,8 +67,8 @@ final class RootViewModelCopyCodeTests: XCTestCase {
         try await select(totp: validSeed)
         sut.copySelectedField(.totp)
         try await waitForPasteboard("123456")
-        XCTAssertEqual(NSPasteboard.general.string(forType: .string), "123456")
-        XCTAssertNotEqual(NSPasteboard.general.string(forType: .string), validSeed)
+        XCTAssertEqual(pasteboard.string, "123456")
+        XCTAssertNotEqual(pasteboard.string, validSeed)
     }
 
     func test_codeAvailable_onlyWhenSeedParses() async throws {
@@ -92,16 +91,11 @@ final class RootViewModelCopyCodeTests: XCTestCase {
     }
 
     func test_unusableSeed_copiesNothing() async throws {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString("sentinel", forType: .string)
         try await select(totp: "not-a-seed!")
         sut.copySelectedField(.totp)
         try await Task.sleep(for: .milliseconds(100))
-        XCTAssertEqual(NSPasteboard.general.string(forType: .string), "sentinel")
+        XCTAssertNil(pasteboard.string)
     }
-
-    // The pasteboard is shared with test classes running in parallel processes, so the two
-    // tests below check that their own unique values never arrive, not that it stays unchanged.
 
     func test_copyField_whileLocked_copiesNothing() async throws {
         let username = "locked-user-\(UUID().uuidString)"
@@ -111,19 +105,20 @@ final class RootViewModelCopyCodeTests: XCTestCase {
         sut.copySelectedField(.username)
         try await Task.sleep(for: .milliseconds(100))
 
-        XCTAssertNotEqual(NSPasteboard.general.string(forType: .string), username)
+        XCTAssertNotEqual(pasteboard.string, username)
     }
 
     func test_copyCode_lockedWhileGenerating_copiesNothing() async throws {
         let deps = MockRootDependencies(auth: MockAuthRepository(), vault: MockVaultRepository())
         sut = RootViewModel(container: deps)
+        pasteboard = deps.fakePasteboard
         deps.generateTOTPCode = InterruptingGenerator { [weak self] in self?.sut.screen = .unlock }
         try await select(totp: validSeed)
 
         sut.copySelectedField(.totp)
         try await Task.sleep(for: .milliseconds(100))
 
-        XCTAssertNotEqual(NSPasteboard.general.string(forType: .string), InterruptingGenerator.code,
+        XCTAssertNotEqual(pasteboard.string, InterruptingGenerator.code,
                           "A code generated across a lock must not be copied")
     }
 
@@ -131,6 +126,6 @@ final class RootViewModelCopyCodeTests: XCTestCase {
         try await select(totp: validSeed, username: "alice")
         sut.copySelectedField(.username)
         try await waitForPasteboard("alice")
-        XCTAssertEqual(NSPasteboard.general.string(forType: .string), "alice")
+        XCTAssertEqual(pasteboard.string, "alice")
     }
 }

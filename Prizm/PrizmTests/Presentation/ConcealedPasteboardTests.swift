@@ -21,18 +21,18 @@ final class ConcealedPasteboardTests: XCTestCase {
     }
 
     func test_write_setsTheStringValue() {
-        VaultBrowserViewModel.writeConcealed("123456", to: pasteboard)
+        _ = SystemPasteboard(pasteboard).writeConcealed("123456")
         XCTAssertEqual(pasteboard.string(forType: .string), "123456")
     }
 
     func test_write_marksTheItemAsConcealed() {
-        VaultBrowserViewModel.writeConcealed("123456", to: pasteboard)
-        XCTAssertTrue(pasteboard.types?.contains(VaultBrowserViewModel.concealedType) == true)
+        _ = SystemPasteboard(pasteboard).writeConcealed("123456")
+        XCTAssertTrue(pasteboard.types?.contains(SystemPasteboard.concealedType) == true)
     }
 
     func test_write_replacesPreviousContents() {
         pasteboard.setString("old", forType: .string)
-        VaultBrowserViewModel.writeConcealed("new", to: pasteboard)
+        _ = SystemPasteboard(pasteboard).writeConcealed("new")
         XCTAssertEqual(pasteboard.string(forType: .string), "new")
     }
 }

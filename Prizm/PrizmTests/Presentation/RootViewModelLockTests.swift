@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import Prizm
 
@@ -186,6 +187,48 @@ final class RootViewModelLockTests: XCTestCase {
                        "The next account must not start in the previous account's folder")
     }
 
+    func testLockVault_clearsACopiedSecret() async throws {
+        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault)
+        let root = RootViewModel(container: deps)
+        root.vaultBrowserVM.copy("hunter2")
+        XCTAssertEqual(deps.fakePasteboard.string, "hunter2")
+        mockAuth.stubbedStoredAccount = stubAccount
+        root.screen = .vault
+
+        root.lockVault()
+        try await waitUntil { if case .unlock = root.screen { return true }; return false }
+
+        XCTAssertNil(deps.fakePasteboard.string, "A copied secret must not outlive the session")
+    }
+
+    func testSignOut_clearsACopiedSecret() async throws {
+        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault)
+        let root = RootViewModel(container: deps)
+        root.vaultBrowserVM.copy("hunter2")
+        XCTAssertEqual(deps.fakePasteboard.string, "hunter2")
+        root.screen = .vault
+
+        root.signOut()
+        try await waitUntil { if case .login = root.screen { return true }; return false }
+
+        XCTAssertNil(deps.fakePasteboard.string, "A copied secret must not outlive the session")
+    }
+
+    /// Quitting clears a secret Prizm copied, and leaves what another app copied since
+    /// (clipboard-hardening, scenario "Quit with a foreign clipboard value").
+    func testQuit_clearsOnlyAnOwnedSecret() {
+        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault)
+        let root = RootViewModel(container: deps)
+        root.vaultBrowserVM.copy("hunter2")
+        NotificationCenter.default.post(name: NSApplication.willTerminateNotification, object: nil)
+        XCTAssertNil(deps.fakePasteboard.string, "Prizm's copy is cleared on quit")
+
+        root.vaultBrowserVM.copy("hunter2")
+        deps.fakePasteboard.foreignCopy("not ours")
+        NotificationCenter.default.post(name: NSApplication.willTerminateNotification, object: nil)
+        XCTAssertEqual(deps.fakePasteboard.string, "not ours", "Another app's value stays")
+    }
+
     func testCopyCommands_unavailableWhileLocked() async throws {
         sut.screen = .unlock
         // Even if a decrypted item were still selected, nothing may be copied while locked.
@@ -217,6 +260,10 @@ final class RootViewModelLockTests: XCTestCase {
 final class MockRootDependencies: RootViewModelDependencies {
     /// Replaceable so copy-code tests can inject a deterministic generator.
     var generateTOTPCode: any GenerateTOTPCodeUseCase = UnusedGenerateTOTPCode()
+    /// One pasteboard and one clipboard service, shared with the vault browser, as in the app.
+    let fakePasteboard = FakePasteboard()
+    lazy var clipboardService = ClipboardServiceImpl(pasteboard: fakePasteboard)
+    var clipboard: any ClipboardService { clipboardService }
     let authRepo: any AuthRepository
     let vaultRepo: any VaultRepository
 
@@ -252,6 +299,7 @@ final class MockRootDependencies: RootViewModelDependencies {
             moveItem:         StubMoveItem(),
             setFavorite:      SetFavoriteUseCaseImpl(repository: mockVault),
             emptyTrash:       EmptyTrashUseCaseImpl(repository: mockVault, sync: MockSyncUseCase()),
+            clipboard:        clipboardService,
             createCollection: StubCreateCollection(),
             renameCollection: StubRenameCollection(),
             deleteCollection: StubDeleteCollection(),

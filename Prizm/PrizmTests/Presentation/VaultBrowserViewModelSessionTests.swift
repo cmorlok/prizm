@@ -160,6 +160,7 @@ private func makeVaultBrowserViewModel(vault: MockVaultRepository, search: any S
         moveItem:         StubMoveItem(),
         setFavorite:      SetFavoriteUseCaseImpl(repository: vault),
         emptyTrash:       EmptyTrashUseCaseImpl(repository: vault, sync: MockSyncUseCase()),
+        clipboard:        ClipboardServiceImpl(pasteboard: FakePasteboard()),
         createCollection: StubCreateCollection(),
         renameCollection: StubRenameCollection(),
         deleteCollection: StubDeleteCollection(),
