@@ -37,6 +37,7 @@ struct PrizmApp: App {
             rootView
                 .frame(minWidth: 480, minHeight: 360)
                 .environment(optionKeyMonitor)
+                .environment(container.clipboardService)
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: false))
@@ -222,6 +223,8 @@ protocol RootViewModelDependencies: AnyObject {
     var vaultRepo: any VaultRepository { get }
     /// Generates the current TOTP code for the "Copy Code" command.
     var generateTOTPCode: any GenerateTOTPCodeUseCase { get }
+    /// The app's one clipboard service; cleared on lock, sign-out and quit.
+    var clipboard: any ClipboardService { get }
     func makeLoginViewModel() -> LoginViewModel
     func makeUnlockViewModel(account: Account) -> UnlockViewModel
     func makeVaultBrowserViewModel() -> VaultBrowserViewModel
@@ -281,6 +284,7 @@ final class RootViewModel: ObservableObject {
     nonisolated(unsafe) private var sleepObserver: NSObjectProtocol?
     nonisolated(unsafe) private var screensaverObserver: NSObjectProtocol?
     nonisolated(unsafe) private var screenLockObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var terminateObserver: NSObjectProtocol?
 
     init(container: any RootViewModelDependencies) {
         self.container      = container
@@ -325,6 +329,7 @@ final class RootViewModel: ObservableObject {
         if let sleepObserver { NSWorkspace.shared.notificationCenter.removeObserver(sleepObserver) }
         if let screensaverObserver { DistributedNotificationCenter.default().removeObserver(screensaverObserver) }
         if let screenLockObserver { DistributedNotificationCenter.default().removeObserver(screenLockObserver) }
+        if let terminateObserver { NotificationCenter.default.removeObserver(terminateObserver) }
     }
 
     // MARK: - Combine subscriptions
@@ -366,6 +371,14 @@ final class RootViewModel: ObservableObject {
                 }
             }
         }
+
+        // Quit: a copied secret does not outlive the app (clipboard-hardening, D3). The app has no
+        // NSApplicationDelegate, so observe the notification.
+        terminateObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in MainActor.assumeIsolated { self?.container.clipboard.clearIfOwned() } }
 
         // Auto-lock on Mac sleep.
         sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -472,6 +485,7 @@ final class RootViewModel: ObservableObject {
             }
             // authRepo.signOut() zeroes and clears every key cache through its lockVault().
             await container.vaultRepo.clearVault()
+            container.clipboard.clearIfOwned()
             // The next account must not start in a folder or collection of this one.
             vaultBrowserVM.sidebarSelection = .allItems
             unlockVM = nil
@@ -493,6 +507,8 @@ final class RootViewModel: ObservableObject {
             // Data layer for lock and sign-out (harden-key-lifecycle-and-logging, D1).
             await container.authRepo.lockVault()
             await container.vaultRepo.clearVault()
+            // A copied secret does not outlive the session (clipboard-hardening, D3).
+            container.clipboard.clearIfOwned()
             if let account = container.authRepo.storedAccount() {
                 unlockVM = container.makeUnlockViewModel(account: account)
                 screen = .unlock
@@ -553,7 +569,7 @@ final class RootViewModel: ObservableObject {
     }
 
     /// Generates the current code for the selected Login and puts it on the clipboard through the
-    /// shared path, so the 30-second auto-clear applies. Does nothing for an unusable seed.
+    /// shared path, so the clipboard auto-clear applies. Does nothing for an unusable seed.
     func copySelectedCode() async {
         guard let seed = selectedLogin?.totp, selectedFieldAvailable(.totp) else { return }
         do {

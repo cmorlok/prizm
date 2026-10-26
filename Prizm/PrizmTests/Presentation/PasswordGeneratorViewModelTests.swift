@@ -20,12 +20,12 @@ final class PasswordGeneratorViewModelTests: XCTestCase {
     }
 
     func testInit_generatesValueImmediately() {
-        let vm = PasswordGeneratorViewModel(provider: provider, defaults: defaults)
+        let vm = PasswordGeneratorViewModel(provider: provider, defaults: defaults, clipboard: ClipboardServiceImpl(pasteboard: FakePasteboard()))
         XCTAssertFalse(vm.generatedValue.isEmpty)
     }
 
     func testConfigChange_triggersRegeneration() {
-        let vm = PasswordGeneratorViewModel(provider: provider, defaults: defaults)
+        let vm = PasswordGeneratorViewModel(provider: provider, defaults: defaults, clipboard: ClipboardServiceImpl(pasteboard: FakePasteboard()))
         let first = vm.generatedValue
         vm.length = 32
         // Value should change (different length = different output).
@@ -33,32 +33,33 @@ final class PasswordGeneratorViewModelTests: XCTestCase {
     }
 
     func testModeSwitch_triggersRegeneration() {
-        let vm = PasswordGeneratorViewModel(provider: provider, defaults: defaults)
+        let vm = PasswordGeneratorViewModel(provider: provider, defaults: defaults, clipboard: ClipboardServiceImpl(pasteboard: FakePasteboard()))
         vm.mode = .passphrase
         XCTAssertTrue(vm.generatedValue.contains("-"))
     }
 
     func testCopyToClipboard_writesToPasteboard() {
-        let vm = PasswordGeneratorViewModel(provider: provider, defaults: defaults)
+        let pasteboard = FakePasteboard()
+        let vm = PasswordGeneratorViewModel(provider: provider, defaults: defaults, clipboard: ClipboardServiceImpl(pasteboard: pasteboard))
         vm.copyToClipboard()
-        let pasted = NSPasteboard.general.string(forType: .string)
-        XCTAssertEqual(pasted, vm.generatedValue)
+        XCTAssertEqual(pasteboard.string, vm.generatedValue)
+        XCTAssertTrue(pasteboard.concealed)
     }
 
     func testSettingsPersisted_toUserDefaults() {
-        let vm = PasswordGeneratorViewModel(provider: provider, defaults: defaults)
+        let vm = PasswordGeneratorViewModel(provider: provider, defaults: defaults, clipboard: ClipboardServiceImpl(pasteboard: FakePasteboard()))
         vm.length = 42
         vm.mode = .passphrase
 
         // Load a new VM from the same defaults — should restore.
         let provider2 = MockRandomnessProvider()
-        let vm2 = PasswordGeneratorViewModel(provider: provider2, defaults: defaults)
+        let vm2 = PasswordGeneratorViewModel(provider: provider2, defaults: defaults, clipboard: ClipboardServiceImpl(pasteboard: FakePasteboard()))
         XCTAssertEqual(vm2.length, 42)
         XCTAssertEqual(vm2.mode, .passphrase)
     }
 
     func testDefaultsRestored_onFirstLaunch() {
-        let vm = PasswordGeneratorViewModel(provider: provider, defaults: defaults)
+        let vm = PasswordGeneratorViewModel(provider: provider, defaults: defaults, clipboard: ClipboardServiceImpl(pasteboard: FakePasteboard()))
         XCTAssertEqual(vm.mode, .password)
         XCTAssertEqual(vm.length, 16)
         XCTAssertEqual(vm.wordCount, 6)

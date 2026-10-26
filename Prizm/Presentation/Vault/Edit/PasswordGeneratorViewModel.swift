@@ -2,7 +2,7 @@ import Combine
 import SwiftUI
 
 /// ViewModel for the password generator popover.
-/// Owns the config, generated value, and clipboard logic.
+/// Owns the config and the generated value; copies go through the app's `ClipboardService`.
 /// Instantiated as `@StateObject` inside `EditFieldRow` so plaintext
 /// is released when the popover closes (design D7, Constitution §III).
 @MainActor
@@ -32,14 +32,15 @@ final class PasswordGeneratorViewModel: ObservableObject {
     private let provider: RandomnessProvider
     private let generator = PasswordGenerator()
     private let defaults: UserDefaults
-    private var clipboardClearTask: Task<Void, Never>?
+    private let clipboard: any ClipboardService
     private var isInitializing = true
 
     // MARK: - Init
 
-    init(provider: RandomnessProvider, defaults: UserDefaults = .standard) {
+    init(provider: RandomnessProvider, defaults: UserDefaults = .standard, clipboard: any ClipboardService) {
         self.provider = provider
         self.defaults = defaults
+        self.clipboard = clipboard
         let config = PasswordGeneratorConfig.load(from: defaults)
         self.mode = config.mode
         self.length = config.length
@@ -54,10 +55,6 @@ final class PasswordGeneratorViewModel: ObservableObject {
         self.includeNumber = config.includeNumber
         isInitializing = false
         generate()
-    }
-
-    deinit {
-        clipboardClearTask?.cancel()
     }
 
     // MARK: - Actions
@@ -80,22 +77,10 @@ final class PasswordGeneratorViewModel: ObservableObject {
         }
     }
 
+    /// Copies the generated value through the app's clipboard service, so it is hidden from
+    /// clipboard history and cleared even after this view model is gone (clipboard-hardening).
     func copyToClipboard() {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(generatedValue, forType: .string)
-
-        clipboardClearTask?.cancel()
-        clipboardClearTask = Task {
-            do {
-                try await Task.sleep(for: .seconds(30))
-                if pasteboard.string(forType: .string) == generatedValue {
-                    pasteboard.clearContents()
-                }
-            } catch {
-                // Task cancelled — do nothing.
-            }
-        }
+        clipboard.copy(generatedValue)
     }
 
     // MARK: - Private
