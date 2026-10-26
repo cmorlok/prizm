@@ -27,11 +27,20 @@ starred, which is the bug the user sees.
 
 ### D2. Session end
 
-`clearSession()` clears both maps. A task that finishes after the session ended touches neither map
-and sends nothing further (`isCurrent(generation)`), so a request from before a lock can't disturb
-the next session's state.
+`clearSession()` drops the intents but keeps the record of open requests. A request from an ended
+session always removes its item from that record when it ends; it shows no error and sends
+nothing of its own. If the new session queued a click for that item meanwhile, the click is sent
+then. So two requests for one item are never open at once, also across a lock (a lock and a quick
+Touch ID unlock while a request hangs), and the last one the server applies is the last click.
+
+The base for a click is the selected item when it is the same item (updated as soon as a change is
+confirmed), else the item the view passed (updated after the list refresh).
 
 ## Risks / Trade-offs
+
+- **[Low] An edit-sheet save that changes only the folder also sends the favorite state**
+  (`/partial`, fix/013), taken from the item when the sheet opened. Star, then ⌘E at once, then a
+  folder-only save can undo the star. Pre-existing; the toggle queue does not see edit-sheet saves.
 
 - **[Low] The star shows the confirmed state, not the intent, while requests run.** → As today;
   optimistic display is out of scope.

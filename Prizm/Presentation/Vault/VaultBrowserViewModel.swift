@@ -279,6 +279,9 @@ final class VaultBrowserViewModel: ObservableObject {
         emptyTrashConfirmation = nil
         isEmptyingTrash   = false
         announcement      = nil
+        // Not `favoriteInFlight`: a request still open blocks the next one for that item, also
+        // across a lock, so two requests for one item never race on the server (D2).
+        favoriteIntent    = [:]
     }
 
     /// Accepts vault data again. Called by `RootViewModel` when it shows the unlocked vault.
@@ -414,19 +417,53 @@ final class VaultBrowserViewModel: ObservableObject {
 
     // MARK: - Toggle Favorite
 
+    /// The favorite state each item should end in, while a change for it is being saved, and the
+    /// items with a request in flight (favorite-toggle-serialisation, D1). The view passes the item
+    /// as last confirmed, so a second click before the first is saved needs the intent to flip.
+    private var favoriteIntent: [String: Bool] = [:]
+    private var favoriteInFlight: Set<String> = []
+
     func toggleFavorite(item: VaultItem) {
+        // The selection is updated as soon as a change is confirmed, the list row only after its
+        // refresh; take the newer one.
+        let confirmed = itemSelection?.id == item.id ? (itemSelection?.isFavorite ?? item.isFavorite) : item.isFavorite
+        let intent = !(favoriteIntent[item.id] ?? confirmed)
+        favoriteIntent[item.id] = intent
+        guard !favoriteInFlight.contains(item.id) else { return }
+        sendFavorite(itemId: item.id)
+    }
+
+    /// One request per item at a time, so the last one sent is the last one the server applies.
+    private func sendFavorite(itemId: String) {
+        guard let intent = favoriteIntent[itemId] else { return }
+        favoriteInFlight.insert(itemId)
         let onSaved = saveHandler()
         let generation = sessionGeneration
         Task {
+            let succeeded: Bool
             do {
                 // A partial update, not a re-save of the whole item: see `VaultRepository.setFavorite`.
-                let updated = try await setFavoriteUseCase.execute(itemId: item.id, isFavorite: !item.isFavorite)
+                let updated = try await setFavoriteUseCase.execute(itemId: itemId, isFavorite: intent)
                 onSaved(updated)
+                succeeded = true
             } catch {
                 logger.error("Toggle favorite failed: \(ErrorLog.describe(error), privacy: .public)")
+                succeeded = false
                 // No alert for a request from a session that has ended (lock or sign-out meanwhile).
-                guard isCurrent(generation) else { return }
-                actionError = "Couldn't update favorite. \(error.localizedDescription)"
+                if isCurrent(generation) {
+                    actionError = "Couldn't update favorite. \(error.localizedDescription)"
+                }
+            }
+            // The request is done in any case; a new session may have queued a click meanwhile (D2).
+            favoriteInFlight.remove(itemId)
+            guard isCurrent(generation) else {
+                if isSessionOpen, favoriteIntent[itemId] != nil { sendFavorite(itemId: itemId) }
+                return
+            }
+            if succeeded, let latest = favoriteIntent[itemId], latest != intent {
+                sendFavorite(itemId: itemId)
+            } else {
+                favoriteIntent[itemId] = nil
             }
         }
     }
