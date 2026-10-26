@@ -96,6 +96,7 @@ All set in `devcontainer.json` → `build.args`:
 - OpenSpec
 - GSD (`@opengsd/gsd-core`, the maintained continuation of the archived `get-shit-done-cc`)
 - actionlint and ShellCheck
+- GitHub CLI (`gh`); sign in once with `gh auth login`, the login is kept in the home volume
 
 The policy is a release **at least two weeks old**, so a compromised or broken release has time
 to be noticed and pulled before it reaches a container that has your home directory mounted.

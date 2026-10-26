@@ -8,6 +8,7 @@
       "NODE_VERSION": "24.21.0",
       "ACTIONLINT_VERSION": "1.7.12",
       "SHELLCHECK_VERSION": "0.11.0",
+      "GH_VERSION": "2.102.0",
       "OPENSPEC_VERSION": "1.14.1",
       "GSD_VERSION": "1.16.0"
     }

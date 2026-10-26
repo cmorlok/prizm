@@ -18,6 +18,7 @@ FROM swift:6.2.4-noble@sha256:d6f8f6112e9a63da0a4a151d6b93acd16699d35c0b82531ac1
 ARG NODE_VERSION=24.21.0
 ARG ACTIONLINT_VERSION=1.7.12
 ARG SHELLCHECK_VERSION=0.11.0
+ARG GH_VERSION=2.102.0
 ARG OPENSPEC_VERSION=1.14.1
 ARG GSD_VERSION=1.16.0
 ARG USERNAME=developer
@@ -69,6 +70,19 @@ RUN case "$(dpkg --print-architecture)" in \
  && install -m 0755 "shellcheck-v${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck \
  && rm -rf shellcheck-v* \
  && shellcheck --version
+
+# GitHub CLI (gh) for branches, pull requests and CI results in a fork, verified against the
+# release's checksums file. Its login lives in ~/.config/gh, which the home volume keeps across
+# rebuilds.
+RUN ARCH="$(dpkg --print-architecture)" \
+ && cd /tmp \
+ && curl -fsSLO "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${ARCH}.tar.gz" \
+ && curl -fsSLO "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_checksums.txt" \
+ && grep " gh_${GH_VERSION}_linux_${ARCH}.tar.gz\$" "gh_${GH_VERSION}_checksums.txt" | sha256sum -c - \
+ && tar -xzf "gh_${GH_VERSION}_linux_${ARCH}.tar.gz" \
+ && install -m 0755 "gh_${GH_VERSION}_linux_${ARCH}/bin/gh" /usr/local/bin/gh \
+ && rm -rf gh_* \
+ && gh --version
 
 # OpenSpec CLI, global and pinned. Its Claude commands are generated per project by post-create.sh.
 RUN npm install -g --no-fund --no-audit "@fission-ai/openspec@${OPENSPEC_VERSION}" \
