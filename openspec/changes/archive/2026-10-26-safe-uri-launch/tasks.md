@@ -15,9 +15,11 @@ Estimates are ideal engineer-days. Write a failing test first for each task (§I
 
 ## 3. Release (0.25 d)
 
-- [ ] 3.1 Security review: allow-list matches the official source; no other launch path builds URLs from stored URIs (grep `URL(string:` in Presentation).
+- [x] 3.1 Security review: allow-list matches the official source; no other launch path builds URLs from stored URIs (grep `URL(string:` in Presentation).
+  Done; see Results.
 - [x] 3.2 CHANGELOG "Fixed": "Open in browser" now opens only web and other safe link types, as in official Bitwarden apps, and works for addresses saved without `http://`.
 - [x] 3.3 `openspec validate safe-uri-launch --type change --strict`.
+- [ ] 3.4 By hand, with VoiceOver or the Accessibility Inspector (XCUITest cannot read hints on macOS): the open button reads "Open Website" with the hint "Opens in browser"; the website value keeps "Copies Website to clipboard".
 
 ## Results (2026-10-26)
 
@@ -39,5 +41,15 @@ Estimates are ideal engineer-days. Write a failing test first for each task (§I
 - 3.1 security review: the allow-list matches `safe-urls.ts`; no disallowed scheme can pass; no
   other launch path. Fixed after review: the test class needed `@MainActor`; fixture moved.
   Not done: caching the per-scheme handler lookup (cheap LaunchServices query per row render).
-- **Not verified on the Mac yet** (test runner hung): unit tests there, UI tests.
+- **Verified on the Mac (2026-10-26):** all 674 unit tests pass on this branch; the full UI suite passes on the top of the series (`fix/017`). The ms-rd test checks the decision, not the URL string, which macOS Foundation re-encodes.
+
+## Verification (2026-10-26, `/opsx:verify`)
+
+- **Divergence found and fixed:** the row set its copy hint on the whole row, and SwiftUI passes a
+  container's accessibility modifiers to its children (as with the row identifier), so the open
+  button probably read "Copies Website to clipboard" instead of "Opens in browser". The copy hint is
+  now on the value elements only (`FieldRowView.copyHint`). Task 2.3's "hint unchanged" was not
+  checked by the UI test, which cannot read hints; new hand check 3.4.
+- Open for the maintainer: design Open Question 1 (`http://` as in the TypeScript clients, or
+  `https://` as in iOS, for addresses without a scheme).
 
