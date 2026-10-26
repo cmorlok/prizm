@@ -175,8 +175,13 @@ scrolling.
 `PrizmUITestCase` prints the app's UI hierarchy into the log on every failure, so a failure can be
 classified from the log without re-running the suite.
 
-The launch argument `-ApplePersistenceIgnoreState YES` breaks the run and is not used: the app
-starts but its window never appears. Selecting test classes with `xcodebuild -only-testing` works.
+Launched by XCUITest, the app gets no "reopen" event, so SwiftUI shows its window only when macOS
+restores one from the saved window state. With `-ApplePersistenceIgnoreState YES`, or after a run
+that left no window in the saved state, the app starts without a window. (This change first named
+the launch argument as the cause; the run on 2026-10-26 showed the same symptom without it.)
+`fix-ui-journey-findings` makes `waitForVaultBrowser()` open a window with File → New Window when
+there is none, after fixing that menu item. Selecting test classes with `xcodebuild -only-testing`
+works.
 
 ## Findings
 
