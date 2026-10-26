@@ -53,7 +53,9 @@ final class OrgKeyWriteGuardTests: XCTestCase {
 
     func testUpdate_orgItemWithoutOrgKey_throwsAndSendsNothing() async throws {
         do {
-            _ = try await sut.update(DraftVaultItem(orgItem))
+            var draft = DraftVaultItem(orgItem)
+            draft.name = "Renamed"  // an unchanged draft would go through /partial, which needs no key
+            _ = try await sut.update(draft)
             XCTFail("Expected organizationKeyUnavailable")
         } catch {
             assertOrgKeyUnavailable(error)

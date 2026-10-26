@@ -378,7 +378,8 @@ final class VaultRepositoryImplTests: XCTestCase {
         ))
         mockAPI.updateCipherShouldThrow = APIError.httpError(statusCode: 500, body: "Internal Server Error")
 
-        let draft = DraftVaultItem(original)
+        var draft = DraftVaultItem(original)
+        draft.name = "Renamed"  // an unchanged draft would go through /partial
 
         let sut = self.sut!
         await XCTAssertThrowsErrorAsync(try await sut.update(draft)) { error in

@@ -308,8 +308,9 @@ final class RootViewModel: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 await container.vaultRepo.populate(
-                    items: UITestFixtures.items, folders: [], organizations: [],
-                    collections: [], syncedAt: Date()
+                    items: UITestFixtures.items, folders: UITestFixtures.folders,
+                    organizations: UITestFixtures.organizations,
+                    collections: UITestFixtures.collections, syncedAt: Date()
                 )
                 self.transitionToVault(caller: "UITestFixtures")
 

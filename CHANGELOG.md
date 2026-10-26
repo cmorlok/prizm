@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fix: organization items that you filed in your folders in other Bitwarden apps now show in those
+  folders (folder counts include them), and you can file organization items into folders in Prizm,
+  with the edit sheet or drag and drop, also items in read-only collections. Folders stay personal;
+  other members do not see your filing.
 - **Changed**: Prizm now identifies itself to the server as a macOS desktop client on every request
   (`Device-Type`, `Bitwarden-Client-Name`), so Vaultwarden's event logs no longer show it as an
   unknown browser. Its user agent shows the Prizm version instead of a Bitwarden version.
