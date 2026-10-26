@@ -6,7 +6,8 @@ Land after `fix-kdf-derivation-and-validation` if both are in flight (soft depen
 ## 1. One teardown path (0.5 d)
 
 - [x] 1.1 Failing test: store an org key in `OrgKeyCache`, call `AuthRepositoryImpl.signOut()`, assert the cache is empty and the stored key's buffer is zero (test seam as in `OrgKeyCryptoKATTests.swift:47`).
-- [ ] 1.2 Failing test: `UnlockViewModel.signInWithDifferentAccount()` leaves both caches empty.
+- [x] 1.2 Failing test: `UnlockViewModel.signInWithDifferentAccount()` leaves both caches empty.
+  `KeyLifecycleTests.testSignInWithDifferentAccount_clearsBothKeyCaches` (added 2026-10-26).
 - [x] 1.3 Inject `VaultKeyCache` and `OrgKeyCache` into `AuthRepositoryImpl` (`AppContainer`). `lockVault()` clears both after zeroing the vault key (design.md D1). Remove the cache clearing from `PrizmApp.signOut()` and `PrizmApp.lockVault()`. Existing lock tests still pass.
 
 ## 2. Sync replaces org keys (0.25 d)
@@ -32,7 +33,8 @@ Land after `fix-kdf-derivation-and-validation` if both are in flight (soft depen
 
 - [x] 5.1 SECURITY.md per design.md D5: key table (`:72-82`), lifecycle steps 3 and 4 (`:94-99`), a "Limits of zeroing in Swift" paragraph, the biometric comparison with iOS and desktop.
 - [x] 5.2 Correct the comments in `Config.swift:36-37`, `OrgKeyCache.swift:13,52` and `AppContainer.swift:26`.
-- [ ] 5.3 Mandatory security review: every key buffer listed in SECURITY.md is zeroed where the doc says; no secret in `.public` logs; teardown order (zero before release).
+- [x] 5.3 Mandatory security review: every key buffer listed in SECURITY.md is zeroed where the doc says; no secret in `.public` logs; teardown order (zero before release).
+  Done; see Results.
 - [x] 5.4 CHANGELOG "Security": organization keys are cleared on sign-out and when a sync no longer lists the organization; master and stretched keys are zeroed after use; debug mode no longer logs the email or the two-factor code. "Docs": SECURITY.md corrections (device identifier, biometric comparison).
 - [x] 5.5 `openspec validate harden-key-lifecycle-and-logging --type change --strict`.
 
@@ -52,8 +54,7 @@ Land after `fix-kdf-derivation-and-validation` if both are in flight (soft depen
   calls `AuthRepository.signOut()`, which now clears both caches.
 - 1.1's "the stored key's buffer is zero" is not observable from outside `OrgKeyCache`; the test
   checks that the caches are empty.
-- **Not verified on the Mac yet** (test runner hung, screen locked): run `PrizmTests`, including the
-  Argon2id KATs, which must be unchanged.
+- **Verified on the Mac (2026-10-26):** all 654 unit tests pass on this branch; the full UI suite passes on the top of the series (`fix/017`). The Argon2id KATs are unchanged and pass.
 - 5.3 security review: teardown order and the allow-list are right; zeroing of the transient
   buffers is in place. Fixed after review: org keys (`unwrapOrgKey`) and biometric-unlocked vault
   keys (`CryptoKeys(data:)`) were slices of one buffer, so zeroing one half on lock zeroed a copy;
