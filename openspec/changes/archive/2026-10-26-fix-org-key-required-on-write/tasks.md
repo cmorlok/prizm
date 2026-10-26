@@ -26,7 +26,8 @@ dependencies. If `fix-cipher-edit-data-loss` lands first and already implements 
 
 ## 4. Release (0.25–0.5 d)
 
-- [ ] 4.1 Mandatory security review: no write path can pick the vault key for an org item; key bytes zeroed on swap; nothing secret in logs.
+- [x] 4.1 Mandatory security review: no write path can pick the vault key for an org item; key bytes zeroed on swap; nothing secret in logs.
+  Passed; see Results.
 - [ ] 4.2 State the overlap in `fix-cipher-edit-data-loss` (KEY-03) and `per-item-key-on-create` (D2) when either is next edited: both refer to this change's rule.
 - [x] 4.3 CHANGELOG "Fixed": organization items can no longer be saved with your personal key while a sync is running or when the organization key is unavailable; such saves now show an error. Add how to recover an item that became unreadable: open it in an official Bitwarden app as the user who saved it and save it again.
 - [x] 4.4 `openspec validate fix-org-key-required-on-write --type change --strict`.
