@@ -73,7 +73,7 @@ struct PrizmApp: App {
                     rootVM.lockVault()
                 }
                 .keyboardShortcut("l", modifiers: .command)
-                .disabled(!rootVM.isVaultUnlocked)
+                .disabled(!rootVM.canLock)
             }
 
             // "Item" menu — sits in the standard macOS menu bar next to Edit/View/Window.
@@ -280,6 +280,13 @@ final class RootViewModel: ObservableObject {
     /// Using Combine (not SwiftUI .onChange) so transitions fire regardless
     /// of whether the source view is currently in the view hierarchy.
     private var cancellables = Set<AnyCancellable>()
+    /// Counts locks, so a flow that ends after one can tell (`showVaultIfUnlocked`).
+    private var lockGeneration = 0
+    /// True from `lockVault()` until its teardown has finished.
+    private var isLocking = false
+    /// `lockGeneration` when the current sign-in or unlock started (`.loading`), nil when none runs.
+    private var loginFlowStart: Int?
+    private var unlockFlowStart: Int?
     /// System notification observers for auto-lock (sleep, screensaver, screen lock).
     nonisolated(unsafe) private var sleepObserver: NSObjectProtocol?
     nonisolated(unsafe) private var screensaverObserver: NSObjectProtocol?
@@ -342,10 +349,12 @@ final class RootViewModel: ObservableObject {
             .sink { [weak self] state in self?.handleLoginFlow(state) }
             .store(in: &cancellables)
 
-        // Unlock flow — re-subscribe whenever unlockVM is assigned.
+        // Unlock flow — only the current unlockVM counts. `switchToLatest` drops the previous one
+        // when a lock replaces it or a sign-out removes it, so its late sync states can't undo the
+        // lock (lock-during-unlock-sync, D1). `flatMap` kept every old subscription alive.
         $unlockVM
-            .compactMap { $0 }
-            .flatMap { $0.$flowState }
+            .map { $0?.$flowState.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher() }
+            .switchToLatest()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in self?.handleUnlockFlow(state) }
             .store(in: &cancellables)
@@ -403,6 +412,52 @@ final class RootViewModel: ObservableObject {
         ) { [weak self] _ in MainActor.assumeIsolated { self?.lockVault() } }
     }
 
+    /// Shows the vault only if no lock came in between (lock-during-unlock-sync, D2).
+    ///
+    /// Security goal: a lock (⌘L, sleep, screensaver) during the sync after unlocking or signing in
+    /// stays in effect when that sync ends. The flow's final `.vault` is checked after the await
+    /// against the keys, against a lock whose teardown is still running (`isLocking`), and against
+    /// a lock that ran since the flow started (`flowStart`, the lock count when it started). The
+    /// auth layer refuses keys of a flow it saw start before a lock (D6); keys a stale flow still
+    /// loaded (its start reached the auth layer only after the lock) are torn down here, unless a
+    /// newer unlock is running or already shows the vault.
+    private func showVaultIfUnlocked(caller: String, flow: Flow, flowStart: Int) {
+        let generation = flowStart
+        Task { [weak self] in
+            guard let self else { return }
+            let unlocked = await container.authRepo.isVaultUnlocked
+            guard unlocked, !isLocking, generation == lockGeneration else {
+                logger.info("\(caller, privacy: .public)(.vault) after a lock: the vault stays locked")
+                // A lock still tearing down shows its screen when it finishes, and a newer flow
+                // that is running or shows the vault shows its own: this one changes nothing.
+                guard !isLocking, !isVaultShown, !isOtherFlowActive(than: flow) else { return }
+                if unlocked {
+                    // No newer flow, so the keys came from this one: its start reached the auth
+                    // layer only after the lock (for example a lock during the sign-in's server
+                    // setup). Tear them down (D2).
+                    vaultBrowserVM.clearSession()
+                    await container.authRepo.lockVault()
+                    await container.vaultRepo.clearVault()
+                }
+                showLockedScreen()
+                return
+            }
+            transitionToVault(caller: caller)
+        }
+    }
+
+    /// The screen a lock leads to: unlock with the stored account, else login.
+    private func showLockedScreen() {
+        if let account = container.authRepo.storedAccount() {
+            // A fresh one: the current one may be the flow that just ended after the lock.
+            unlockVM = container.makeUnlockViewModel(account: account)
+            screen = .unlock
+        } else {
+            unlockVM = nil
+            screen = .login
+        }
+    }
+
     /// Re-scopes the sync timestamp to the current account and records a successful sync,
     /// then transitions to the vault screen.
     ///
@@ -444,12 +499,27 @@ final class RootViewModel: ObservableObject {
     }
 
     func handleLoginFlow(_ state: LoginFlowState) {
+        // A sign-in that started before a lock changes nothing after it; its `.vault` only goes
+        // through the checks of `showVaultIfUnlocked` (lock-during-unlock-sync, D5).
+        let stale = startedBeforeALock(loginFlowStart)
         switch state {
-        case .login:       screen = .login
-        case .loading:     screen = .loading
-        case .totpPrompt:  screen = .totpPrompt
-        case .syncing(let msg): screen = .syncing(message: msg)
-        case .vault:       transitionToVault(caller: "handleLoginFlow")
+        case .login:
+            // See the unlock flow: only the current `.login` ends the sign-in.
+            if loginVM.flowState == .login { loginFlowStart = nil }
+            if !stale { screen = .login }
+        case .loading:
+            // Kept if `lockVault()` already marked this sign-in: states arrive asynchronously.
+            if loginFlowStart == nil { loginFlowStart = lockGeneration }
+            if !stale { screen = .loading }
+        case .totpPrompt:
+            // Discards the pending two-factor keys instead of asking for a code behind a lock.
+            if stale { loginVM.cancelTOTP() } else { screen = .totpPrompt }
+        case .syncing(let msg):
+            if !stale { screen = .syncing(message: msg) }
+        case .vault:
+            let start = loginFlowStart ?? lockGeneration
+            loginFlowStart = nil
+            showVaultIfUnlocked(caller: "handleLoginFlow", flow: .login, flowStart: start)
         }
         logger.info("Screen transition → \(String(describing: state))")
     }
@@ -476,6 +546,8 @@ final class RootViewModel: ObservableObject {
 
     /// Clears all session data and returns to the login screen.
     func signOut() {
+        // Counts as a lock for flows still running: their `.vault` must not open the vault (D6).
+        lockGeneration += 1
         // Drop the vault browser's decrypted copies right away, not after the awaits below.
         vaultBrowserVM.clearSession()
         Task {
@@ -487,6 +559,8 @@ final class RootViewModel: ObservableObject {
             // authRepo.signOut() zeroes and clears every key cache through its lockVault().
             await container.vaultRepo.clearVault()
             container.clipboard.clearIfOwned()
+            // Again: a vault shown while the sign-out ran must not keep its items.
+            vaultBrowserVM.clearSession()
             // The next account must not start in a folder or collection of this one.
             vaultBrowserVM.sidebarSelection = .allItems
             unlockVM = nil
@@ -500,7 +574,16 @@ final class RootViewModel: ObservableObject {
     /// Zeros in-memory key material, clears the vault cache, and transitions to the unlock screen.
     /// No-op if the vault is not currently unlocked.
     func lockVault() {
-        guard isVaultUnlocked else { return }
+        guard canLock else { return }
+        // An unlock in progress keeps its view model, so its end still reaches the checks of
+        // `showVaultIfUnlocked` (D5); the auth layer refuses its keys (D6).
+        let keepUnlockFlow = isUnlockInProgress
+        // Mark a sign-in or unlock in progress as started before this lock, also when its
+        // `.loading` has not reached `handle…Flow` yet.
+        if keepUnlockFlow, unlockFlowStart == nil { unlockFlowStart = lockGeneration }
+        if case .loading = screen, loginFlowStart == nil { loginFlowStart = lockGeneration }
+        lockGeneration += 1
+        isLocking = true
         // Drop the vault browser's decrypted copies right away, not after the awaits below.
         vaultBrowserVM.clearSession()
         Task {
@@ -510,12 +593,16 @@ final class RootViewModel: ObservableObject {
             await container.vaultRepo.clearVault()
             // A copied secret does not outlive the session (clipboard-hardening, D3).
             container.clipboard.clearIfOwned()
+            // Again: a vault shown while the teardown ran must not keep its items (D2).
+            vaultBrowserVM.clearSession()
             if let account = container.authRepo.storedAccount() {
-                unlockVM = container.makeUnlockViewModel(account: account)
+                if !keepUnlockFlow { unlockVM = container.makeUnlockViewModel(account: account) }
                 screen = .unlock
             } else {
+                unlockVM = nil
                 screen = .login
             }
+            isLocking = false
             logger.info("Vault locked")
         }
     }
@@ -528,14 +615,71 @@ final class RootViewModel: ObservableObject {
         }
     }
 
+    /// Whether a lock applies: the vault is unlocked, or a sign-in is loading keys and syncing
+    /// (the login flow shows `.loading` until its sync ends). Without it, sleep during the first
+    /// sync after signing in was ignored (lock-during-unlock-sync).
+    var canLock: Bool {
+        if case .loading = screen { return true }
+        if isUnlockInProgress { return true }
+        return isVaultUnlocked
+    }
+
+    /// The unlock screen is deriving keys (password entered): a lock must apply to that unlock too.
+    private var isUnlockInProgress: Bool {
+        guard case .unlock = screen, let unlockVM else { return false }
+        return unlockVM.flowState == .loading
+    }
+
+    private var isVaultShown: Bool {
+        if case .vault = screen { return true }
+        return false
+    }
+
+    enum Flow { case login, unlock }
+
+    /// Whether the other flow (the unlock for a sign-in, and the sign-in for an unlock) is deriving
+    /// keys, syncing, or has just reached the vault and is about to show it.
+    private func isOtherFlowActive(than flow: Flow) -> Bool {
+        switch flow {
+        case .login:
+            switch unlockVM?.flowState {
+            case .loading, .syncing, .vault: return true
+            default: return false
+            }
+        case .unlock:
+            switch loginVM.flowState {
+            case .loading, .syncing: return true
+            default: return false
+            }
+        }
+    }
+
+
+    private func startedBeforeALock(_ flowStart: Int?) -> Bool {
+        flowStart.map { $0 != lockGeneration } ?? false
+    }
+
     func handleUnlockFlow(_ state: UnlockFlowState) {
         switch state {
-        case .unlock:       screen = .unlock
-        case .loading:      screen = .unlock   // stay on unlock screen with spinner
-        case .syncing(let msg): screen = .syncing(message: msg)
-        case .vault:        transitionToVault(caller: "handleUnlockFlow")
+        case .unlock:
+            // States arrive through the main queue; a late `.unlock` from before the user started
+            // unlocking must not drop the mark `lockVault()` set on the unlock now running.
+            if unlockVM?.flowState == .unlock { unlockFlowStart = nil }
+            screen = .unlock
+        case .loading:
+            // Kept if `lockVault()` already marked this unlock: states arrive asynchronously.
+            if unlockFlowStart == nil { unlockFlowStart = lockGeneration }
+            screen = .unlock   // stay on unlock screen with spinner
+        case .syncing(let msg):
+            // An unlock that started before a lock does not cover the lock screen (D5).
+            if !startedBeforeALock(unlockFlowStart) { screen = .syncing(message: msg) }
+        case .vault:
+            let start = unlockFlowStart ?? lockGeneration
+            unlockFlowStart = nil
+            showVaultIfUnlocked(caller: "handleUnlockFlow", flow: .unlock, flowStart: start)
         case .login:
             // "Sign in with a different account" — reset to login.
+            unlockFlowStart = nil
             unlockVM = nil
             screen   = .login
         }

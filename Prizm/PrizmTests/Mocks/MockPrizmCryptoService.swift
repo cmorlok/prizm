@@ -45,9 +45,15 @@ actor MockPrizmCryptoService: PrizmCryptoService {
 
     nonisolated(unsafe) var decryptSymmetricKeyError: Error?
 
+    /// Runs while the user key is "being decrypted", to hold a login or unlock in its key derivation.
+    nonisolated(unsafe) var whileDecryptingUserKey: (@Sendable () async -> Void)?
+
     func decryptSymmetricKey(encUserKey: String, stretchedKeys: CryptoKeys) async throws -> CryptoKeys {
+        await whileDecryptingUserKey?()
         if let decryptSymmetricKeyError { throw decryptSymmetricKeyError }
-        return stubbedVaultKeys
+        // Fresh buffers, as the real service returns, so callers can zero them in place.
+        return CryptoKeys(encryptionKey: Data(Array(stubbedVaultKeys.encryptionKey)),
+                          macKey: Data(Array(stubbedVaultKeys.macKey)))
     }
 
     func decryptList(ciphers: [RawCipher]) async throws -> (items: [VaultItem], failedCount: Int, cipherKeys: [String: Data]) {
@@ -58,8 +64,12 @@ actor MockPrizmCryptoService: PrizmCryptoService {
         (folders: stubbedFolders, failedCount: 0)
     }
 
+    /// Runs while keys are "being loaded", to let a test lock in exactly that moment.
+    nonisolated(unsafe) var whileUnlockingWith: (@MainActor () async -> Void)?
+
     func unlockWith(keys: CryptoKeys) async {
         _isUnlocked = true
+        await whileUnlockingWith?()
     }
 
     func lockVault() async {

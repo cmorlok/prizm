@@ -62,6 +62,9 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
         )
     }
 
+    /// Runs while the token request is "in flight", to let a test lock in exactly that moment.
+    nonisolated(unsafe) var whileRequestingToken: (@MainActor () async -> Void)?
+
     func identityToken(
         email:             String,
         passwordHash:      String,
@@ -70,6 +73,7 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
         twoFactorProvider: Int?,
         twoFactorRemember: Bool
     ) async throws -> TokenResponse {
+        await whileRequestingToken?()
         if let err = tokenShouldThrow { throw err }
 
         if let providers = tokenTwoFactorProviders, tokenResponse == nil {

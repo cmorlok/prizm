@@ -74,6 +74,42 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         self.orgKeyCache   = orgKeyCache
     }
 
+    // MARK: - Locks during a login or unlock
+
+    /// Counts locks and sign-outs. A login or unlock that started before one must not load its keys
+    /// afterwards (lock-during-unlock-sync, D6).
+    private var lockEpoch = 0
+
+    /// Loads `keys` into the crypto service unless a lock or sign-out came since `epoch`; on success
+    /// `keys` is left empty.
+    ///
+    /// Security goal: a lock stays in effect even when a login or unlock that was already running
+    /// finishes its key derivation afterwards; otherwise its keys would stay loaded behind the lock
+    /// or login screen (and could, for example, be enrolled for Touch ID). If a lock comes while the
+    /// keys are being loaded, they are unloaded again. Refused keys are zeroed in place.
+    private func loadVaultKeys(_ keys: inout CryptoKeys, startedAt epoch: Int) async throws {
+        guard epoch == lockEpoch else {
+            zero(&keys.encryptionKey, "refusedVaultEncryptionKey")
+            zero(&keys.macKey, "refusedVaultMacKey")
+            logger.info("Keys not loaded: the vault was locked while unlocking")
+            throw AuthError.lockedWhileUnlocking
+        }
+        await crypto.unlockWith(keys: keys)
+        guard epoch == lockEpoch else {
+            await crypto.lockVault()
+            // The crypto service zeroed its copy; this buffer is the original and now ours alone.
+            zero(&keys.encryptionKey, "unloadedVaultEncryptionKey")
+            zero(&keys.macKey, "unloadedVaultMacKey")
+            logger.info("Keys unloaded: the vault was locked while they were loaded")
+            throw AuthError.lockedWhileUnlocking
+        }
+        // The crypto service now holds the keys. Dropping the caller's reference leaves it the only
+        // holder, so a later `lockVault()` zeroes the keys in place instead of a copy-on-write copy
+        // while the caller's local still points at the original (the unlock functions keep running
+        // across the token refresh).
+        keys = CryptoKeys(encryptionKey: Data(), macKey: Data())
+    }
+
     // MARK: - Zeroing transient keys
 
     /// A key buffer as it was right after zeroing; reported to `zeroedKeyObserver` in DEBUG builds.
@@ -139,6 +175,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
 
     func loginWithPassword(email: String, masterPassword: Data) async throws -> LoginResult {
         logger.info("Login attempt for \(email, privacy: .private)")
+        let epoch = lockEpoch
         guard let env = serverEnvironment else {
             throw AuthError.serverUnreachable
         }
@@ -212,6 +249,8 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         } catch let err as IdentityTokenError {
             switch err {
             case .twoFactorRequired(let providers):
+                // Not kept for a two-factor step behind a lock; `stretched` is zeroed on the way out.
+                guard epoch == lockEpoch else { throw AuthError.lockedWhileUnlocking }
                 pendingTwoFactor = PendingTwoFactor(
                     email:         email,
                     passwordHash:  serverHash,
@@ -233,6 +272,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
 
         if let providers = tokenResp.twoFactorProviders, !providers.isEmpty {
             // Server returned a 2FA challenge inside a 200 response (test-mock path).
+            guard epoch == lockEpoch else { throw AuthError.lockedWhileUnlocking }
             pendingTwoFactor = PendingTwoFactor(
                 email:         email,
                 passwordHash:  serverHash,
@@ -253,7 +293,8 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         let account = try await finalizeSession(
             tokenResp:    tokenResp,
             stretched:    stretched,
-            environment:  env
+            environment:  env,
+            startedAt:    epoch
         )
         logger.info("Login succeeded")
         return .success(account)
@@ -261,6 +302,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
 
     func loginWithTOTP(code: String, rememberDevice: Bool) async throws -> Account {
         logger.info("Submitting TOTP code")
+        let epoch = lockEpoch
         // Read the fields, not the whole struct: a local copy of it would share the key buffers
         // and keep clearPendingTwoFactor() from zeroing them in place.
         guard let email        = pendingTwoFactor?.email,
@@ -304,7 +346,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
             zero(&stretched.encryptionKey, "pendingEncryptionKey")
             zero(&stretched.macKey, "pendingMacKey")
         }
-        return try await finalizeSession(tokenResp: tokenResp, stretched: stretched, environment: env)
+        return try await finalizeSession(tokenResp: tokenResp, stretched: stretched, environment: env, startedAt: epoch)
     }
 
     // MARK: - Unlock
@@ -317,6 +359,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
 
     func unlockWithPassword(_ masterPassword: Data) async throws -> Account {
         logger.info("Unlock attempt")
+        let epoch = lockEpoch
         let userId: String
         do {
             userId = try readString(key: KeychainKey.activeUserId)
@@ -376,11 +419,11 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
             zero(&stretched.encryptionKey, "stretchedEncryptionKey")
             zero(&stretched.macKey, "stretchedMacKey")
         }
-        let vaultKeys  = try await crypto.decryptSymmetricKey(
+        var vaultKeys  = try await crypto.decryptSymmetricKey(
             encUserKey:    encUserKey,
             stretchedKeys: stretched
         )
-        await crypto.unlockWith(keys: vaultKeys)
+        try await loadVaultKeys(&vaultKeys, startedAt: epoch)
 
         // Restore API client state so the post-unlock sync can make authenticated requests.
         // Both baseURL and accessToken are nil on a fresh app launch until restored here.
@@ -448,6 +491,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
 
     func signOut() async throws {
         logger.info("Signing out — clearing session data")
+        lockEpoch &+= 1
         let userId: String
         do {
             userId = try readString(key: KeychainKey.activeUserId)
@@ -492,9 +536,16 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
 
     // MARK: - Lock
 
+    var isVaultUnlocked: Bool {
+        get async { await crypto.isUnlocked }
+    }
+
     /// Zeroes and drops all key material: the vault key, every per-item key and every org key.
     /// The one teardown path; `signOut()` calls it too.
     func lockVault() async {
+        lockEpoch &+= 1
+        // A two-factor step does not survive a lock either; its keys are zeroed now.
+        clearPendingTwoFactor()
         await crypto.lockVault()
         await vaultKeyCache.clear()
         await orgKeyCache.clear()
@@ -570,6 +621,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
 
     func unlockWithBiometrics() async throws -> Account {
         logger.info("Biometric unlock attempt")
+        let epoch = lockEpoch
         guard let userId = try? readString(key: KeychainKey.activeUserId) else {
             throw AuthError.biometricUnavailable
         }
@@ -624,12 +676,12 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         // Deserialize CryptoKeys from the 64-byte blob (design Decision 1).
         // The keys get their own buffers; the 64-byte blob read from the keychain is zeroed.
         defer { keyData.resetBytes(in: keyData.indices) }
-        guard let vaultKeys = CryptoKeys(data: keyData) else {
+        guard var vaultKeys = CryptoKeys(data: keyData) else {
             logger.error("Biometric Keychain item has invalid format")
             throw AuthError.biometricUnavailable
         }
 
-        await crypto.unlockWith(keys: vaultKeys)
+        try await loadVaultKeys(&vaultKeys, startedAt: epoch)
 
         // Restore API client state — same as unlockWithPassword().
         serverEnvironment = restoredAccount.serverEnvironment
@@ -665,6 +717,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
     /// `EmbeddedTouchIDView`), `evaluatePolicy` routes inline — no modal appears.
     func unlockWithBiometrics(context: LAContext) async throws -> Account {
         logger.info("Embedded biometric unlock attempt")
+        let epoch = lockEpoch
         guard let userId = try? readString(key: KeychainKey.activeUserId) else {
             throw AuthError.biometricUnavailable
         }
@@ -697,12 +750,12 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
 
         // The keys get their own buffers; the 64-byte blob read from the keychain is zeroed.
         defer { keyData.resetBytes(in: keyData.indices) }
-        guard let vaultKeys = CryptoKeys(data: keyData) else {
+        guard var vaultKeys = CryptoKeys(data: keyData) else {
             logger.error("Embedded biometric Keychain item has invalid format")
             throw AuthError.biometricUnavailable
         }
 
-        await crypto.unlockWith(keys: vaultKeys)
+        try await loadVaultKeys(&vaultKeys, startedAt: epoch)
         serverEnvironment = restoredAccount.serverEnvironment
         await apiClient.setBaseURL(restoredAccount.serverEnvironment.base)
 
@@ -734,7 +787,8 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
     private func finalizeSession(
         tokenResp:   TokenResponse,
         stretched:   CryptoKeys,
-        environment: ServerEnvironment
+        environment: ServerEnvironment,
+        startedAt epoch: Int
     ) async throws -> Account {
         // Vaultwarden omits UserId/Email from the token response body (unlike the official
         // Bitwarden server, which includes them as PascalCase fields). Extract identity from
@@ -768,14 +822,14 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         if DebugConfig.isEnabled {
             logger.debug("[debug] decrypting encUserKey (type prefix: \(String(encKey.prefix(2)), privacy: .public))")
         }
-        let vaultKeys = try await crypto.decryptSymmetricKey(
+        var vaultKeys = try await crypto.decryptSymmetricKey(
             encUserKey:    encKey,
             stretchedKeys: stretched
         )
         if DebugConfig.isEnabled {
             logger.debug("[debug] vault keys decrypted — encKey=\(vaultKeys.encryptionKey.count, privacy: .public) bytes, macKey=\(vaultKeys.macKey.count, privacy: .public) bytes")
         }
-        await crypto.unlockWith(keys: vaultKeys)
+        try await loadVaultKeys(&vaultKeys, startedAt: epoch)
 
         // Persist session data in Keychain.
         try writeString(userId,       key: KeychainKey.activeUserId)

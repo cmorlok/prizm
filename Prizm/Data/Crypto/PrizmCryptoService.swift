@@ -245,11 +245,18 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
     // MARK: - Lock / Unlock
 
     func unlockWith(keys: CryptoKeys) {
+        // Keys of an earlier unlock that was not locked before are zeroed first, not just dropped.
+        zeroStoredKeys()
         self.keys = keys
         logger.info("Vault unlocked")
     }
 
     func lockVault() {
+        zeroStoredKeys()
+        logger.info("Vault locked — key material zeroed")
+    }
+
+    private func zeroStoredKeys() {
         // Zero both key buffers in the actor's stored property before releasing.
         // `self.keys` is the primary reference — zeroing it reduces the window during
         // which key material exists in a heap dump (Constitution §III). Any Data copies
@@ -262,7 +269,6 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
             keys!.macKey.resetBytes(in: macRange)
         }
         keys = nil
-        logger.info("Vault locked — key material zeroed")
     }
 
     func currentKeys() throws -> CryptoKeys {
