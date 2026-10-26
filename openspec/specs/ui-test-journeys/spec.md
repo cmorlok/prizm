@@ -1,6 +1,9 @@
-# Spec Delta
+# ui-test-journeys Specification
 
-## ADDED Requirements
+## Purpose
+Every UI journey test is built and run by the PrizmUITests target.
+
+## Requirements
 
 ### Requirement: Every UI test file is built and run
 Every Swift file in `Prizm/UITests/` SHALL be a member of the `PrizmUITests` target, and running the `PrizmUITests` scheme SHALL execute the tests of every file.
@@ -8,7 +11,7 @@ Every Swift file in `Prizm/UITests/` SHALL be a member of the `PrizmUITests` tar
 #### Scenario: All journey files run
 - **GIVEN** the `PrizmUITests` scheme
 - **WHEN** a developer runs it with signing for their own team
-- **THEN** the test report SHALL list test results for each of the 14 files in `Prizm/UITests/`
+- **THEN** the test report SHALL list test results for each of the 14 test files in `Prizm/UITests/`
 
 ### Requirement: UI tests start the app through explicit test states
 UI tests SHALL start the app only with the DEBUG-only launch states `--ui-test-vault`, `--ui-test-locked` or `--ui-test-signed-out`. These states SHALL be compiled out of Release builds.

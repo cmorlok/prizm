@@ -50,3 +50,11 @@ for the journeys, the UI tests themselves.
   Risks).
 - 4.2 open: needs a run on a Mac with a stored Prizm login for the same bundle identifier.
 
+## Verification (2026-10-26, `/opsx:verify`)
+
+- No code gaps. Fixed: header comments in five UI test files named launch arguments that never
+  existed (`--inject-session`, `--mock-biometrics`, …); a skip message named a test that does not
+  exist and no prerequisite (`LoginJourneyTests`); the fixture keychain writes no longer ignore
+  errors with `try?`.
+- Open by design: 4.2 (hand check with a stored Prizm login).
+
