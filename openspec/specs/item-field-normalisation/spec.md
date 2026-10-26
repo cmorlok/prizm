@@ -1,6 +1,9 @@
-# Spec Delta
+# item-field-normalisation Specification
 
-## ADDED Requirements
+## Purpose
+Save card brand and expiry in the format official clients write, and send no blank website rows.
+
+## Requirements
 
 ### Requirement: Card brand uses the official values
 The card edit form SHALL offer the brand as a picker with "Not set" and the values Visa, Mastercard, American Express (stored as "Amex"), Discover, Diners Club, JCB, Maestro, UnionPay, RuPay and Other. A stored brand that matches one of these values case-insensitively SHALL be shown and saved as that value. Any other stored brand SHALL be shown as "<value> (custom)" and saved unchanged unless the user picks another value.
@@ -41,7 +44,7 @@ The system SHALL save the expiry month as "1" to "12" without a leading zero, ch
 - **THEN** the expiry SHALL read "03 / 2027"
 
 ### Requirement: Blank URI rows are not saved
-When saving a login, the system SHALL NOT send URI rows that the user left empty or filled only with whitespace. Value-less URIs loaded from the server SHALL be kept.
+When saving a login, the system SHALL NOT send URI rows that the user left empty or filled only with whitespace. Value-less URIs loaded from the server SHALL be kept once the read path keeps them (`fix-read-mapping-lossless-fields`; until then Prizm drops them when reading).
 
 #### Scenario: New login without a website
 - **GIVEN** the user creates a login and leaves the website row empty
