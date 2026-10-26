@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Fix: the favorite star no longer re-saves the whole item, which could remove data Prizm does not
+  show yet, such as passkeys or password history. It no longer needs edit rights for organization
+  items, and a failed change shows an error. Bitwarden self-hosted servers on MySQL, PostgreSQL or
+  SQLite do not save this kind of change (a server bug); Prizm now says so instead of showing a
+  change that disappears at the next sync.
+- Fix: moving an organization item to a folder, or deleting its folder, no longer makes it look
+  personal until the next sync, and no longer makes the next edit of that item fail.
 - Fix signing in on Vaultwarden 1.37.4 and current Bitwarden self-hosted servers: Prizm now asks
   for the account's key settings at the Identity service (`/identity/accounts/prelogin/password`),
   like the official apps. Older servers that lack this route keep working through the older

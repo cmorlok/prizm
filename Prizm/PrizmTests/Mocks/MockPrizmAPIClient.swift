@@ -120,9 +120,12 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
         return (token, nil)
     }
 
+    nonisolated(unsafe) var lastUpdatedCipher: RawCipher?
+
     func updateCipher(id: String, cipher: RawCipher) async throws -> RawCipher {
         updateCipherCallCount += 1
         lastUpdatedCipherId = id
+        lastUpdatedCipher = cipher
         if let err = updateCipherShouldThrow { throw err }
         return updateCipherResponse ?? cipher
     }
@@ -340,15 +343,25 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     // MARK: - Stubs: Cipher partial / move
 
     nonisolated(unsafe) var updateCipherPartialShouldThrow: Error?
+    nonisolated(unsafe) var partialUpdates: [(id: String, folderId: String?, favorite: Bool)] = []
+    /// The server's answer; by default it echoes the request, as a server that saved it does.
+    nonisolated(unsafe) var partialUpdateResponse: PartialCipherResponse?
+    /// Runs while the request is "in flight", to simulate a sync replacing the cache meanwhile.
+    nonisolated(unsafe) var whilePartialUpdateInFlight: (@Sendable () async -> Void)?
 
-    func updateCipherPartial(id: String, folderId: String?, favorite: Bool) async throws {
+    func updateCipherPartial(id: String, folderId: String?, favorite: Bool) async throws -> PartialCipherResponse {
         if let err = updateCipherPartialShouldThrow { throw err }
+        partialUpdates.append((id, folderId, favorite))
+        await whilePartialUpdateInFlight?()
+        return partialUpdateResponse ?? PartialCipherResponse(favorite: favorite, folderId: .some(folderId))
     }
 
     nonisolated(unsafe) var moveCiphersShouldThrow: Error?
+    nonisolated(unsafe) var moveCalls: [(ids: [String], folderId: String?)] = []
 
     func moveCiphersToFolder(ids: [String], folderId: String?) async throws {
         if let err = moveCiphersShouldThrow { throw err }
+        moveCalls.append((ids, folderId))
     }
 
 }

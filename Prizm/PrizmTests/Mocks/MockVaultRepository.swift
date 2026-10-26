@@ -222,6 +222,22 @@ final class MockVaultRepository: VaultRepository {
     }
 
     func moveItemToFolder(itemId: String, folderId: String?) async throws {}
+
+    // MARK: - setFavorite stubbing
+
+    var stubbedSetFavoriteError: Error?
+    private(set) var setFavoriteCalls: [(itemId: String, isFavorite: Bool)] = []
+
+    /// Flips the cached item like the real repository; throws `stubbedSetFavoriteError` if set.
+    func setFavorite(itemId: String, isFavorite: Bool) async throws -> VaultItem {
+        setFavoriteCalls.append((itemId, isFavorite))
+        if let error = stubbedSetFavoriteError { throw error }
+        guard let idx = populatedItems.firstIndex(where: { $0.id == itemId }) else {
+            throw VaultError.itemNotFound(itemId)
+        }
+        populatedItems[idx] = populatedItems[idx].with(isFavorite: isFavorite)
+        return populatedItems[idx]
+    }
     func moveItemsToFolder(itemIds: [String], folderId: String?) async throws {}
 
     // MARK: - Collection CRUD stubbing

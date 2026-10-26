@@ -312,22 +312,7 @@ extension VaultItem {
     /// server-confirmed `VaultItem` via `CipherMapper`. This path is provided for any
     /// post-save local patching if needed; normally the API response is used directly.
     nonisolated init(_ draft: DraftVaultItem) {
-        self.id = draft.id
-        self.folderId = draft.folderId
-        self.name = draft.name
-        self.isFavorite = draft.isFavorite
-        self.isDeleted = draft.isDeleted
-        self.creationDate = draft.creationDate
-        self.revisionDate = draft.revisionDate
-        self.reprompt = draft.reprompt
-        self.organizationId = draft.organizationId
-        self.collectionIds = draft.collectionIds
-        // Drafts do not carry attachment state — attachments are managed via
-        // AttachmentRepository and written back through the server response, not through
-        // the edit draft. Preserve an empty list here; the actual attachments come from
-        // the fresh VaultItem returned by PUT /ciphers/{id}.
-        self.attachments = []
-        self.content = {
+        let content: ItemContent = {
             switch draft.content {
             case .login(let c):
                 return .login(LoginContent(
@@ -397,5 +382,15 @@ extension VaultItem {
                 ))
             }
         }()
+        // Drafts do not carry attachment state — attachments are managed via
+        // AttachmentRepository and written back through the server response, not through
+        // the edit draft. Preserve an empty list here; the actual attachments come from
+        // the fresh VaultItem returned by PUT /ciphers/{id}.
+        self.init(
+            id: draft.id, name: draft.name, isFavorite: draft.isFavorite, isDeleted: draft.isDeleted,
+            creationDate: draft.creationDate, revisionDate: draft.revisionDate, content: content,
+            reprompt: draft.reprompt, attachments: [], folderId: draft.folderId,
+            organizationId: draft.organizationId, collectionIds: draft.collectionIds
+        )
     }
 }

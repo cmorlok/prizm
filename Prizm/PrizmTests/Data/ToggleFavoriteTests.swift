@@ -28,6 +28,7 @@ final class ToggleFavoriteTests: XCTestCase {
             renameFolder:     StubRenameFolder(),
             deleteFolder:     StubDeleteFolder(),
             moveItem:         StubMoveItem(),
+            setFavorite:      SetFavoriteUseCaseImpl(repository: vault),
             createCollection: StubCreateCollection(),
             renameCollection: StubRenameCollection(),
             deleteCollection: StubDeleteCollection(),
@@ -36,35 +37,52 @@ final class ToggleFavoriteTests: XCTestCase {
         )
     }
 
-    func testToggleFavorite_callsUpdateWithFlippedFlag() async throws {
-        let favorited = VaultItem(
-            id: "1", name: "GitHub", isFavorite: true, isDeleted: false,
-            creationDate: unfavoritedItem.creationDate, revisionDate: unfavoritedItem.revisionDate,
-            content: unfavoritedItem.content
-        )
-        vault.stubbedUpdateResult = favorited
-
+    func testToggleFavorite_setsFavoriteThroughTheUseCase() async throws {
         sut.toggleFavorite(item: unfavoritedItem)
-        try await Task.sleep(for: .milliseconds(50))
+        try await waitUntil { !self.vault.setFavoriteCalls.isEmpty }
 
-        XCTAssertEqual(vault.updateCallCount, 1)
-        XCTAssertTrue(vault.lastUpdatedDraft!.isFavorite, "Draft should have isFavorite = true")
+        XCTAssertEqual(vault.setFavoriteCalls.count, 1)
+        XCTAssertEqual(vault.setFavoriteCalls.first?.itemId, "1")
+        XCTAssertEqual(vault.setFavoriteCalls.first?.isFavorite, true)
+        XCTAssertEqual(vault.updateCallCount, 0, "The star must not re-save the whole item")
     }
 
     func testToggleFavorite_unfavorites() async throws {
-        let favoritedItem = VaultItem(
-            id: "1", name: "GitHub", isFavorite: true, isDeleted: false,
-            creationDate: .now, revisionDate: .now,
-            content: unfavoritedItem.content
-        )
+        let favoritedItem = unfavoritedItem.with(isFavorite: true)
         await vault.populate(items: [favoritedItem], folders: [], organizations: [], collections: [], syncedAt: .now)
-        vault.stubbedUpdateResult = unfavoritedItem
 
         sut.toggleFavorite(item: favoritedItem)
-        try await Task.sleep(for: .milliseconds(50))
+        try await waitUntil { !self.vault.setFavoriteCalls.isEmpty }
 
-        XCTAssertEqual(vault.updateCallCount, 1)
-        XCTAssertFalse(vault.lastUpdatedDraft!.isFavorite, "Draft should have isFavorite = false")
+        XCTAssertEqual(vault.setFavoriteCalls.first?.isFavorite, false)
+    }
+
+    func testToggleFavorite_selectedItem_showsNewState() async throws {
+        sut.itemSelection = unfavoritedItem
+
+        sut.toggleFavorite(item: unfavoritedItem)
+        try await waitUntil { self.sut.itemSelection?.isFavorite == true }
+
+        XCTAssertEqual(sut.itemSelection, unfavoritedItem.with(isFavorite: true))
+    }
+
+    func testToggleFavorite_failure_showsErrorAndKeepsItem() async throws {
+        vault.stubbedSetFavoriteError = APIError.httpError(statusCode: 500, body: "")
+        sut.itemSelection = unfavoritedItem
+
+        sut.toggleFavorite(item: unfavoritedItem)
+        try await waitUntil { self.sut.actionError != nil }
+
+        let message = try XCTUnwrap(sut.actionError)
+        XCTAssertTrue(message.hasPrefix("Couldn't update favorite."), message)
+        XCTAssertEqual(sut.itemSelection, unfavoritedItem, "The item's favorite state stays unchanged")
+    }
+
+    private func waitUntil(timeout: Duration = .milliseconds(500), _ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while !condition(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
     }
 }
 

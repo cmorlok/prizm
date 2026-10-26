@@ -4,9 +4,11 @@ import Foundation
 /// Value type — safe to pass across layers without defensive copying.
 nonisolated struct VaultItem: Identifiable, Equatable, Hashable {
     let id: String
-    let folderId: String?
+    /// Settable only inside this file, for `with(folderId:)`.
+    private(set) var folderId: String?
     let name: String
-    let isFavorite: Bool
+    /// Settable only inside this file, for `with(isFavorite:)`.
+    private(set) var isFavorite: Bool
     let isDeleted: Bool
     let creationDate: Date
     let revisionDate: Date
@@ -50,6 +52,29 @@ nonisolated struct VaultItem: Identifiable, Equatable, Hashable {
         self.attachments = attachments
         self.organizationId = organizationId
         self.collectionIds = collectionIds
+    }
+}
+
+// MARK: - Single-field copies
+
+nonisolated extension VaultItem {
+    /// A copy in another folder (nil: no folder), with every other field kept.
+    ///
+    /// Local updates must go through these helpers, not the initializer: its defaulted arguments
+    /// silently dropped `organizationId` and `collectionIds` when moving org items to a folder
+    /// (fix-favorite-and-folder-partial-updates). Copying `self` keeps every field, including
+    /// ones added later.
+    func with(folderId: String?) -> VaultItem {
+        var copy = self
+        copy.folderId = folderId
+        return copy
+    }
+
+    /// A copy with the favorite state changed, with every other field kept.
+    func with(isFavorite: Bool) -> VaultItem {
+        var copy = self
+        copy.isFavorite = isFavorite
+        return copy
     }
 }
 
