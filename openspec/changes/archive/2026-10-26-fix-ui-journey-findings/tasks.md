@@ -31,14 +31,22 @@ Estimates are ideal engineer-days. Write a failing test first (§IV). One commit
 
 ## 5. Sign Out shortcut (0.1 d)
 
-- [ ] 5.1 Remove the shortcut (design D5). UI tests cannot read a menu item's key equivalent, so check by hand: the Prizm menu shows "Sign Out…" without a shortcut.
+- [x] 5.1 Remove the shortcut (design D5).
+- [ ] 5.1b By hand (UI tests cannot read a menu item's key equivalent): the Prizm menu shows "Sign Out…" without a shortcut.
 - [x] 5.2 CHANGELOG.
+
+## 7. New Window (added 2026-10-26)
+
+- [x] 7.1 Implement design D6 (`PrizmApp`: `WindowGroup(id:)`, "New Window" opens it; `UITestSupport.openWindowIfNone()`).
+- [x] 7.2 UI check: `AccessibilityLabelTests` with no window restored: the fallback opens one, 3 of 3 pass (0 of 4 before; the fourth test of that class is skipped for missing server writes).
+- [ ] 7.3 By hand: close the window, File → New Window opens a new one.
+- [x] 7.4 CHANGELOG.
 
 ## 6. Verify (0.25 d)
 
 - [x] 6.1 `PrizmTests` pass.
 - [x] 6.2 `PrizmUITests` pass with no known-bug markers left from `fix-ui-test-target`.
-- [x] 6.3 Code review of all five commits; security review of bug 1.
+- [x] 6.3 Code review of the five bug commits (2026-10-25); security review of bug 1. The New Window commit (bug 6) was checked in the `/opsx:verify` rounds of 2026-10-26.
 - [ ] 6.4 By hand: drag an item to a folder and reorder sidebar sections (design, Risks); VoiceOver reads a revealed password.
 - [x] 6.5 `openspec validate fix-ui-journey-findings --type change --strict`.
 
@@ -48,5 +56,11 @@ Estimates are ideal engineer-days. Write a failing test first (§IV). One commit
 - 6.2 `PrizmUITests`: 88 tests, 67 passed, 21 skipped (8 simulated Touch ID, 7 test backend for
   saving, 1 for downloads, 5 real account), 0 failed, no known-bug markers left.
 - 6.3 Two review rounds (design.md, Review). Each fix commit was built and unit-tested on its own.
-- Open, by hand: 5.1 (Sign Out shows no shortcut) and 6.4 (drag and drop, VoiceOver).
+- Open, by hand: 5.1b (Sign Out shows no shortcut), 6.4 (drag and drop, VoiceOver) and 7.3 (New Window).
+
+## Verification (2026-10-26, `/opsx:verify`)
+
+- No code gaps. Task 5.1 split into the removal (done) and the hand check (5.1b, open).
+- `testRevealToggleShowsPlaintext` now also checks that VoiceOver reads the mask again after Hide.
+- Open by design: 5.1b, 6.4 and 7.3 (hand checks).
 

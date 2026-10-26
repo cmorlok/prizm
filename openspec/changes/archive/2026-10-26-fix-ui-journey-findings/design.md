@@ -24,7 +24,7 @@ window's first responder and the accessibility values, not by reading the code a
 
 ## Goals / Non-Goals
 
-**Goals:** fix the five bugs with the smallest change each; every fix has a test that failed
+**Goals:** fix the six bugs with the smallest change each; every fix has a test that failed
 before. **Non-Goals:** see proposal.md.
 
 ## Decisions
@@ -93,6 +93,18 @@ The `.keyboardShortcut` is removed. Signing out is rare and clears all local dat
 
 **Open question for the maintainer:** if a shortcut is wanted, ⌃⌥⌘Q is free in macOS and hard to
 press by accident. ⌥⌘Q is not proposed: many apps use it for "Quit and Keep Windows".
+
+### D6. "New Window" opens the main window; UI tests open one when there is none
+
+The `WindowGroup` gets the id `main`, and "New Window" calls `openWindow(id:)`.
+
+Launched by XCUITest, the app gets no "reopen" event, so SwiftUI shows a window only when macOS
+restores one from the saved window state. After a run that ended without a window, the app started
+without one and every UI test failed (2026-10-26, also on this branch, which had passed before).
+`launch(in:)` therefore opens a window with File → New Window if none exists after 3 s.
+Checked: with the fix, the test log shows "No window after launch" for each test and the tests
+pass; before it, 0 of 4 passed. This corrects the explanation in `fix-ui-test-target`, which named
+`-ApplePersistenceIgnoreState` as the cause.
 
 ## Review
 
