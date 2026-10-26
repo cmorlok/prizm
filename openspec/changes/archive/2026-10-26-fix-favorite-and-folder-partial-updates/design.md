@@ -120,8 +120,9 @@ shows and VoiceOver announces. On success it refreshes the list and counts as to
   (`Cipher_UpdatePartial.sql`) is correct. On those servers, the star now fails with an error,
   where the full PUT worked before (with the data loss this change removes). Moving one item to a
   folder already used `/partial` and fails there today too. The official clients only use
-  `/partial` for read-only items, so they rarely hit it. **Open decision** (proposal, Open
-  Questions): accept this, or send the full PUT on Bitwarden servers when `/partial` is not saved.
+  `/partial` for read-only items, so they rarely hit it. **Decided 2026-10-26:** accepted. A
+  full-PUT fallback for these servers comes only after `fix-cipher-edit-data-loss`, when a full PUT
+  no longer loses data (Open Questions 0).
 
 - **[Low] Saved, but reported as failed.** The official server's current `PutPartial` authorizes
   the write response after `UpdatePartialAsync`; for a cipher behind its lease gate it throws
@@ -137,9 +138,9 @@ shows and VoiceOver announces. On success it refreshes the list and counts as to
 
 ## Open Questions
 
-0. Bitwarden EF backends (Risks): keep the error, or fall back to the full PUT there? A fallback
-   brings back the data-loss risk until `fix-cipher-edit-data-loss` lands. Report the server bug
-   upstream either way.
+0. ~~Bitwarden EF backends (Risks): keep the error, or fall back to the full PUT there?~~
+   **Decided 2026-10-26:** keep the error ("The server didn't save this change"); add the fallback
+   after `fix-cipher-edit-data-loss`. Reporting the server bug to bitwarden/server is still open.
 
 1. Should the edit sheet's favorite toggle also move to `/partial` when nothing else changed? Not
    needed for safety once `fix-cipher-edit-data-loss` lands; left for later.
