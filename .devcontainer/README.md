@@ -10,6 +10,7 @@ Prizm is a macOS app, so it **cannot be built or tested in a Linux container**. 
 | Mac host, left running | runs Xcode builds requested from the container | `scripts/host/build-daemon.sh` |
 | Container → Mac | one Xcode command on the Mac, output streamed back | `scripts/container/host-build.sh` |
 | Mac host terminal → container | run `claude` inside the container | `scripts/claude.sh` |
+| Mac host | Vaultwarden test rig: start, switch versions, certificate, feature flag, snapshots (see `rig/RUNBOOK.md`) | `scripts/host/vaultwarden.sh` |
 
 ## Prerequisites (on the Mac)
 

@@ -1,0 +1,16 @@
+# Leaf certificate for the rig edge at https://localhost:8443, used by scripts/host/vaultwarden.sh cert.
+# Works with `openssl req -config` on macOS LibreSSL and OpenSSL 3.
+# A server leaf only (CA:FALSE): trusting it trusts this one certificate, never other hosts.
+[req]
+distinguished_name = dn
+x509_extensions = ext
+prompt = no
+
+[dn]
+CN = localhost
+
+[ext]
+subjectAltName = DNS:localhost,IP:127.0.0.1
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature,keyEncipherment
+extendedKeyUsage = serverAuth
