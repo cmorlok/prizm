@@ -64,7 +64,9 @@ clears only if `changeCount` is unchanged. This avoids holding the secret string
 and is the same "still our value" rule as official clients.
 
 It is created once by `AppContainer` and injected into `VaultBrowserViewModel` and
-`PasswordGeneratorViewModel`. The `writeConcealed` helper moves into it.
+`PasswordGeneratorViewModel`. The `writeConcealed` helper moves into it. As built, the generator gets
+it through `EditFieldRow`, which reads it from the SwiftUI environment
+(`.environment(container.clipboardService)` at the root); it is still the one instance.
 
 **Rejected alternative:** keep a timer per view model and only fix `deinit`. Every new copy path
 would need to remember the same rules, which is how the generator went wrong.
@@ -78,7 +80,8 @@ stricter than the official 5 min.
 ### D3. Clear on lock, sign-out and quit
 
 `lockVault()` and `signOut()` call `clipboardService.clearIfOwned()` after clearing keys.
-`NSApplicationDelegate.applicationWillTerminate` calls it too. With delay `.never`, lock and quit
+On quit, `RootViewModel` observes `NSApplication.willTerminateNotification` and calls it too (Prizm
+has no `NSApplicationDelegate`). With delay `.never`, lock and quit
 still clear: "Never" refers to the timer, not to the end of the session. (Official clients behave the
 same way: `clearPendingClipboard` only runs if a clear was scheduled, so with "never" they do not
 clear on lock. Prizm is stricter here; Open Question 1.)
@@ -99,4 +102,5 @@ above; VoiceOver reads the label and the selected value. Design tokens only.
 
 1. With "Never", should lock and quit still clear (stricter than official)? Lean: yes.
 2. Confirm that arboard's `exclude_from_history()` writes `org.nspasteboard.ConcealedType` on macOS
-   (task 1.1). If it also writes `org.nspasteboard.TransientType`, add it.
+   (task 1.1). If it also writes `org.nspasteboard.TransientType`, add it. **Answered 2026-10-26:** arboard 3.6.1
+   writes only `org.nspasteboard.ConcealedType` (empty string), the same as Prizm.
