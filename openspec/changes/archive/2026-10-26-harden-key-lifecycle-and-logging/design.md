@@ -112,8 +112,8 @@ every key consumer. Worth a separate change if the maintainer wants it.
 
 ### D4. Allow-list for debug logs
 
-`identityToken` logs only `grant_type`, `scope`, `client_id`, `deviceType`, `twoFactorProvider` and
-`twoFactorRemember` as `.public`. `username`, `twoFactorToken`, `deviceIdentifier` and `password`
+`identityToken` logs only `grant_type`, `scope`, `client_id`, `deviceType`, `deviceName` (the
+constant "Prizm"), `twoFactorProvider` and `twoFactorRemember` as `.public`. `username`, `twoFactorToken`, `deviceIdentifier` and `password`
 are not logged at all. The non-JSON 400 body is logged `.private`. The logged string is built by
 a pure function, `debugDescription(ofTokenParams:)`, so a unit test can check it; `os.Logger`
 output itself cannot be captured in XCTest.
