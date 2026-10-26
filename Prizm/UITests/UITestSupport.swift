@@ -112,6 +112,7 @@ extension XCUIApplication {
     func launch(in state: [String]) {
         launchArguments = state
         launch()
+        openWindowIfNone()
     }
 
     /// The vault browser's sidebar. SwiftUI does not expose the browser's own identifier
@@ -145,6 +146,17 @@ extension XCUIApplication {
         if !found { print("Vault browser not found. UI hierarchy:\n\(debugDescription)") }
         if found { ensureLargeWindow() }
         return found
+    }
+
+    /// Opens the main window with File → New Window if the app shows none. Launched by XCUITest,
+    /// the app gets no "reopen" event, so SwiftUI shows a window only if macOS restores one from the
+    /// saved window state; after a run that ended without a window it shows none. This makes every
+    /// test start the same way, whatever macOS saved.
+    private func openWindowIfNone() {
+        guard !windows.firstMatch.waitForExistence(timeout: 3) else { return }
+        print("No window after launch; opening one with File → New Window")
+        menuBars.menuBarItems["File"].click()
+        menuBars.menuItems["New Window"].click()
     }
 
     /// Zooms the window with Window → Zoom when it is shorter than `minimumHeight`. Zoom toggles,

@@ -27,8 +27,13 @@ struct PrizmApp: App {
         NSApplication.shared.activate()
     }
 
+    /// Identifier of the main window scene, so "New Window" can open it.
+    enum MainWindow {
+        static let id = "main"
+    }
+
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: MainWindow.id) {
             rootView
                 .frame(minWidth: 480, minHeight: 360)
                 .environment(optionKeyMonitor)
@@ -44,8 +49,11 @@ struct PrizmApp: App {
             }
 
             CommandGroup(replacing: .newItem) {
+                // Opens the main window scene. Prizm is not document-based, so the previous
+                // `NSDocumentController.newDocument(_:)` only showed "No document could be opened"
+                // (fix-ui-journey-findings, bug 6).
                 Button("New Window") {
-                    NSApp.sendAction(#selector(NSDocumentController.newDocument(_:)), to: nil, from: nil)
+                    openWindow(id: MainWindow.id)
                 }
                 .keyboardShortcut("n", modifiers: [.command, .option])
             }
