@@ -26,4 +26,5 @@ Estimates are ideal engineer-days. Write a failing test first (§IV). No depende
 - [x] 4.3 Signed UI test run (`PrizmUITests`) with a non-maintainer team. Result: passes (9 tests); the UI test runner (`de.b0x42.de.PrizmUITests`) needs no override. Unrelated finding, left for a separate change: 13 of the 14 files in `Prizm/UITests/` are not members of any target, so only `VerificationCodeJourneyTests` runs.
 - [x] 4.4 `git grep` finds no Team ID and no personal bundle identifier in committed files.
 - [x] 4.5 `openspec validate fix-app-signing-settings --type change --strict`.
-- [ ] 4.6 At archive time: the main spec `openspec/specs/keychain-signing-config/spec.md` predates the `## Purpose` / `## Requirements` structure, so `openspec archive` refuses the delta until it is converted. Convert it in the archive commit (content unchanged), or archive with `--skip-specs` and merge by hand; the maintainer decides.
+- [x] 4.6 At archive time: the main spec `openspec/specs/keychain-signing-config/spec.md` predates the `## Purpose` / `## Requirements` structure, so `openspec archive` refuses the delta until it is converted. Convert it in the archive commit (content unchanged), or archive with `--skip-specs` and merge by hand; the maintainer decides.
+  Done in `fix/000-openspec-main-spec-repair` (all 26 main specs repaired).
