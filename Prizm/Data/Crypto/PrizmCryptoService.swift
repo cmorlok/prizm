@@ -307,7 +307,7 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
                 failedCount += 1
                 logger.error("decryptList: Cipher decryption failed at index \(index, privacy: .public)")
                 if DebugConfig.isEnabled {
-                    logger.debug("[debug] cipher[\(index, privacy: .public)] FAILED — type=\(cipher.type, privacy: .public) error=\(error, privacy: .public)")
+                    logger.debug("[debug] cipher[\(index, privacy: .public)] FAILED — type=\(cipher.type, privacy: .public) error=\(ErrorLog.describe(error), privacy: .public)")
                 }
             }
         }
@@ -423,7 +423,7 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
         do {
             enc = try EncString(string: encUserKey)
         } catch {
-            logger.error("Failed to parse encUserKey EncString: \(error, privacy: .public)")
+            logger.error("Failed to parse encUserKey EncString: \(ErrorLog.describe(error), privacy: .public)")
             throw PrizmCryptoServiceError.invalidEncUserKey
         }
 
@@ -431,7 +431,7 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
         do {
             keyData = try enc.decrypt(keys: stretchedKeys)
         } catch {
-            logger.error("Failed to decrypt encUserKey: \(error, privacy: .public)")
+            logger.error("Failed to decrypt encUserKey: \(ErrorLog.describe(error), privacy: .public)")
             throw PrizmCryptoServiceError.invalidEncUserKey
         }
         // The returned keys get their own buffers (`subdata` copies), so this 64-byte scratch
@@ -475,13 +475,13 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
         do {
             enc = try EncString(string: encPrivateKey)
         } catch {
-            logger.error("decryptRSAPrivateKey: failed to parse EncString: \(error, privacy: .public)")
+            logger.error("decryptRSAPrivateKey: failed to parse EncString: \(ErrorLog.describe(error), privacy: .public)")
             throw PrizmCryptoServiceError.invalidEncUserKey
         }
         do {
             return try enc.decrypt(keys: vaultKeys)
         } catch {
-            logger.error("decryptRSAPrivateKey: AES-CBC decryption failed: \(error, privacy: .public)")
+            logger.error("decryptRSAPrivateKey: AES-CBC decryption failed: \(ErrorLog.describe(error), privacy: .public)")
             throw PrizmCryptoServiceError.invalidEncUserKey
         }
     }

@@ -168,7 +168,7 @@ final class AttachmentAddViewModel: Identifiable {
             } catch {
                 fileData.resetBytes(in: fileData.indices)
                 self.uploadError = "Upload failed: \(error.localizedDescription)"
-                logger.error("upload failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("upload failed: \(ErrorLog.describe(error), privacy: .public)")
             }
 
             self.isUploading = false

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fix: when the server rejects a request, Prizm shows the server's message (for example "Folder
+  name too long") instead of "Server error 400:" followed by the raw response. The macOS log no
+  longer records error messages or server responses, only status codes and error types.
 - Changed: card brand and expiry month are chosen from lists and saved in the same format as other
   Bitwarden apps ("Amex", month "3", year "2027"); the brand is detected from the card number, and
   the detail view shows the expiry as "03 / 2027". Values that match no list entry are kept.

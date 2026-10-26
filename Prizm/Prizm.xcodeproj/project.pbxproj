@@ -199,6 +199,7 @@
 		C35B57366256048CC0F117AD /* URILaunchPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BF035335283019BA2C1E3B6 /* URILaunchPolicy.swift */; };
 		229F4957F20D04456182853A /* URILaunchTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21A9990FFB396404B3E52BBE /* URILaunchTarget.swift */; };
 		7C86BF8D70EA0A284B3D72C2 /* ItemFieldNormalisation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FBECAE1E5694389ADDC6E6 /* ItemFieldNormalisation.swift */; };
+		44BE1F38B5E3AC4E55C29F31 /* ErrorLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F70EE2487F39ED7E35E20DA /* ErrorLog.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -413,6 +414,7 @@
 		9BF035335283019BA2C1E3B6 /* URILaunchPolicy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = URILaunchPolicy.swift; sourceTree = "<group>"; };
 		21A9990FFB396404B3E52BBE /* URILaunchTarget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = URILaunchTarget.swift; sourceTree = "<group>"; };
 		41FBECAE1E5694389ADDC6E6 /* ItemFieldNormalisation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ItemFieldNormalisation.swift; sourceTree = "<group>"; };
+		5F70EE2487F39ED7E35E20DA /* ErrorLog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ErrorLog.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -855,6 +857,7 @@
 				5C4F1CA442CEB4D208ED7FCC /* TOTPSeedParser.swift */,
 				9BF035335283019BA2C1E3B6 /* URILaunchPolicy.swift */,
 				41FBECAE1E5694389ADDC6E6 /* ItemFieldNormalisation.swift */,
+				5F70EE2487F39ED7E35E20DA /* ErrorLog.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -1280,6 +1283,7 @@
 				C35B57366256048CC0F117AD /* URILaunchPolicy.swift in Sources */,
 				229F4957F20D04456182853A /* URILaunchTarget.swift in Sources */,
 				7C86BF8D70EA0A284B3D72C2 /* ItemFieldNormalisation.swift in Sources */,
+				44BE1F38B5E3AC4E55C29F31 /* ErrorLog.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

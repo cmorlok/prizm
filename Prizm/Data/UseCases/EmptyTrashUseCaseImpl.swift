@@ -18,7 +18,7 @@ final class EmptyTrashUseCaseImpl: EmptyTrashUseCase {
         do {
             _ = try await sync.execute(progress: { _ in })
         } catch {
-            logger.error("Empty Trash: refresh failed (\(Self.describe(error), privacy: .public))")
+            logger.error("Empty Trash: refresh failed (\(ErrorLog.describe(error), privacy: .public))")
             throw EmptyTrashError.refreshFailed
         }
         return try await repository.items(for: .trash).map(\.id)
@@ -34,10 +34,10 @@ final class EmptyTrashUseCaseImpl: EmptyTrashUseCase {
         } catch let error as PermanentDeleteError {
             deleted = error.deleted
             failure = error.underlying is URLError ? .connection : .refused
-            logger.error("Empty Trash: delete failed (\(Self.describe(error.underlying), privacy: .public))")
+            logger.error("Empty Trash: delete failed (\(ErrorLog.describe(error.underlying), privacy: .public))")
         } catch {
             failure = error is URLError ? .connection : .refused
-            logger.error("Empty Trash: delete failed (\(Self.describe(error), privacy: .public))")
+            logger.error("Empty Trash: delete failed (\(ErrorLog.describe(error), privacy: .public))")
         }
         var synced = true
         do {
@@ -45,7 +45,7 @@ final class EmptyTrashUseCaseImpl: EmptyTrashUseCase {
         } catch {
             // The cache already reflects every chunk that succeeded; report from it.
             synced = false
-            logger.error("Empty Trash: follow-up sync failed (\(Self.describe(error), privacy: .public))")
+            logger.error("Empty Trash: follow-up sync failed (\(ErrorLog.describe(error), privacy: .public))")
         }
         let remaining = try await repository.items(for: .trash).filter { ids.contains($0.id) }.count
         // After a successful sync, the server's own state says what is gone. The delete calls'
@@ -54,11 +54,5 @@ final class EmptyTrashUseCaseImpl: EmptyTrashUseCase {
         let confirmed = synced ? ids.count - remaining : deleted
         return EmptyTrashResult(requested: ids.count, deleted: confirmed, remaining: remaining,
                                 failure: failure, synced: synced)
-    }
-
-    /// The HTTP status or error type only: an HTTP error's description carries the response body.
-    private static func describe(_ error: Error) -> String {
-        if case APIError.httpError(let status, _) = error { return "HTTP \(status)" }
-        return String(describing: type(of: error))
     }
 }

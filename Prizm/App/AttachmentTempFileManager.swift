@@ -107,7 +107,7 @@ final class AttachmentTempFileManager: TempFileManaging, @unchecked Sendable {
             logger.debug("tempFile zeroed and deleted: \(url.lastPathComponent, privacy: .public)")
         } catch {
             // Best-effort: if we can't zero or delete, log and continue.
-            logger.error("tempFile cleanup failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("tempFile cleanup failed: \(ErrorLog.describe(error), privacy: .public)")
         }
     }
 

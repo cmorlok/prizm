@@ -117,8 +117,13 @@ two-factor login, cannot be zeroed at all. Keys are not held in locked (`mlock`)
 `--debug-mode` writes extra lines to the unified log. They never contain key material, tokens,
 the password hash, the email, two-factor codes or the device identifier; token request
 parameters are logged from an allow-list. Text that comes from the server is logged as private in
-these debug lines. (Outside debug mode, some error messages that contain a server response are
-still logged; see the open item in the change `harden-key-lifecycle-and-logging`.)
+these debug lines.
+
+### Error logging
+
+Errors are written to the public log only as an HTTP status, a URL error code, or the error's type
+and case (`ErrorLog.describe`). Error messages, server response bodies and user data are never
+logged publicly. Users see the server's own message for a failed request, never the raw response.
 
 ### Biometric vault key (Touch ID / Face ID)
 

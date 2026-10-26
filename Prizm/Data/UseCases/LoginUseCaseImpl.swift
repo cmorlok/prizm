@@ -48,7 +48,7 @@ final class LoginUseCaseImpl: LoginUseCase {
             do {
                 _ = try await sync.sync(progress: { _ in })
             } catch {
-                logger.error("Post-login sync failed (non-fatal): \(error.localizedDescription, privacy: .public)")
+                logger.error("Post-login sync failed (non-fatal): \(ErrorLog.describe(error), privacy: .public)")
             }
             return result
 
@@ -68,7 +68,7 @@ final class LoginUseCaseImpl: LoginUseCase {
         do {
             _ = try await sync.sync(progress: { _ in })
         } catch {
-            logger.error("Post-TOTP sync failed (non-fatal): \(error.localizedDescription, privacy: .public)")
+            logger.error("Post-TOTP sync failed (non-fatal): \(ErrorLog.describe(error), privacy: .public)")
         }
         return account
     }

@@ -14,6 +14,17 @@ nonisolated enum KeychainError: Error, Equatable {
     case invalidData
 }
 
+nonisolated extension KeychainError: LogSafeError {
+    /// Keeps the OSStatus, which the generic description would drop (server-error-texts D2).
+    var logDescription: String {
+        switch self {
+        case .itemNotFound:                    "KeychainError.itemNotFound"
+        case .unexpectedStatus(let status):    "KeychainError.unexpectedStatus(\(status))"
+        case .invalidData:                     "KeychainError.invalidData"
+        }
+    }
+}
+
 // MARK: - Protocol
 
 /// Provides read, write, and delete access to the macOS Keychain.

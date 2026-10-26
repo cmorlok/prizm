@@ -102,7 +102,7 @@ final class AttachmentRowViewModel {
                 self.logger.info("open: opened \(self.attachment.id, privacy: .public)")
             } catch {
                 self.actionError = "Could not open file: \(error.localizedDescription)"
-                self.logger.error("open failed: \(error.localizedDescription, privacy: .public)")
+                self.logger.error("open failed: \(ErrorLog.describe(error), privacy: .public)")
             }
             self.isLoading = false
         }
@@ -131,7 +131,7 @@ final class AttachmentRowViewModel {
                 self.logger.info("saveToDisk: saved \(self.attachment.id, privacy: .public)")
             } catch {
                 self.actionError = "Could not save file: \(error.localizedDescription)"
-                self.logger.error("saveToDisk failed: \(error.localizedDescription, privacy: .public)")
+                self.logger.error("saveToDisk failed: \(ErrorLog.describe(error), privacy: .public)")
             }
             self.isLoading = false
         }
@@ -155,7 +155,7 @@ final class AttachmentRowViewModel {
                 self.onAttachmentChanged?()
             } catch {
                 self.actionError = "Could not delete attachment: \(error.localizedDescription)"
-                self.logger.error("delete failed: \(error.localizedDescription, privacy: .public)")
+                self.logger.error("delete failed: \(ErrorLog.describe(error), privacy: .public)")
             }
             self.isLoading = false
         }
@@ -200,7 +200,7 @@ final class AttachmentRowViewModel {
             } catch {
                 fileData.resetBytes(in: fileData.indices)
                 self.retryError = "Retry failed: \(error.localizedDescription)"
-                self.logger.error("retryUpload failed: \(error.localizedDescription, privacy: .public)")
+                self.logger.error("retryUpload failed: \(ErrorLog.describe(error), privacy: .public)")
             }
 
             self.isRetrying = false

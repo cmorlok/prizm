@@ -140,7 +140,7 @@ final class ItemEditViewModel: ObservableObject {
                 logger.info("Item saved: \(self.draft.id, privacy: .public)")
             } catch {
                 saveError = error.localizedDescription
-                logger.error("Save failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("Save failed: \(ErrorLog.describe(error), privacy: .public)")
             }
             isSaving = false
         }
