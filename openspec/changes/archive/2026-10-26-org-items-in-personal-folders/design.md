@@ -70,10 +70,10 @@ only adds a regression test for org items in folders (task 3.1).
 
 ### D4. Spec repair
 
-`openspec/specs/org-vault-items/spec.md` uses a delta header and no `## Purpose`, so OpenSpec can't
-apply a MODIFIED delta to it. As in `password-history` task 6.4:
-1. Repair the structure in a separate commit with no requirement changes.
-2. Then replace the folder rule and its scenario.
+`org-vault-items` and `vault-item-create` started with a delta header and no `## Purpose`, so
+OpenSpec could not apply a MODIFIED delta to them. As in `password-history` task 6.4, their
+structure was repaired first without requirement changes (`fix/000-openspec-main-spec-repair`);
+this change then MODIFIES the folder rules in both.
 
 The new requirement in this change states the correct rule.
 

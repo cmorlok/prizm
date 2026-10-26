@@ -47,11 +47,12 @@ it.
   personal folders.
 
 ### Modified Capabilities
-_None as delta._ `openspec/specs/org-vault-items/spec.md` requirement "Org items appear in All Items
-and in their collection sidebar selection" (line 19, scenario "Org items excluded from folder
-selections", lines 31-34) must be changed when this change is archived. That spec starts with
-`## ADDED Requirements` instead of `## Purpose` / `## Requirements`, so it can't take a MODIFIED
-delta until its structure is repaired (task 5.2).
+- `org-vault-items`: "Org items appear in All Items and in their collection sidebar selection" no
+  longer excludes org items from folders (MODIFIED).
+- `vault-item-create`: "Edit and create sheets include a folder picker" shows the picker for org
+  items too (MODIFIED).
+Both main specs were first given the `## Purpose` / `## Requirements` structure by
+`fix/000-openspec-main-spec-repair`, so they can take MODIFIED deltas.
 
 ## Non-Goals
 
@@ -79,7 +80,7 @@ delta until its structure is repaired (task 5.2).
   - drag and drop accepts org items
   - VoiceOver labels unchanged
   - DesignSystem tokens only
-- **Specs:** `org-vault-items` rule replaced at archive time.
+- **Specs:** the folder rules in `org-vault-items` and `vault-item-create` are replaced (MODIFIED deltas).
 - **No new dependencies.**
 - **Security review:** no. No crypto, keys or secrets touched; folder IDs are plaintext per-user
   metadata.

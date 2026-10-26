@@ -25,13 +25,15 @@ deleting its folder, keeps its organization and collections).
 ## 4. Presentation (0.5 d)
 
 - [x] 4.1 `ItemEditView`: folder picker for org items below the collection picker (design D2). View model test: saving an org item with a new folder sends `folderId` and keeps `organizationId` and `collectionIds`.
-- [ ] 4.2 Drag and drop of an org item onto a folder. View model test, plus an XCUITest journey: drag an org item to a folder; it appears there and still shows its organization badge.
+- [x] 4.2 Drag and drop of an org item onto a folder. View model test, plus an XCUITest journey: drag an org item to a folder; it appears there and still shows its organization badge.
+  Repository tests cover the bulk move and the single-item drag (`/partial`). XCUITest `VaultBrowserJourneyTests.testOrgItemFiledInFolder_showsInFolder` checks that a filed org item shows in its folder (`--ui-test-org-folders`); the drop itself saves on the server, which the UI test states do not have.
 - [x] 4.3 VoiceOver: the folder picker label is "Folder" for both item kinds (§VIII).
 
 ## 5. Specs and release (0.25 d)
 
 - [x] 5.1 CHANGELOG "Fixed": organization items filed in your folders in other Bitwarden apps now show in those folders, and you can file organization items into folders in Prizm.
-- [ ] 5.2 Before archiving: repair the structure of `openspec/specs/org-vault-items/spec.md` (add `## Purpose` and `## Requirements`) in a separate commit with no requirement changes. Then replace the folder rule at line 19 and the scenario at lines 31-34 with the requirement from this change.
+- [x] 5.2 Before archiving: repair the structure of `openspec/specs/org-vault-items/spec.md` (add `## Purpose` and `## Requirements`) in a separate commit with no requirement changes. Then replace the folder rule at line 19 and the scenario at lines 31-34 with the requirement from this change.
+  Done in `fix/000-openspec-main-spec-repair`.
 - [x] 5.3 `openspec validate org-items-in-personal-folders --type change --strict`.
 
 ## Results (2026-10-26)
@@ -43,7 +45,6 @@ deleting its folder, keeps its organization and collections).
   folder or deleting its folder keeps its organization and collections (the prerequisite's fix);
   the edit sheet saves a folder for an org item and keeps both.
 - 4.2: drag and drop had no org restriction; the folder index filter was the only thing in the way.
-  No XCUITest: the UI test fixture has no organization item yet (open).
 - 4.3: the folder picker has the label "Folder" (it had none, for personal items too).
 - Review (2026-10-26): Prizm does not model the cipher `edit` permission, so the edit sheet also
   opens for read-only org items, and a full `PUT /ciphers/{id}` is refused for them. Fixed: when
@@ -52,6 +53,19 @@ deleting its folder, keeps its organization and collections).
   like the official clients' "partial-edit" mode. Any other change still sends the full PUT, which
   fails for read-only items as before (modelling `edit` is out of scope). The collection picker
   got the label "Collection".
-- **Not verified on the Mac yet** (test runner hung): unit tests.
-- Open: 1.1 (rig, two members), 4.2 XCUITest, 5.2 at archive time.
+- **Verified on the Mac (2026-10-26):** all 686 unit tests pass on this branch; the full UI suite passes on the top of the series (`fix/017`).
+- Open: 1.1 (rig, two members).
+
+## Verification (2026-10-26, `/opsx:verify`)
+
+- **Spec contradiction fixed:** task 5.2 was ticked, but the main spec `org-vault-items` still said
+  "Org items SHALL be excluded from folder selections", with a matching scenario. fix/000 had
+  repaired only the file's structure. The change now carries a MODIFIED delta for that requirement
+  (org items appear in the folder they are filed in), applied to the main spec.
+- The XCUITest also checks the organization badge ("Acme") in the folder list.
+- Earlier Results lines that called the XCUITest and 5.2 open are outdated; the XCUITest exists
+  (`--ui-test-org-folders`).
+- Open by design: 1.1 (test server, two members).
+- Second round (2026-10-26): `vault-item-create` also hid the folder picker for org items; it now
+  carries a MODIFIED delta as well. Proposal and design D4 list both deltas.
 
