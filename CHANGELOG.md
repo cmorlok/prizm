@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Changed**: Prizm now identifies itself to the server as a macOS desktop client on every request
+  (`Device-Type`, `Bitwarden-Client-Name`), so Vaultwarden's event logs no longer show it as an
+  unknown browser. Its user agent shows the Prizm version instead of a Bitwarden version.
 - Fix: "Open in browser" on a website now opens only web and other safe link types (the official
   Bitwarden apps' list), never `file:` or custom app links from a shared item, and works for
   addresses saved without `http://`. There is no button when no app on the Mac can open the link.
