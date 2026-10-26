@@ -133,7 +133,7 @@ nonisolated final class CipherMapper: Sendable {
             do {
                 return try attachmentMapper.map(dto, cipherKey: effectiveKeys)
             } catch {
-                Self.logger.error("Attachment mapping failed for cipher \(raw.id, privacy: .public): \(error, privacy: .public)")
+                Self.logger.error("Attachment mapping failed for cipher \(raw.id, privacy: .public): \(ErrorLog.describe(error), privacy: .public)")
                 return nil
             }
         }

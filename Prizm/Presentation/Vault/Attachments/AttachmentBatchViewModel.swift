@@ -227,7 +227,7 @@ final class AttachmentBatchViewModel: Identifiable {
             )
             fileData.resetBytes(in: fileData.indices)
             items[index].state = .succeeded
-            logger.info("batch upload succeeded: \(item.fileName, privacy: .public)")
+            logger.info("batch upload succeeded: \(item.fileName, privacy: .private)")
         } catch is CancellationError {
             fileData.resetBytes(in: fileData.indices)
             // State stays .uploading — will be cleaned up by cancel()
@@ -235,7 +235,7 @@ final class AttachmentBatchViewModel: Identifiable {
             fileData.resetBytes(in: fileData.indices)
             let msg = error.localizedDescription
             items[index].state = .failed(msg)
-            logger.error("batch upload failed: \(item.fileName, privacy: .public) — \(msg, privacy: .public)")
+            logger.error("batch upload failed: \(item.fileName, privacy: .private) — \(ErrorLog.describe(error), privacy: .public)")
         }
     }
 }

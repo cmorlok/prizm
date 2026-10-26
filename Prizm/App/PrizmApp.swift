@@ -482,7 +482,7 @@ final class RootViewModel: ObservableObject {
             do {
                 try await container.authRepo.signOut()
             } catch {
-                logger.error("Sign-out error: \(error.localizedDescription, privacy: .public)")
+                logger.error("Sign-out error: \(ErrorLog.describe(error), privacy: .public)")
             }
             // authRepo.signOut() zeroes and clears every key cache through its lockVault().
             await container.vaultRepo.clearVault()

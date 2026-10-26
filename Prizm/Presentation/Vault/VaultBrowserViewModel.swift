@@ -307,7 +307,7 @@ final class VaultBrowserViewModel: ObservableObject {
                 guard isCurrent(generation) else { return }
                 displayedItems = items
             } catch {
-                logger.error("Failed to load vault items: \(error.localizedDescription, privacy: .public)")
+                logger.error("Failed to load vault items: \(ErrorLog.describe(error), privacy: .public)")
                 displayedItems = []
             }
         }
@@ -339,7 +339,7 @@ final class VaultBrowserViewModel: ObservableObject {
                 guard isCurrent(generation) else { return }
                 itemCounts = counts
             } catch {
-                logger.error("Failed to load item counts: \(error.localizedDescription, privacy: .public)")
+                logger.error("Failed to load item counts: \(ErrorLog.describe(error), privacy: .public)")
             }
         }
     }
@@ -423,7 +423,7 @@ final class VaultBrowserViewModel: ObservableObject {
                 let updated = try await setFavoriteUseCase.execute(itemId: item.id, isFavorite: !item.isFavorite)
                 onSaved(updated)
             } catch {
-                logger.error("Toggle favorite failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("Toggle favorite failed: \(ErrorLog.describe(error), privacy: .public)")
                 // No alert for a request from a session that has ended (lock or sign-out meanwhile).
                 guard isCurrent(generation) else { return }
                 actionError = "Couldn't update favorite. \(error.localizedDescription)"
@@ -543,7 +543,7 @@ final class VaultBrowserViewModel: ObservableObject {
             }
             refreshCounts()
         } catch {
-            logger.error("Soft-delete failed for \(id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            logger.error("Soft-delete failed for \(id, privacy: .public): \(ErrorLog.describe(error), privacy: .public)")
             actionError = error.localizedDescription
         }
     }
@@ -560,7 +560,7 @@ final class VaultBrowserViewModel: ObservableObject {
             refreshItems()
             refreshCounts()
         } catch {
-            logger.error("Restore failed for \(id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            logger.error("Restore failed for \(id, privacy: .public): \(ErrorLog.describe(error), privacy: .public)")
             actionError = error.localizedDescription
         }
     }
@@ -578,7 +578,7 @@ final class VaultBrowserViewModel: ObservableObject {
             refreshItems()
             refreshCounts()
         } catch {
-            logger.error("Permanent delete failed for \(id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            logger.error("Permanent delete failed for \(id, privacy: .public): \(ErrorLog.describe(error), privacy: .public)")
             actionError = error.localizedDescription
         }
     }
@@ -594,7 +594,7 @@ final class VaultBrowserViewModel: ObservableObject {
                 refreshFolders()
                 refreshCounts()
             } catch {
-                logger.error("Create folder failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("Create folder failed: \(ErrorLog.describe(error), privacy: .public)")
                 actionError = error.localizedDescription
             }
         }
@@ -608,7 +608,7 @@ final class VaultBrowserViewModel: ObservableObject {
                 _ = try await renameFolderUseCase.execute(id: id, name: trimmed)
                 refreshFolders()
             } catch {
-                logger.error("Rename folder failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("Rename folder failed: \(ErrorLog.describe(error), privacy: .public)")
                 actionError = error.localizedDescription
             }
         }
@@ -624,7 +624,7 @@ final class VaultBrowserViewModel: ObservableObject {
                 refreshItems()
                 refreshCounts()
             } catch {
-                logger.error("Delete folder failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("Delete folder failed: \(ErrorLog.describe(error), privacy: .public)")
                 actionError = error.localizedDescription
             }
         }
@@ -641,7 +641,7 @@ final class VaultBrowserViewModel: ObservableObject {
                 refreshItems()
                 refreshCounts()
             } catch {
-                logger.error("Move to folder failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("Move to folder failed: \(ErrorLog.describe(error), privacy: .public)")
                 actionError = error.localizedDescription
             }
         }
@@ -658,7 +658,7 @@ final class VaultBrowserViewModel: ObservableObject {
                 guard isCurrent(generation) else { return }
                 folders = loaded
             } catch {
-                logger.error("Failed to load folders: \(error.localizedDescription, privacy: .public)")
+                logger.error("Failed to load folders: \(ErrorLog.describe(error), privacy: .public)")
             }
         }
     }
@@ -674,7 +674,7 @@ final class VaultBrowserViewModel: ObservableObject {
                 organizations = loadedOrganizations
                 collections   = loadedCollections
             } catch {
-                logger.error("Failed to load organizations: \(error.localizedDescription, privacy: .public)")
+                logger.error("Failed to load organizations: \(ErrorLog.describe(error), privacy: .public)")
             }
         }
     }
@@ -690,7 +690,7 @@ final class VaultBrowserViewModel: ObservableObject {
                 refreshOrganizations()
                 refreshCounts()
             } catch {
-                logger.error("Create collection failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("Create collection failed: \(ErrorLog.describe(error), privacy: .public)")
                 actionError = error.localizedDescription
             }
         }
@@ -706,7 +706,7 @@ final class VaultBrowserViewModel: ObservableObject {
                 refreshOrganizations()
                 refreshCounts()
             } catch {
-                logger.error("Rename collection failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("Rename collection failed: \(ErrorLog.describe(error), privacy: .public)")
                 actionError = error.localizedDescription
             }
         }
@@ -721,7 +721,7 @@ final class VaultBrowserViewModel: ObservableObject {
                 refreshOrganizations()
                 refreshCounts()
             } catch {
-                logger.error("Delete collection failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("Delete collection failed: \(ErrorLog.describe(error), privacy: .public)")
                 actionError = error.localizedDescription
             }
         }

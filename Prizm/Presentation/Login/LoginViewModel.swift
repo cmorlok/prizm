@@ -87,11 +87,11 @@ final class LoginViewModel: ObservableObject {
                 }
 
             } catch let err as AuthError {
-                logger.error("Sign-in failed: \(err.localizedDescription, privacy: .public)")
+                logger.error("Sign-in failed: \(ErrorLog.describe(err), privacy: .public)")
                 errorMessage = err.errorDescription
                 flowState    = .login
             } catch {
-                logger.error("Sign-in failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("Sign-in failed: \(ErrorLog.describe(error), privacy: .public)")
                 errorMessage = error.localizedDescription
                 flowState    = .login
             }
@@ -115,11 +115,11 @@ final class LoginViewModel: ObservableObject {
                 let _ = try await loginUseCase.completeTOTP(code: code, rememberDevice: rememberDevice)
                 flowState = .vault
             } catch let err as AuthError {
-                logger.error("TOTP submission failed: \(err.localizedDescription, privacy: .public)")
+                logger.error("TOTP submission failed: \(ErrorLog.describe(err), privacy: .public)")
                 errorMessage = err.errorDescription
                 flowState    = .totpPrompt
             } catch {
-                logger.error("TOTP submission failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("TOTP submission failed: \(ErrorLog.describe(error), privacy: .public)")
                 errorMessage = error.localizedDescription
                 flowState    = .totpPrompt
             }

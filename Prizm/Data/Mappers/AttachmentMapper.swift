@@ -58,7 +58,7 @@ nonisolated final class AttachmentMapper: Sendable {
         } catch let e as AttachmentMapperError {
             throw e
         } catch {
-            Self.logger.error("Attachment fileName decryption failed: \(error, privacy: .public)")
+            Self.logger.error("Attachment fileName decryption failed: \(ErrorLog.describe(error), privacy: .public)")
             throw AttachmentMapperError.fileNameDecryptionFailed
         }
 

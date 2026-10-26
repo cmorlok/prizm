@@ -158,7 +158,7 @@ actor SyncRepositoryImpl: SyncRepository {
                             rsaPrivateKey: rsaPrivateKeyBytes
                         )
                     } catch {
-                        logger.fault("Failed to unwrap org key for org \(rawOrg.id.prefix(8), privacy: .public)… — org ciphers will be skipped: \(error, privacy: .public)")
+                        logger.fault("Failed to unwrap org key for org \(rawOrg.id.prefix(8), privacy: .public)… — org ciphers will be skipped: \(ErrorLog.describe(error), privacy: .public)")
                     }
                 }
                 try await ensureStillUnlocked()
@@ -197,7 +197,7 @@ actor SyncRepositoryImpl: SyncRepository {
                         }
                         return OrgCollection(id: raw.id, organizationId: raw.organizationId, name: name)
                     } catch {
-                        logger.error("Failed to decrypt collection name for \(raw.id.prefix(8), privacy: .public): \(error, privacy: .public)")
+                        logger.error("Failed to decrypt collection name for \(raw.id.prefix(8), privacy: .public): \(ErrorLog.describe(error), privacy: .public)")
                         return nil
                     }
                 }
@@ -224,7 +224,7 @@ actor SyncRepositoryImpl: SyncRepository {
                         }
                     } catch {
                         orgCipherFailedCount += 1
-                        logger.error("Org cipher decryption failed at index \(index, privacy: .public): \(error, privacy: .public)")
+                        logger.error("Org cipher decryption failed at index \(index, privacy: .public): \(ErrorLog.describe(error), privacy: .public)")
                     }
                 }
                 // Refresh the VaultKeyCache to include per-item keys from org ciphers.
@@ -233,7 +233,7 @@ actor SyncRepositoryImpl: SyncRepository {
 
                 logger.info("Org sync: \(organizations.count) org(s), \(collections.count) collection(s), \(orgCipherFailedCount, privacy: .public) org cipher(s) skipped")
             } catch {
-                logger.error("Org key sync failed — org ciphers unavailable this session: \(error, privacy: .public)")
+                logger.error("Org key sync failed — org ciphers unavailable this session: \(ErrorLog.describe(error), privacy: .public)")
                 // Non-fatal: personal items still work without org support. No org item is listed
                 // from this sync, so the old org keys have no use and go
                 // (harden-key-lifecycle-and-logging, D2).

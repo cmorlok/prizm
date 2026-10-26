@@ -319,16 +319,69 @@ nonisolated enum APIError: Error, Equatable {
     case baseURLNotSet
 }
 
-extension APIError: LocalizedError {
+nonisolated extension APIError: LocalizedError {
+    /// The server's own message for an HTTP error, never the raw body (server-error-texts D1).
     var errorDescription: String? {
         switch self {
         case .httpError(let statusCode, let body):
-            return body.isEmpty ? "Server error \(statusCode)." : "Server error \(statusCode): \(body)"
+            return Self.serverMessage(statusCode: statusCode, body: body) ?? "Server error \(statusCode)."
         case .decodingFailed:
             return "The server response could not be read. Please try again."
         case .baseURLNotSet:
             return "No server URL is configured."
         }
+    }
+}
+
+nonisolated extension APIError: LogSafeError {
+    var logDescription: String {
+        switch self {
+        case .httpError(let statusCode, _): "HTTP \(statusCode)"
+        case .decodingFailed:               "decodingFailed"
+        case .baseURLNotSet:                "baseURLNotSet"
+        }
+    }
+}
+
+nonisolated extension APIError {
+
+    /// Longest server message shown; longer ones are cut, so a misbehaving server can't fill an alert.
+    static let maxMessageLength = 300
+
+    /// The message official clients show for a failed request (`ErrorResponse`, clients
+    /// `libs/common/src/models/response/error.response.ts`): the first validation error, else
+    /// `message`, else the identity error model's message. Keys are matched in camelCase and
+    /// PascalCase, as both servers use either. 429 gets the official rate limit text.
+    /// Deviation: with several validation keys, the official clients take the first in the JSON's
+    /// order; `JSONSerialization` keeps no order, so Prizm takes the first in sorted key order.
+    static func serverMessage(statusCode: Int, body: String) -> String? {
+        if statusCode == 429 { return "Rate limit exceeded. Try again later." }
+        guard let object = (try? JSONSerialization.jsonObject(with: Data(body.utf8))) as? [String: Any] else {
+            return nil
+        }
+        let message = firstValidationError(in: object)
+            ?? nonEmptyString(value(object, "message"))
+            ?? (value(object, "errorModel") as? [String: Any]).flatMap { nonEmptyString(value($0, "message")) }
+        return message.map { String($0.prefix(maxMessageLength)) }
+    }
+
+    private static func value(_ object: [String: Any], _ camelCaseKey: String) -> Any? {
+        object[camelCaseKey] ?? object[camelCaseKey.prefix(1).uppercased() + camelCaseKey.dropFirst()]
+    }
+
+    private static func nonEmptyString(_ value: Any?) -> String? {
+        guard let string = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !string.isEmpty else { return nil }
+        return string
+    }
+
+    /// Sorted keys, so the same body always gives the same message.
+    private static func firstValidationError(in object: [String: Any]) -> String? {
+        guard let errors = value(object, "validationErrors") as? [String: Any] else { return nil }
+        for key in errors.keys.sorted() {
+            if let message = (errors[key] as? [Any])?.lazy.compactMap(nonEmptyString).first { return message }
+        }
+        return nil
     }
 }
 
