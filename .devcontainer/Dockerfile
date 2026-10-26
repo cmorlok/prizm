@@ -8,8 +8,8 @@
 # Versions are pinned for reproducible rebuilds. The default policy is "a release at least two
 # weeks old" for third-party tools, so a compromised or broken release has time to be noticed
 # and pulled before it reaches this container. Bump them deliberately via the build args in
-# devcontainer.json. Claude Code is not pinned: it updates itself, which is Anthropic's intended
-# update path.
+# .devcontainer/compose.yaml. Claude Code is not pinned: it updates itself, which is Anthropic's
+# intended update path.
 
 # Swift 6.2 matches CLAUDE.md ("Swift 6.2"). Tag plus digest, so a re-pushed tag cannot change
 # the image silently.
@@ -100,7 +100,7 @@ USER ${USERNAME}
 ENV HOME=/home/${USERNAME}
 
 # Claude Code via Anthropic's native installer (installs to ~/.local/bin and updates itself).
-# The whole home directory is persisted in the prizm-dev-home volume (devcontainer.json). Docker
+# The whole home directory is persisted in the prizm-dev-home volume (compose.yaml). Docker
 # seeds that volume from this image content, with this owner, on first use only.
 RUN mkdir -p "${HOME}/.claude" "${HOME}/.config" \
  && curl -fsSL https://claude.ai/install.sh | bash \

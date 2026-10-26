@@ -1,36 +1,17 @@
 // Prizm devcontainer. See .devcontainer/README.md for what runs here and what runs on the Mac.
 {
   "name": "Prizm",
-  "build": {
-    "dockerfile": "Dockerfile",
-    // Bump deliberately; see the version policy at the top of the Dockerfile.
-    "args": {
-      "NODE_VERSION": "24.21.0",
-      "ACTIONLINT_VERSION": "1.7.12",
-      "SHELLCHECK_VERSION": "0.11.0",
-      "GH_VERSION": "2.102.0",
-      "OPENSPEC_VERSION": "1.14.1",
-      "GSD_VERSION": "1.16.0"
-    }
-  },
+  // The container and the on-demand Vaultwarden rig are defined in compose.yaml.
+  "dockerComposeFile": "compose.yaml",
+  "service": "prizm-dev",
+  // Start only the dev container; the rig services are also behind the "rig" profile.
+  "runServices": ["prizm-dev"],
+  // Closing VS Code must not stop prizm-dev under scripts/claude.sh, or the rig.
+  "shutdownAction": "none",
 
-  // Fixed container name so scripts/claude.sh and scripts/build.sh can find it from the host.
-  // Keep in sync with PRIZM_CONTAINER in scripts/lib/common.sh. Only one Prizm devcontainer
-  // can run at a time under this name.
-  "runArgs": ["--name", "prizm-dev"],
-
-  // Fixed container path, independent of the clone's folder name or location on the host.
-  // Keep in sync with PRIZM_CONTAINER_WORKSPACE in scripts/lib/common.sh.
-  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/prizm,type=bind",
+  // The Compose default would be "/". Keep in sync with PRIZM_CONTAINER_WORKSPACE in
+  // scripts/lib/common.sh.
   "workspaceFolder": "/workspaces/prizm",
-  "mounts": [
-    // The container user's home lives in a named volume, so the Claude Code login, shell history
-    // and tool config survive container rebuilds. The host's home is not mounted.
-    // On first use Docker seeds the empty volume from the image's /home/developer; after that the
-    // volume wins (see README, "Container home volume").
-    "source=prizm-dev-home,target=/home/developer,type=volume"
-  ],
-
   "remoteUser": "developer",
   "updateRemoteUserUID": true,
 

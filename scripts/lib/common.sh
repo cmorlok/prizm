@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Shared helpers for the scripts in scripts/. Source it; do not execute it.
 
-# Must match "runArgs": ["--name", ...] in .devcontainer/devcontainer.json.
+# Must match container_name in .devcontainer/compose.yaml.
 PRIZM_CONTAINER="${PRIZM_CONTAINER:-prizm-dev}"
 PRIZM_CONTAINER_USER="${PRIZM_CONTAINER_USER:-developer}"
 # Must match "workspaceFolder" in .devcontainer/devcontainer.json.

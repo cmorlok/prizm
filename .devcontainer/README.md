@@ -10,13 +10,17 @@ Prizm is a macOS app, so it **cannot be built or tested in a Linux container**. 
 | Mac host, left running | runs Xcode builds requested from the container | `scripts/host/build-daemon.sh` |
 | Container → Mac | one Xcode command on the Mac, output streamed back | `scripts/container/host-build.sh` |
 | Mac host terminal → container | run `claude` inside the container | `scripts/claude.sh` |
+| Mac host | Vaultwarden test rig: start, switch versions, certificate, feature flag, snapshots (see `rig/RUNBOOK.md`) | `scripts/host/vaultwarden.sh` |
 
 ## Prerequisites (on the Mac)
 
 - A Docker runtime: Docker Desktop, OrbStack or Colima.
 - VS Code with the Dev Containers extension, **or** the Dev Containers CLI
   (`npm install -g @devcontainers/cli`). The scripts use the CLI to create the container if it
-  does not exist yet.
+  does not exist yet. It must support Compose configs; 0.89.0 is the version checked, following
+  the two-week policy under "Pinned versions".
+- Docker Compose v2 (profiles, a top-level `name` and `up --wait`). Docker Desktop and OrbStack
+  include it.
 - Xcode, plus `Prizm/LocalConfig.xcconfig` with your `DEVELOPMENT_TEAM` (see `DEVELOPMENT.md`).
   Needed only for the host part.
 
@@ -32,6 +36,18 @@ Prizm is a macOS app, so it **cannot be built or tested in a Linux container**. 
    The login is stored in `~/.claude` in the container, which lives in the `prizm-dev-home`
    volume, separate from your Mac's `~/.claude`, and survives container rebuilds.
 
+### Migrating an existing prizm-dev
+
+The devcontainer is defined in `compose.yaml` (compose project `prizm`). A `prizm-dev` created
+before that has no compose labels and sits on Docker's default network. Remove it once on the
+Mac and recreate it:
+```bash
+docker rm -f prizm-dev
+devcontainer up --workspace-folder .      # or VS Code: Dev Containers: Reopen in Container
+```
+The `prizm-dev-home` volume, and with it the Claude Code login, survives. This ends a Claude
+session running in the old container.
+
 ## Mounts and paths
 
 - **Only the repo is mounted from the Mac**, always at `/workspaces/prizm`, whatever the clone
@@ -45,6 +61,10 @@ Prizm is a macOS app, so it **cannot be built or tested in a Linux container**. 
   the Claude Code binary and login, OpenSpec's global config, shell history and anything else
   written to `~`, and survives rebuilds of the container and the image. Your Mac's home is not
   visible in the container.
+- **The Vaultwarden test rig** lives in the same compose project, behind the `rig` profile:
+  opening the devcontainer never starts it, `scripts/host/vaultwarden.sh` on the Mac starts it
+  explicitly. Its data is in `dev-vault/` (git-ignored), visible in the container at
+  `/workspaces/prizm/dev-vault`. See `rig/RUNBOOK.md`.
 
 ### Container home volume
 
@@ -90,7 +110,8 @@ output to `<id>.log` there, and writes `<id>.exit` when done. The protocol is de
 
 ## Pinned versions
 
-All set in `devcontainer.json` → `build.args`:
+All set in `compose.yaml` → `services.prizm-dev.build.args`. The `ARG` defaults in the `Dockerfile`
+mirror them, and `scripts/container/compose-model.sh` checks that the two agree:
 - Swift 6.2 base image (tag + digest)
 - Node.js
 - OpenSpec
@@ -117,7 +138,5 @@ because of **existing upstream debt**, not because they are unimportant:
 
 ## Status
 
-Written and checked without Docker. Shell scripts pass ShellCheck 0.11.0, the check script was
-run end to end in a Linux environment, and the OpenSpec and GSD installer flags were read from
-their source. **The image itself has not been built yet.** The first build on the Mac is the
-real test; report or fix anything that fails there.
+The image was built and run on the Mac (OrbStack) on 2026-10-24. The compose layout was first
+built and run there on 2026-10-26.
