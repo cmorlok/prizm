@@ -65,4 +65,34 @@ final class AccessibilityLabelTests: PrizmUITestCase {
         // Toggling saves the item on the server.
         try UITestPrerequisite.serverWrites()
     }
+
+    // MARK: - card-field-normalisation 3.3
+
+    /// The card's expiry reads as a date, and the edit form's pickers are named and read their
+    /// selection by its display name. The fixture card has brand "Visa" and expiry "12" / "2030".
+    func testCardExpiryAndPickers_readAsNamedValues() throws {
+        let row = app.element(Fixture.row(Fixture.card))
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.click()
+
+        let expiry = app.fieldValue("Expiration")
+        XCTAssertTrue(expiry.waitForExistence(timeout: 3))
+        // A selectable text shows its text on the inner element (see `displayedText`).
+        XCTAssertTrue(expiry.displayedText.waitForText("12 / 2030", timeout: 3), "Shown as MM / YYYY")
+        XCTAssertEqual(expiry.value as? String, "December 2030", "VoiceOver reads the month by name")
+
+        let editButton = app.buttons["edit.button.edit"]
+        XCTAssertTrue(editButton.waitForExistence(timeout: 3))
+        editButton.click()
+
+        let brand = app.popUpButtons["Brand"]
+        XCTAssertTrue(brand.waitForExistence(timeout: 3), "The brand picker is named Brand")
+        XCTAssertEqual(brand.value as? String, "Visa")
+        let month = app.popUpButtons["Expiry Month"]
+        XCTAssertTrue(month.exists, "The month picker is named Expiry Month")
+        XCTAssertEqual(month.value as? String, "12 - December")
+        XCTAssertTrue(app.textFields["Expiry Year"].exists, "The year field keeps its label")
+
+        app.buttons["edit.button.discard"].click()
+    }
 }

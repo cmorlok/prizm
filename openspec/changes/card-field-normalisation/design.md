@@ -79,7 +79,7 @@ typing. Table-driven tests mirror the official cases ("25" → "2025", "2025" �
 - Brand: `Picker` with "Not set", the ten official entries (display names as on the web), and a
   "<value> (custom)" entry only when D1 returned `.custom`.
 - Month: `Picker` with "Not set", "01 - January" … "12 - December", and a custom entry if needed.
-- Year: text field, digits only, placeholder "YYYY".
+- Year: text field with placeholder "YYYY"; free text, normalised on save (D3, D8).
 
 Menu-style pickers inside `DetailSectionCard`, padded with `Spacing.rowVertical` /
 `Spacing.rowHorizontal`, labels in `Typography.fieldLabel`. Each picker's accessibility label is
@@ -103,12 +103,34 @@ blank.
 optional Domain URI from `fix-read-mapping-lossless-fields` and gives other clients an empty row
 anyway. Dropping the row is simpler and shows nothing in every client.
 
+### D7. Only edited content is normalised (added 2026-10-26)
+
+The edit sheet normalises a draft unless the edit changes only folder and/or favorite (the same
+test `VaultRepositoryImpl.update` uses to pick `/partial`). Such a change is sent as is, so it stays a `/partial` save, which also works for items in
+read-only collections (`org-items-in-personal-folders`). Normalising there would turn it into a
+full PUT that the server refuses for such items. A card with brand "visa" is therefore rewritten
+the next time anything else is edited, not when it is only moved.
+
+### D8. Year with no usable digits is kept (added 2026-10-26)
+
+The web form turns a year like "n/a" into an empty value. Prizm keeps it, per the goal that no
+stored value is lost. Blank years are saved as no value.
+
 ## Risks / Trade-offs
 
 - **[Low] Normalising on save changes stored text** ("visa" → "Visa", "03" → "3", "25" → "2025").
   → Same meaning, official format; applied only when the user saves the item.
 - **[Low] Detection overrides a manual brand when the number is edited.** → Same as the web form.
 - **[Low] Two-digit year in the far future or past** maps to the current century, as official.
+
+- **[Low] Detection follows every number edit**, also after the user picked a brand or when the
+  stored brand was a custom one ("Carte Bleue" is replaced on the first matching digit). → Same as
+  the web form's number `valueChanges`.
+- **[Low] Detail view shows display text.** The brand shows and copies as "American Express", the
+  expiry as "03 / 2027". → Chosen for reading; both paste fine into payment forms. Revisit if
+  users ask for the stored values.
+- **[Info] Value-less server URIs** (`uri: null`) are still dropped on read until
+  `fix-read-mapping-lossless-fields` lands; the requirement's second sentence depends on it.
 
 ## Open Questions
 
