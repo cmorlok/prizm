@@ -20,7 +20,8 @@ dependencies.
 
 - [x] 3.1 Failing view-model test: the brand and month pickers expose the official options plus a custom entry only when needed; changing the number updates the brand (D2).
 - [x] 3.2 Replace the three rows in `CardEditForm.swift:16-29` with the D4 controls. DesignSystem tokens only.
-- [ ] 3.3 VoiceOver: picker labels "Brand", "Expiry month", "Expiry year"; values read as display names (§VIII). Extend the accessibility UI test for the card form.
+- [x] 3.3 VoiceOver: picker labels "Brand", "Expiry month", "Expiry year"; values read as display names (§VIII). Extend the accessibility UI test for the card form.
+  XCUITest `AccessibilityLabelTests.testCardExpiryAndPickers_readAsNamedValues`.
 
 ## 4. Blank URI rows (0.25 d)
 
@@ -51,6 +52,6 @@ dependencies.
   placeholder "YYYY"; VoiceOver reads the expiry as "March 2027". **Open:** extend the
   accessibility UI test for the card form (no card in the UI test fixture's edit journeys yet).
 - 4.2: `fix-read-mapping-lossless-fields` has not landed; no `uri: null` test yet.
-- **Not verified on the Mac yet** (test runner hung): unit tests. Compiles.
+- **Verified on the Mac (2026-10-26):** all 703 unit tests pass on this branch; the full UI suite passes on the top of the series (`fix/017`).
 - Open: 3.3 UI test, 5.1 interop on the rig.
 
