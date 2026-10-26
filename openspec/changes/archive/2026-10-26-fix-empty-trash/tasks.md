@@ -32,7 +32,8 @@ dependencies. Task 2.1 (purge guard) comes first and can merge on its own.
 
 ## 6. Release (0.25–0.5 d)
 
-- [ ] 6.1 Mandatory security review: no path to `/purge`; only trashed ids are sent; sync-before-confirm in place; nothing but HTTP status in logs.
+- [x] 6.1 Mandatory security review: no path to `/purge`; only trashed ids are sent; sync-before-confirm in place; nothing but HTTP status in logs.
+  Done; see Results.
 - [x] 6.2 CHANGELOG "Added": Empty Trash in the Trash view.
 - [x] 6.3 The change removes the requirement "User can empty trash" from `vault-item-delete` (REMOVED, with reason and migration), so archiving replaces it with this change's `empty-trash` requirements. No warning line in the living spec is needed (decided 2026-10-26: archive in the same PR).
 - [x] 6.4 `openspec validate fix-empty-trash --type change --strict`.
@@ -50,13 +51,13 @@ dependencies. Task 2.1 (purge guard) comes first and can merge on its own.
 - If the follow-up sync fails, the result comes from the cache, which already reflects every chunk
   that succeeded.
 - 4.3: XCUITests added (`TrashJourneyTests.testEmptyTrash_refreshFails_deletesNothing`,
-  `testEmptyTrash_notOfferedOutsideTrash`) but not run yet: the Mac's UI automation timed out
-  (screen locked). Without a server, the test vault takes the refresh-failure path.
+  `testEmptyTrash_notOfferedOutsideTrash`); both pass (2026-10-26). Without a server, the test vault
+  takes the refresh-failure path, so the full journey (delete, empty state) still needs a test server.
 - 6.1 security review: no path to `/purge`, only trashed ids, sync before confirm. Fixed after
   review (design D6): state reset on lock, alert passes its confirmation, chunks continue after a
   failure, failure cause and sync status in the result, logs with HTTP status only, and the sync
   no longer writes after a lock. Not tested: the button's disabled state with an empty Trash.
-- **Not verified on the Mac yet:** the review fixes were written while the Mac's test runner hung
-  (screen locked). Run `PrizmTests` and `TrashJourneyTests` before the PR.
-- Open: 1.1 (rig), 4.3 run.
+- **Verified on the Mac (2026-10-26):** all 642 unit tests pass on this branch; the full UI suite passes on the top of the series (`fix/017`). The test run found two test bugs, fixed here: `SyncRepositoryImplTests` never unlocked
+  the mock, and one `EmptyTrashTests` case set the sync error too late.
+- Open: 1.1 (rig); 4.3's full journey (needs a test server).
 
