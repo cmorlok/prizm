@@ -16,6 +16,8 @@ struct EditFieldRow: View {
     @Binding var text: String
     /// When `true` the value field expands to a multiline `TextEditor`.
     var isMultiline: Bool = false
+    /// Placeholder shown while empty; defaults to the label. VoiceOver keeps reading the label.
+    var prompt: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -29,7 +31,9 @@ struct EditFieldRow: View {
                     .frame(minHeight: 64, maxHeight: 200)
                     .scrollContentBackground(.hidden)
             } else {
-                TextField(label, text: $text)
+                TextField(label, text: $text, prompt: prompt.map { Text($0) })
+                    // With a prompt, the field would otherwise be announced by its placeholder.
+                    .accessibilityLabel(label)
                     .font(Typography.fieldValue)
                     .textFieldStyle(.plain)
             }
@@ -46,6 +50,7 @@ struct OptionalEditFieldRow: View {
 
     let label: String
     @Binding var value: String?
+    var prompt: String? = nil
 
     var body: some View {
         EditFieldRow(
@@ -53,7 +58,8 @@ struct OptionalEditFieldRow: View {
             text: Binding(
                 get:  { value ?? "" },
                 set:  { value = $0.isEmpty ? nil : $0 }
-            )
+            ),
+            prompt: prompt
         )
     }
 }

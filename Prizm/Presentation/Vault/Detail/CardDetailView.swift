@@ -24,7 +24,7 @@ struct CardDetailView: View {
                     }
                     if let brand = card.brand {
                         if card.cardholderName != nil { Divider() }
-                        FieldRowView(label: "Brand", value: brand, itemId: item.id, onCopy: onCopy)
+                        FieldRowView(label: "Brand", value: CardBrand.displayName(for: brand), itemId: item.id, onCopy: onCopy)
                     }
                     if let number = card.number {
                         if card.cardholderName != nil || card.brand != nil { Divider() }
@@ -34,11 +34,10 @@ struct CardDetailView: View {
                         )
                     }
                     if card.expMonth != nil || card.expYear != nil {
-                        let expiry = [card.expMonth, card.expYear]
-                            .compactMap { $0 }
-                            .joined(separator: "/")
+                        let expiry = CardExpiry.display(month: card.expMonth, year: card.expYear)
                         if card.cardholderName != nil || card.brand != nil || card.number != nil { Divider() }
-                        FieldRowView(label: "Expiration", value: expiry, itemId: item.id, onCopy: onCopy)
+                        FieldRowView(label: "Expiration", value: expiry?.text, itemId: item.id,
+                                     onCopy: onCopy, spokenValue: expiry?.spoken)
                     }
                     if let code = card.code {
                         if card.cardholderName != nil || card.brand != nil
