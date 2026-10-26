@@ -72,6 +72,10 @@ protocol AuthRepository: AnyObject {
     /// Does NOT clear Keychain tokens — session survives lock/unlock.
     func lockVault() async
 
+    /// Whether vault keys are loaded. A flow that ends after a lock checks it before showing the
+    /// vault (lock-during-unlock-sync).
+    var isVaultUnlocked: Bool { get async }
+
     // MARK: - Biometric unlock
 
     /// Whether the device hardware supports biometric authentication, regardless of the
@@ -126,6 +130,9 @@ nonisolated enum AuthError: Error, LocalizedError, Equatable {
     case biometricItemNotFound
     /// Biometric unlock cannot be enabled — vault is locked (keys not in memory).
     case biometricUnavailable
+    /// The vault was locked (or the user signed out) while this login or unlock was running; its keys
+    /// were not loaded (lock-during-unlock-sync, D6).
+    case lockedWhileUnlocking
 
     var errorDescription: String? {
         switch self {
@@ -150,6 +157,8 @@ nonisolated enum AuthError: Error, LocalizedError, Equatable {
             return nil
         case .biometricUnavailable:
             return "Biometric unlock is not available. Please unlock with your master password."
+        case .lockedWhileUnlocking:
+            return "Prizm was locked before it finished. Try again."
         }
     }
 }

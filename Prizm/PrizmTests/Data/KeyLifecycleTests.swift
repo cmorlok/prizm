@@ -148,6 +148,85 @@ final class KeyLifecycleTests: XCTestCase {
         assertZeroedInPlace(["masterKey", "stretchedEncryptionKey", "stretchedMacKey"])
     }
 
+    // MARK: - A lock during a login or unlock (lock-during-unlock-sync, D6)
+
+    private final class Gate: Sendable {
+        let entered = Mutex(false)
+        let released = Mutex(false)
+    }
+
+    /// Holds the next login or unlock inside its key derivation until the gate is released.
+    private func holdKeyDerivation() -> Gate {
+        let gate = Gate()
+        crypto.whileDecryptingUserKey = {
+            gate.entered.withLock { $0 = true }
+            while !gate.released.withLock({ $0 }) { try? await Task.sleep(for: .milliseconds(5)) }
+        }
+        return gate
+    }
+
+    private func waitUntilEntered(_ gate: Gate) async throws {
+        let deadline = ContinuousClock.now + .seconds(2)
+        while !gate.entered.withLock({ $0 }), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(5)) }
+    }
+
+    func testLockDuringUnlock_loadsNoKeys() async throws {
+        api.tokenResponse = tokenResponse()
+        _ = try await sut.loginWithPassword(email: "a@example.com", masterPassword: Data("pw".utf8))
+        await sut.lockVault()
+        let gate = holdKeyDerivation()
+        defer { gate.released.withLock { $0 = true } }
+
+        let unlock = Task { try await self.sut.unlockWithPassword(Data("pw".utf8)) }
+        try await waitUntilEntered(gate)
+        await sut.lockVault()
+        gate.released.withLock { $0 = true }
+
+        do {
+            _ = try await unlock.value
+            XCTFail("The unlock must not succeed after a lock")
+        } catch AuthError.lockedWhileUnlocking {}
+        XCTAssertFalse(crypto.isUnlocked, "No keys loaded behind the lock screen")
+        assertZeroedInPlace(["refusedVaultEncryptionKey", "refusedVaultMacKey"])
+    }
+
+    /// A lock that comes while the keys are being loaded unloads them, and the original buffers are
+    /// zeroed in place (third verification, W2).
+    func testLockWhileLoadingKeys_unloadsAndZeroesThem() async throws {
+        api.tokenResponse = tokenResponse()
+        _ = try await sut.loginWithPassword(email: "a@example.com", masterPassword: Data("pw".utf8))
+        await sut.lockVault()
+        zeroed = []
+        crypto.whileUnlockingWith = { [sut, crypto] in
+            crypto?.whileUnlockingWith = nil
+            await sut!.lockVault()
+        }
+
+        do {
+            _ = try await sut.unlockWithPassword(Data("pw".utf8))
+            XCTFail("The unlock must not succeed after a lock")
+        } catch AuthError.lockedWhileUnlocking {}
+        XCTAssertFalse(crypto.isUnlocked)
+        assertZeroedInPlace(["unloadedVaultEncryptionKey", "unloadedVaultMacKey"])
+    }
+
+    func testSignOutDuringLogin_loadsNoKeys() async throws {
+        api.tokenResponse = tokenResponse()
+        let gate = holdKeyDerivation()
+        defer { gate.released.withLock { $0 = true } }
+
+        let login = Task { try await self.sut.loginWithPassword(email: "a@example.com", masterPassword: Data("pw".utf8)) }
+        try await waitUntilEntered(gate)
+        try await sut.signOut()
+        gate.released.withLock { $0 = true }
+
+        do {
+            _ = try await login.value
+            XCTFail("The login must not succeed after a sign-out")
+        } catch AuthError.lockedWhileUnlocking {}
+        XCTAssertFalse(crypto.isUnlocked, "No keys loaded behind the login screen")
+    }
+
     // MARK: - 3.2 Keys held for the two-factor step
 
     private func startTwoFactor() async throws {
@@ -172,6 +251,33 @@ final class KeyLifecycleTests: XCTestCase {
         sut.cancelTwoFactor()
 
         assertZeroedInPlace(["pendingEncryptionKey", "pendingMacKey"])
+    }
+
+    /// A lock discards an unfinished two-factor step and zeroes its keys (lock-during-unlock-sync).
+    func testTwoFactor_lock_zeroesThePendingKeys() async throws {
+        try await startTwoFactor()
+
+        await sut.lockVault()
+
+        assertZeroedInPlace(["pendingEncryptionKey", "pendingMacKey"])
+    }
+
+    /// A login that reaches the two-factor step after a lock keeps nothing: the stretched keys are
+    /// zeroed and no two-factor step is pending (lock-during-unlock-sync, D6).
+    func testTwoFactorChallengeAfterALock_keepsNoKeys() async throws {
+        api.tokenResponse = tokenResponse(twoFactorProviders: [0])
+        api.whileRequestingToken = { [sut] in await sut!.lockVault() }
+
+        do {
+            _ = try await sut.loginWithPassword(email: "a@example.com", masterPassword: Data("pw".utf8))
+            XCTFail("The login must not continue after a lock")
+        } catch AuthError.lockedWhileUnlocking {}
+        assertZeroedInPlace(["stretchedEncryptionKey", "stretchedMacKey"])
+        api.whileRequestingToken = nil
+        do {
+            _ = try await sut.loginWithTOTP(code: "123456", rememberDevice: false)
+            XCTFail("No two-factor step may be pending")
+        } catch {}
     }
 
     func testTwoFactor_signOut_zeroesThePendingKeys() async throws {

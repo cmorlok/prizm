@@ -29,9 +29,19 @@ logs the dropped transition and shows `.unlock` (with a new unlock view model) o
 also covers the login flow, whose view model is never replaced, and any later path that reaches
 `.vault`.
 
-`.syncing` from the login flow after a lock is not filtered: the login view model's last state is
-always `.vault`, which D2 turns back into the lock screen. The unlock flow's `.syncing` is filtered
-by D1.
+After the await, three conditions must hold: the keys are loaded, no lock is still tearing down
+(`isLocking`, set by `lockVault()` until its task ends) and no lock ran since the `.vault` was
+received (`lockGeneration`). `lockVault()` returns before its teardown finishes, and a `.vault`
+already queued on the main queue can arrive in that window, so the key check alone is not enough.
+If the keys are loaded but a lock ran (a sign-in whose key derivation ended after the lock), they
+are torn down again before the lock screen is shown. The lock also clears the vault browser a
+second time at its end, so nothing shown during the teardown stays in memory.
+
+### D4. A lock applies during the sign-in sync
+
+The login flow shows `.loading` while it derives keys and runs its first sync. `canLock` accepts
+`.loading` as well as `.vault` and `.syncing`, for `lockVault()` and the Lock menu item. A lock
+before the keys exist is harmless: D2 tears down the keys the sign-in loads afterwards.
 
 **Rejected alternative:** cancel the flows' tasks on lock. The view models do not keep their tasks,
 and a cancelled sync would still need D2 to end on the right screen.

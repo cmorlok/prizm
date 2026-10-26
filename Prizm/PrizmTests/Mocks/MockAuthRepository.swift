@@ -67,12 +67,23 @@ final class MockAuthRepository: AuthRepository {
         cancelTwoFactorCalled = true
     }
 
+    /// Runs while the password unlock is "deriving keys", to hold it there.
+    var whileUnlockingWithPassword: (() async -> Void)?
+
+    /// Like the real repository (lock-during-unlock-sync, D6): an unlock that started before a
+    /// lock or sign-out loads no keys.
+    private(set) var lockCount = 0
+
     func unlockWithPassword(_ masterPassword: Data) async throws -> Account {
         unlockWithPasswordCalled = true
+        let started = lockCount
+        await whileUnlockingWithPassword?()
+        guard started == lockCount else { throw AuthError.lockedWhileUnlocking }
         if let err = unlockWithPasswordError { throw err }
         guard case .success(let account) = stubbedLoginResult else {
             throw AuthError.invalidCredentials
         }
+        stubbedIsVaultUnlocked = true
         return account
     }
 
@@ -87,6 +98,20 @@ final class MockAuthRepository: AuthRepository {
 
     func lockVault() async {
         lockVaultCalledCount += 1
+        lockCount += 1
+        stubbedIsVaultUnlocked = false
+    }
+
+    /// True until `lockVault()`, like the real repository after an unlock.
+    var stubbedIsVaultUnlocked = true
+    /// Runs after the state is read and before it is returned, to hold a caller in that window.
+    var whileReadingIsVaultUnlocked: (() async -> Void)?
+    var isVaultUnlocked: Bool {
+        get async {
+            let unlocked = stubbedIsVaultUnlocked
+            await whileReadingIsVaultUnlocked?()
+            return unlocked
+        }
     }
 
     // MARK: - Biometric unlock

@@ -18,8 +18,10 @@ reaches its last step:
   one. The old view model's progress messages switch the screen back to "Syncing…", and its final
   `.vault` shows the vault browser. `UnlockViewModel.performSync` ends in `.vault` even when the
   sync failed; since `fix-empty-trash` a sync interrupted by a lock fails on purpose.
-- **Login flow:** `LoginViewModel` publishes `.vault` after its sync the same way, and
-  `handleLoginFlow` shows the vault.
+- **Login flow:** the first sync after signing in runs while the screen shows `.loading`
+  (`LoginViewModel` goes from `.loading` to `.vault`; the sync runs inside the login use case).
+  `lockVault()` and the Lock menu item accept only `.vault` and `.syncing`, so sleep, the
+  screensaver or ⌘L during that sync are ignored, and the vault opens afterwards.
 
 The vault browser is then shown with no keys and an empty store. Nothing decrypted is exposed (the
 lock cleared it), but the app claims to be unlocked: the lock screen is gone, ⌘L is a no-op because
@@ -36,7 +38,9 @@ the Mac sees an unlocked-looking Prizm when they come back.
 
 - Only the current unlock view model drives the screen (`switchToLatest`); a view model replaced by
   a lock, or removed when signing out, no longer has any effect.
-- The vault is shown only if the vault is still unlocked. A flow that ends after a lock leads to the
+- A lock also applies while a sign-in loads keys and syncs (`.loading`).
+- The vault is shown only if the vault is still unlocked and no lock started or finished
+  meanwhile; keys a flow loaded after a lock are torn down again. A flow that ends after a lock leads to the
   unlock screen (or the login screen when no account is stored), for both the login and the unlock
   flow.
 - `AuthRepository.isVaultUnlocked` tells the presentation layer whether keys are loaded.
