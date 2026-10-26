@@ -90,7 +90,8 @@ final class MockVaultRepository: VaultRepository {
         return base.filter { $0.name.localizedCaseInsensitiveContains(query) }
     }
 
-    func itemCounts() async throws -> [SidebarSelection: Int] { [:] }
+    var stubbedItemCounts: [SidebarSelection: Int] = [:]
+    func itemCounts() async throws -> [SidebarSelection: Int] { stubbedItemCounts }
 
     func itemDetail(id: String) async throws -> VaultItem {
         guard let item = populatedItems.first(where: { $0.id == id }) else {
@@ -144,6 +145,18 @@ final class MockVaultRepository: VaultRepository {
     var stubbedPermanentDeleteError: Error?
     private(set) var permanentDeleteCallCount: Int = 0
     private(set) var lastPermanentDeletedId: String?
+
+    var stubbedPermanentDeleteItemsError: Error?
+    private(set) var permanentDeleteItemsCalls: [[String]] = []
+
+    @discardableResult
+    func permanentDeleteItems(ids: [String]) async throws -> Int {
+        permanentDeleteItemsCalls.append(ids)
+        if let error = stubbedPermanentDeleteItemsError { throw error }
+        let before = populatedItems.count
+        populatedItems.removeAll { ids.contains($0.id) && $0.isDeleted }
+        return before - populatedItems.count
+    }
 
     func permanentDeleteItem(id: String) async throws {
         permanentDeleteCallCount += 1

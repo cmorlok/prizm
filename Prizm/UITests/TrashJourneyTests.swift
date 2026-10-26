@@ -88,4 +88,30 @@ final class TrashJourneyTests: PrizmUITestCase {
 
         try UITestPrerequisite.serverWrites()
     }
+
+    // MARK: - Empty Trash (fix-empty-trash)
+
+    /// Empty Trash syncs before it asks. The test vault has no server, so the refresh fails: the
+    /// user sees the D2 message and nothing is deleted.
+    func testEmptyTrash_refreshFails_deletesNothing() throws {
+        openTrash()
+        XCTAssertTrue(app.element(Fixture.row(Fixture.trashed)).waitForExistence(timeout: 5))
+        let button = app.buttons[AccessibilityID.Trash.emptyTrashButton]
+        XCTAssertTrue(button.waitForExistence(timeout: 5), "Trash must offer Empty Trash")
+        XCTAssertTrue(button.isEnabled, "Enabled while Trash has items")
+
+        button.click()
+
+        let message = app.staticTexts["Couldn't refresh the trash. Try again."]
+        XCTAssertTrue(message.waitForExistence(timeout: 15), "The refresh error must be shown")
+        // The Touch Bar repeats the alert's buttons; only the alert's own "OK" can be clicked.
+        let sheetOK = app.sheets.buttons["OK"].firstMatch
+        (sheetOK.exists ? sheetOK : app.dialogs.buttons["OK"].firstMatch).click()
+        XCTAssertTrue(app.element(Fixture.row(Fixture.trashed)).exists, "Nothing may be deleted")
+    }
+
+    /// The button is not offered outside Trash.
+    func testEmptyTrash_notOfferedOutsideTrash() throws {
+        XCTAssertFalse(app.buttons[AccessibilityID.Trash.emptyTrashButton].waitForExistence(timeout: 2))
+    }
 }

@@ -94,6 +94,7 @@ final class VaultBrowserViewModel: ObservableObject {
     private let deleteFolderUseCase:      any DeleteFolderUseCase
     private let moveItemUseCase:          any MoveItemToFolderUseCase
     private let setFavoriteUseCase:       any SetFavoriteUseCase
+    private let emptyTrashUseCase:        any EmptyTrashUseCase
     private let createCollectionUseCase:  any CreateCollectionUseCase
     private let renameCollectionUseCase:  any RenameCollectionUseCase
     private let deleteCollectionUseCase:  any DeleteCollectionUseCase
@@ -161,6 +162,7 @@ final class VaultBrowserViewModel: ObservableObject {
         deleteFolder:      any DeleteFolderUseCase,
         moveItem:          any MoveItemToFolderUseCase,
         setFavorite:       any SetFavoriteUseCase,
+        emptyTrash:        any EmptyTrashUseCase,
         createCollection:  any CreateCollectionUseCase,
         renameCollection:  any RenameCollectionUseCase,
         deleteCollection:  any DeleteCollectionUseCase,
@@ -177,6 +179,7 @@ final class VaultBrowserViewModel: ObservableObject {
         self.deleteFolderUseCase    = deleteFolder
         self.moveItemUseCase        = moveItem
         self.setFavoriteUseCase     = setFavorite
+        self.emptyTrashUseCase      = emptyTrash
         self.createCollectionUseCase = createCollection
         self.renameCollectionUseCase = renameCollection
         self.deleteCollectionUseCase = deleteCollection
@@ -306,6 +309,9 @@ final class VaultBrowserViewModel: ObservableObject {
         createItemType    = nil
         editSheetOpen     = false
         actionError       = nil
+        emptyTrashConfirmation = nil
+        isEmptyingTrash   = false
+        announcement      = nil
     }
 
     /// Accepts vault data again. Called by `RootViewModel` when it shows the unlocked vault.
@@ -454,6 +460,98 @@ final class VaultBrowserViewModel: ObservableObject {
                 // No alert for a request from a session that has ended (lock or sign-out meanwhile).
                 guard isCurrent(generation) else { return }
                 actionError = "Couldn't update favorite. \(error.localizedDescription)"
+            }
+        }
+    }
+
+    // MARK: - Empty Trash
+
+    /// The question shown before Empty Trash deletes anything; nil when no confirmation is pending.
+    struct EmptyTrashConfirmation: Equatable {
+        let ids: [String]
+        var title: String { ids.count == 1 ? "Permanently delete 1 item?" : "Permanently delete \(ids.count) items?" }
+        var message: String { "This can't be undone." }
+    }
+
+    @Published private(set) var emptyTrashConfirmation: EmptyTrashConfirmation?
+    /// True from the start of Empty Trash until its outcome is known.
+    @Published private(set) var isEmptyingTrash = false
+
+    /// Empty Trash is offered only while Trash has items and no Empty Trash is running.
+    var canEmptyTrash: Bool { (itemCounts[.trash] ?? 0) > 0 && !isEmptyingTrash }
+    /// A status message for VoiceOver; the view announces it when it changes.
+    @Published private(set) var announcement: String?
+
+    /// Starts Empty Trash: syncs, then asks for confirmation with the count from the fresh data.
+    /// Nothing is deleted before `confirmEmptyTrash()` (fix-empty-trash, D2).
+    func beginEmptyTrash() {
+        guard !isEmptyingTrash else { return }
+        isEmptyingTrash = true
+        announcement = nil
+        let generation = sessionGeneration
+        Task {
+            do {
+                let ids = try await emptyTrashUseCase.prepare()
+                guard isCurrent(generation) else { return }
+                handleSyncCompleted(syncedAt: Date())
+                if ids.isEmpty {
+                    isEmptyingTrash = false
+                } else {
+                    emptyTrashConfirmation = EmptyTrashConfirmation(ids: ids)
+                }
+            } catch {
+                guard isCurrent(generation) else { return }
+                isEmptyingTrash = false
+                actionError = error.localizedDescription
+            }
+        }
+    }
+
+    /// The user cancelled, or the alert went away. Does not end a delete that already started.
+    func cancelEmptyTrash() {
+        emptyTrashConfirmation = nil
+        if !isDeletingTrash { isEmptyingTrash = false }
+    }
+
+    private var isDeletingTrash = false
+
+    /// Deletes exactly the ids of `confirmation`, the one the user confirmed, then reports the
+    /// outcome (D3, D4). Takes the confirmation from the alert, so it works whether SwiftUI closes
+    /// the alert before or after running the button's action.
+    func confirmEmptyTrash(_ confirmation: EmptyTrashConfirmation) {
+        guard !isDeletingTrash else { return }
+        emptyTrashConfirmation = nil
+        isEmptyingTrash = true
+        isDeletingTrash = true
+        let generation = sessionGeneration
+        Task {
+            defer {
+                isDeletingTrash = false
+                if isCurrent(generation) { isEmptyingTrash = false }
+            }
+            do {
+                let result = try await emptyTrashUseCase.execute(ids: confirmation.ids)
+                guard isCurrent(generation) else { return }
+                itemSelection = nil
+                if result.synced {
+                    handleSyncCompleted(syncedAt: Date())
+                } else {
+                    refreshItems()
+                    refreshCounts()
+                }
+                // Nothing deleted: the alert below says why; "0 items deleted" would only add noise.
+                if result.deleted > 0 {
+                    announcement = result.deleted == 1 ? "1 item permanently deleted" : "\(result.deleted) items permanently deleted"
+                }
+                if result.remaining > 0 {
+                    let count = result.remaining == 1 ? "1 item" : "\(result.remaining) items"
+                    actionError = result.failure == .connection
+                        ? "\(count) could not be deleted. Check your connection and try again."
+                        : "\(count) could not be deleted. You may not have permission to delete them."
+                }
+            } catch {
+                guard isCurrent(generation) else { return }
+                actionError = error.localizedDescription
             }
         }
     }

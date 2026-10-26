@@ -109,6 +109,15 @@ protocol PrizmAPIClientProtocol: Actor {
     /// Reference: Bitwarden Server API DELETE /api/ciphers/{id}
     func permanentDeleteCipher(id: String) async throws
 
+    /// DELETE `/api/ciphers` with `{"ids": [...]}` — permanently deletes the given ciphers, the call
+    /// the web vault makes when all items in Trash are selected and deleted.
+    ///
+    /// Not to be confused with `POST /api/ciphers/purge`, the "Purge vault" action, which deletes
+    /// every item the user owns, trashed or not, and on Vaultwarden every folder
+    /// (`vaultwarden/src/api/core/ciphers.rs` `purge_personal_vault`; Bitwarden
+    /// `CiphersController.PostPurge`). Prizm has no method for it (fix-empty-trash, D5).
+    func permanentDeleteCiphers(ids: [String]) async throws
+
     /// PUT `/api/ciphers/{id}/restore` — restores a trashed cipher to the active vault.
     ///
     /// Clears `deletedDate` on the server. The item becomes visible in the active vault again.
@@ -746,6 +755,19 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
         }
     }
 
+    func permanentDeleteCiphers(ids: [String]) async throws {
+        guard let base = baseURL else { throw APIError.baseURLNotSet }
+        let url = base.appendingPathComponent("api/ciphers")
+        var request = baseRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = accessToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = try JSONEncoder().encode(["ids": ids])
+        try await performEmpty(request: request)
+    }
+
     // MARK: - restoreCipher
 
     func restoreCipher(id: String) async throws {
@@ -1144,7 +1166,7 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
     /// Sends `request` and checks the HTTP status code, discarding the response body.
     ///
     /// Used for endpoints that return 200/204 with no meaningful response body
-    /// (soft-delete, restore, purge). Throws `APIError.httpError` on non-2xx responses.
+    /// (soft-delete, restore, permanent delete). Throws `APIError.httpError` on non-2xx responses.
     private func performEmpty(request: URLRequest) async throws {
         let (data, response) = try await session.data(for: request)
 

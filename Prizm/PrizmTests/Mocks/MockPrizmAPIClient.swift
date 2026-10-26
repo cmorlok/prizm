@@ -98,7 +98,11 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
         return resp
     }
 
+    /// Runs while the sync request is "in flight", for example to lock the vault meanwhile.
+    nonisolated(unsafe) var whileFetchingSync: (@Sendable () async -> Void)?
+
     func fetchSync() async throws -> SyncResponse {
+        await whileFetchingSync?()
         if syncDelay > 0 {
             try await Task.sleep(nanoseconds: UInt64(syncDelay * 1_000_000_000))
         }
@@ -185,6 +189,19 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
         permanentDeleteCallCount += 1
         lastPermanentDeletedId = id
         if let err = permanentDeleteShouldThrow { throw err }
+    }
+
+    // MARK: - Stubs: permanentDeleteCiphers (bulk)
+
+    nonisolated(unsafe) var bulkDeleteCalls: [[String]] = []
+    /// Throws on the call with this index (0-based), to simulate a failing chunk.
+    nonisolated(unsafe) var bulkDeleteFailsOnCall: Int?
+
+    func permanentDeleteCiphers(ids: [String]) async throws {
+        bulkDeleteCalls.append(ids)
+        if bulkDeleteFailsOnCall == bulkDeleteCalls.count - 1 {
+            throw APIError.httpError(statusCode: 400, body: "")
+        }
     }
 
     // MARK: - Stubs: restoreCipher

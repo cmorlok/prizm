@@ -371,6 +371,38 @@ actor VaultRepositoryImpl: VaultRepository {
         logger.info("Vault item permanently deleted: \(id, privacy: .public)")
     }
 
+    /// Bulk permanent delete for Empty Trash, `DELETE /api/ciphers` in chunks of 500 (the official
+    /// cloud's limit; harmless on self-hosted servers).
+    ///
+    /// Security goal: only items that are in Trash are ever sent, even if `ids` holds others; the
+    /// servers do not check that themselves (fix-empty-trash, D1). The items of each chunk that
+    /// succeeded leave the cache. A failing chunk does not stop the others: Vaultwarden aborts a
+    /// whole request at its first refused id (in arbitrary order), so later chunks may still go
+    /// through; the first failure is thrown at the end.
+    @discardableResult
+    func permanentDeleteItems(ids: [String]) async throws -> Int {
+        let requested = Set(ids)
+        let trashed = items.filter { $0.isDeleted && requested.contains($0.id) }.map(\.id)
+        var deletedCount = 0
+        var firstFailure: Error?
+        for start in stride(from: 0, to: trashed.count, by: 500) {
+            let chunk = Array(trashed[start..<min(start + 500, trashed.count)])
+            do {
+                try await apiClient.permanentDeleteCiphers(ids: chunk)
+            } catch {
+                if firstFailure == nil { firstFailure = error }
+                continue
+            }
+            let deleted = Set(chunk)
+            items.removeAll { deleted.contains($0.id) }
+            deletedCount += chunk.count
+            buildIndexes()
+        }
+        logger.info("Empty Trash: \(deletedCount, privacy: .public) of \(trashed.count, privacy: .public) item(s) permanently deleted")
+        if let firstFailure { throw PermanentDeleteError(deleted: deletedCount, underlying: firstFailure) }
+        return deletedCount
+    }
+
     /// Restores the trashed item with `id` by calling `PUT /api/ciphers/{id}/restore`.
     ///
     /// - Security goal: same as `deleteItem` — only the cipher ID is sent; no key material.

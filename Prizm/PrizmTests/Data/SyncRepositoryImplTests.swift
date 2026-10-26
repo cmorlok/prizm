@@ -24,6 +24,8 @@ final class SyncRepositoryImplTests: XCTestCase {
             vaultKeyCache:   VaultKeyCache(),
             orgKeyCache:     OrgKeyCache()
         )
+        // A sync only stores its result while the vault is unlocked (fix-empty-trash D4).
+        await mockCrypto.unlockWith(keys: CryptoKeys(encryptionKey: Data(count: 32), macKey: Data(count: 32)))
     }
 
     // MARK: - T025: sync()

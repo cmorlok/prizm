@@ -54,29 +54,6 @@ The system SHALL allow the user to permanently delete a single item that is alre
 - **WHEN** the API call fails
 - **THEN** an error alert is shown and the item remains in the Trash list
 
-### Requirement: User can empty trash
-The system SHALL provide an "Empty Trash" action that permanently deletes all items in the trash via `DELETE /ciphers/purge`. A confirmation alert displaying the number of items to be deleted SHALL be required before proceeding.
-
-#### Scenario: Empty trash action is available when trash contains items
-- **WHEN** the Trash view is selected and there is at least one trashed item
-- **THEN** an "Empty Trash" button is visible in the toolbar
-
-#### Scenario: Empty trash action is disabled when trash is empty
-- **WHEN** the Trash view contains no items
-- **THEN** the "Empty Trash" button is absent or disabled
-
-#### Scenario: Empty trash confirmation required
-- **WHEN** the user clicks "Empty Trash"
-- **THEN** a confirmation alert states the number of items that will be permanently deleted
-
-#### Scenario: Empty trash confirmed
-- **WHEN** the user confirms empty-trash
-- **THEN** the system calls `DELETE /ciphers/purge`, all trashed items are removed, and the Trash list becomes empty
-
-#### Scenario: Empty trash network failure
-- **WHEN** the API call fails
-- **THEN** an error alert is shown and the Trash list is unchanged
-
 ### Requirement: Trash sidebar section displays soft-deleted items
 The system SHALL display a "Trash" entry in the sidebar that, when selected, shows all vault items whose `deletedDate` is non-nil. Trashed items SHALL NOT appear in the main active vault list.
 
