@@ -34,9 +34,21 @@ DEVELOPMENT_TEAM = AB12CD34EF
 - Xcode → Settings → Accounts → select your Apple ID → the Team ID is in parentheses
 - Or: [developer.apple.com](https://developer.apple.com) → Account → Membership → Team ID
 
-A free Apple ID ("Personal Team") works for local builds. You do not need a paid account to run the app on your own Mac.
+**Bundle identifier.** The app's default bundle identifier, `de.b0x42.Prizm`, is registered to the
+maintainer's team, and Apple allows each identifier in only one team. If you sign with any other
+team, also set an identifier you own, for example a reverse domain name of yours:
 
-> **The build will fail without this file.** `LocalConfig.xcconfig` is git-ignored so your Team ID never appears in the repository.
+```
+PRIZM_BUNDLE_IDENTIFIER = com.example.Prizm
+```
+
+Without it, signing fails with "The app identifier "de.b0x42.Prizm" cannot be registered to your
+development team because it is not available."
+
+A free Apple ID ("Personal Team") is enough to build and run on your own Mac, as long as you set
+your own bundle identifier. You do not need a paid account.
+
+> **The build will fail without this file.** `LocalConfig.xcconfig` is git-ignored so your Team ID and bundle identifier never appear in the repository.
 
 ## Building
 
@@ -54,8 +66,13 @@ Or build from the command line:
 xcodebuild -project "Prizm/Prizm.xcodeproj" \
            -scheme "Prizm" \
            -configuration Debug \
+           -allowProvisioningUpdates \
            build
 ```
+
+`-allowProvisioningUpdates` lets automatic signing create your development provisioning profile
+from the command line, as Xcode does on its own. It needs your Apple ID in Xcode → Settings →
+Accounts.
 
 ## Running Tests
 
@@ -65,7 +82,8 @@ Press `⌘U` in Xcode, or from the command line:
 xcodebuild test \
   -project "Prizm/Prizm.xcodeproj" \
   -scheme "Prizm" \
-  -destination "platform=macOS"
+  -destination "platform=macOS" \
+  -allowProvisioningUpdates
 ```
 
 All tests must pass before merging to `main`. The CI workflow enforces this on every push and pull request.

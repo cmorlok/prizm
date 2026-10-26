@@ -24,6 +24,17 @@ jobs:
       - name: Install xcpretty
         run: gem install xcpretty --no-document
 
+      - name: Check that no Team ID is committed
+        # The team comes from the git-ignored LocalConfig.xcconfig. A value in the project file
+        # overrides it for everyone (openspec change fix-app-signing-settings). Also catches the
+        # forms Xcode writes: conditional settings and TargetAttributes' DevelopmentTeam.
+        run: |
+          if grep -nE '"?DEVELOPMENT_TEAM(\[[^]]*\])?"? = "?[A-Za-z0-9]+"?;|DevelopmentTeam = "?[A-Za-z0-9]+"?;' \
+              Prizm/Prizm.xcodeproj/project.pbxproj; then
+            echo "::error::DEVELOPMENT_TEAM is set in project.pbxproj. Set it in Prizm/LocalConfig.xcconfig instead (see DEVELOPMENT.md)."
+            exit 1
+          fi
+
       - name: Create CI signing config
         run: cp Prizm/LocalConfig.xcconfig.template Prizm/LocalConfig.xcconfig
 
@@ -33,10 +44,32 @@ jobs:
             -project "Prizm/Prizm.xcodeproj" \
             -scheme "Prizm" \
             -configuration Debug \
+            -derivedDataPath build/DerivedData \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             build | xcpretty || exit ${PIPESTATUS[0]}
+
+      - name: Check the app's bundle identifier
+        # Unsigned builds don't require a bundle identifier, so a missing one only shows up in
+        # signed builds. It went missing once unnoticed (openspec change fix-app-signing-settings).
+        run: |
+          plist="build/DerivedData/Build/Products/Debug/Prizm.app/Contents/Info.plist"
+          if [ ! -f "$plist" ]; then
+            echo "::error::Built app not found at $plist. Check the build step's output."
+            exit 1
+          fi
+          id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist" 2>/dev/null || true)"
+          if [ -z "$id" ]; then
+            echo "::error::The built app has no CFBundleIdentifier. Set PRODUCT_BUNDLE_IDENTIFIER for the Prizm target."
+            exit 1
+          fi
+          # CI builds with the unchanged template, so it must get exactly the default.
+          if [ "$id" != "de.b0x42.Prizm" ]; then
+            echo "::error::CFBundleIdentifier is '$id', expected de.b0x42.Prizm for CI and release builds. Personal identifiers belong in Prizm/LocalConfig.xcconfig."
+            exit 1
+          fi
+          echo "CFBundleIdentifier: $id"
 
       - name: Test (no signing)
         run: |

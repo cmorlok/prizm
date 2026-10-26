@@ -50,13 +50,14 @@ open "Prizm/Prizm.xcodeproj"
 
 # Build
 xcodebuild -project "Prizm/Prizm.xcodeproj" \
-           -scheme "Prizm" -configuration Debug build
+           -scheme "Prizm" -configuration Debug -allowProvisioningUpdates build
 
 # Run all tests
 xcodebuild test \
   -project "Prizm/Prizm.xcodeproj" \
   -scheme "Prizm" \
-  -destination "platform=macOS"
+  -destination "platform=macOS" \
+  -allowProvisioningUpdates
 ```
 
 ## Active Changes
