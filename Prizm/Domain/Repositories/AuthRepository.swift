@@ -72,6 +72,10 @@ protocol AuthRepository: AnyObject {
     /// Does NOT clear Keychain tokens — session survives lock/unlock.
     func lockVault() async
 
+    /// Whether vault keys are loaded. A flow that ends after a lock checks it before showing the
+    /// vault (lock-during-unlock-sync).
+    var isVaultUnlocked: Bool { get async }
+
     // MARK: - Biometric unlock
 
     /// Whether the device hardware supports biometric authentication, regardless of the

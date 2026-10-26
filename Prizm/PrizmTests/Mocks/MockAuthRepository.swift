@@ -73,6 +73,7 @@ final class MockAuthRepository: AuthRepository {
         guard case .success(let account) = stubbedLoginResult else {
             throw AuthError.invalidCredentials
         }
+        stubbedIsVaultUnlocked = true
         return account
     }
 
@@ -87,6 +88,19 @@ final class MockAuthRepository: AuthRepository {
 
     func lockVault() async {
         lockVaultCalledCount += 1
+        stubbedIsVaultUnlocked = false
+    }
+
+    /// True until `lockVault()`, like the real repository after an unlock.
+    var stubbedIsVaultUnlocked = true
+    /// Runs after the state is read and before it is returned, to hold a caller in that window.
+    var whileReadingIsVaultUnlocked: (() async -> Void)?
+    var isVaultUnlocked: Bool {
+        get async {
+            let unlocked = stubbedIsVaultUnlocked
+            await whileReadingIsVaultUnlocked?()
+            return unlocked
+        }
     }
 
     // MARK: - Biometric unlock

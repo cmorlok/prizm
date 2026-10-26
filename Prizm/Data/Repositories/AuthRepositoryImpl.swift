@@ -492,6 +492,10 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
 
     // MARK: - Lock
 
+    var isVaultUnlocked: Bool {
+        get async { await crypto.isUnlocked }
+    }
+
     /// Zeroes and drops all key material: the vault key, every per-item key and every org key.
     /// The one teardown path; `signOut()` calls it too.
     func lockVault() async {
