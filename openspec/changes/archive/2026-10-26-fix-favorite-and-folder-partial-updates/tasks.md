@@ -24,7 +24,8 @@ dependencies; can ship as a patch release before or together with `fix-cipher-ed
 
 ## 4. Release (0.25 d)
 
-- [ ] 4.1 Mandatory security review: the star path sends no encrypted data and no key is loaded; no item names in logs.
+- [x] 4.1 Mandatory security review: the star path sends no encrypted data and no key is loaded; no item names in logs.
+  Done by the review subagent; results under Results.
 - [x] 4.2 CHANGELOG "Fixed": the favorite star no longer re-saves the whole item (which could remove passkeys or password history) and now works on view-only organization items; moving organization items to a folder no longer makes them look personal or breaks the next edit. "Changed": a failed favorite toggle now shows an error.
 - [x] 4.3 `openspec validate fix-favorite-and-folder-partial-updates --type change --strict`.
 
