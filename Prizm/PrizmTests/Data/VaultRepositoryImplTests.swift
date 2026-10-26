@@ -282,7 +282,7 @@ final class VaultRepositoryImplTests: XCTestCase {
     func testItemsForOrganization_usesPrebuiltIndex() async throws {
         let orgId  = "org-1"
         let colId  = "col-1"
-        let org    = Organization(id: orgId, name: "Acme", role: .user)
+        let org    = Organization(id: orgId, name: "Acme", role: .user, membershipId: .notSent)
         let col    = OrgCollection(id: colId, organizationId: orgId, name: "Dev")
         let item   = VaultItem(
             id: "i1", name: "Org Item", isFavorite: false, isDeleted: false,

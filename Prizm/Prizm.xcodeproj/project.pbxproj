@@ -191,6 +191,8 @@
 		960765B0AB097AD5A024293E /* LegacyPreloginEndpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFDBB17F6E2AA8597455939D /* LegacyPreloginEndpoint.swift */; };
 		DB6006E4E878A9C9C893C91A /* SetFavoriteUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33F70D5AD25DD2A43576733F /* SetFavoriteUseCase.swift */; };
 		918757C4B8FDA02ACD662167 /* SetFavoriteUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47EF6BBB6170F5C4F6D7AB9B /* SetFavoriteUseCaseImpl.swift */; };
+		5FB03807205EB54F055B4317 /* CollectionAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C7F64FECEB4D5C21395C438 /* CollectionAccess.swift */; };
+		EC7F582F249CF763AEA0B40E /* LegacyCollectionCreateWithoutMembership.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7755C404FA07652871D0869 /* LegacyCollectionCreateWithoutMembership.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -397,6 +399,8 @@
 		BFDBB17F6E2AA8597455939D /* LegacyPreloginEndpoint.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LegacyPreloginEndpoint.swift; sourceTree = "<group>"; };
 		33F70D5AD25DD2A43576733F /* SetFavoriteUseCase.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SetFavoriteUseCase.swift; sourceTree = "<group>"; };
 		47EF6BBB6170F5C4F6D7AB9B /* SetFavoriteUseCaseImpl.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SetFavoriteUseCaseImpl.swift; sourceTree = "<group>"; };
+		0C7F64FECEB4D5C21395C438 /* CollectionAccess.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CollectionAccess.swift; sourceTree = "<group>"; };
+		C7755C404FA07652871D0869 /* LegacyCollectionCreateWithoutMembership.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LegacyCollectionCreateWithoutMembership.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -585,6 +589,7 @@
 				15F3A553820942CF9B3935FD /* SyncResponse.swift */,
 				D7C2BEABB748471395CEC2C6 /* RawFolder.swift */,
 				AA1008000000000000000008 /* AttachmentDTO.swift */,
+				0C7F64FECEB4D5C21395C438 /* CollectionAccess.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -617,6 +622,7 @@
 				AA100A00000000000000000A /* VaultKeyCache.swift */,
 				AA100B00000000000000000B /* VaultKeyServiceImpl.swift */,
 				CC1001000000000000000001 /* EmbeddedBiometricUnlock.swift */,
+				31D2B1A0986646E77444802B /* Legacy */,
 			);
 			path = Repositories;
 			sourceTree = "<group>";
@@ -915,6 +921,14 @@
 			isa = PBXGroup;
 			children = (
 				BFDBB17F6E2AA8597455939D /* LegacyPreloginEndpoint.swift */,
+			);
+			path = Legacy;
+			sourceTree = "<group>";
+		};
+		31D2B1A0986646E77444802B /* Legacy */ = {
+			isa = PBXGroup;
+			children = (
+				C7755C404FA07652871D0869 /* LegacyCollectionCreateWithoutMembership.swift */,
 			);
 			path = Legacy;
 			sourceTree = "<group>";
@@ -1232,6 +1246,8 @@
 				960765B0AB097AD5A024293E /* LegacyPreloginEndpoint.swift in Sources */,
 				DB6006E4E878A9C9C893C91A /* SetFavoriteUseCase.swift in Sources */,
 				918757C4B8FDA02ACD662167 /* SetFavoriteUseCaseImpl.swift in Sources */,
+				5FB03807205EB54F055B4317 /* CollectionAccess.swift in Sources */,
+				EC7F582F249CF763AEA0B40E /* LegacyCollectionCreateWithoutMembership.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -188,6 +188,9 @@ final class CollectionUseCaseTests: XCTestCase {
             encryptionKey: Data(repeating: 0x11, count: 32),
             macKey:        Data(repeating: 0x22, count: 32)
         ))
+        await sut.populate(items: [], folders: [],
+                           organizations: [Organization(id: "org-1", name: "Acme", role: .admin, membershipId: .known("ou-me"))],
+                           collections: [], syncedAt: Date())
 
         // Stub API response
         mockAPI.createCollectionResponse = RawCollection(
@@ -219,6 +222,9 @@ final class CollectionUseCaseTests: XCTestCase {
             encryptionKey: Data(repeating: 0x11, count: 32),
             macKey:        Data(repeating: 0x22, count: 32)
         ))
+        await sut.populate(items: [], folders: [],
+                           organizations: [Organization(id: "org-1", name: "Acme", role: .admin, membershipId: .known("ou-me"))],
+                           collections: [], syncedAt: Date())
 
         let plaintext = "Secret Collection"
         _ = try await sut.createCollection(name: plaintext, organizationId: "org-1")
@@ -255,6 +261,9 @@ final class CollectionUseCaseTests: XCTestCase {
             encryptionKey: Data(repeating: 0x11, count: 32),
             macKey:        Data(repeating: 0x22, count: 32)
         ))
+        await sut.populate(items: [], folders: [],
+                           organizations: [Organization(id: "org-1", name: "Acme", role: .admin, membershipId: .known("ou-me"))],
+                           collections: [], syncedAt: Date())
 
         let existing = OrgCollection(id: "col-1", organizationId: "org-1", name: "Old Name")
         await sut.populate(items: [], folders: [], organizations: [],
