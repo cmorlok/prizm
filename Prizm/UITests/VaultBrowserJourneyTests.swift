@@ -197,4 +197,24 @@ final class VaultBrowserJourneyTests: PrizmUITestCase {
                       "Unlock screen should appear after ⌘L")
         XCTAssertTrue(app.unlockSubtitle.exists, "Unlock screen should name the test account")
     }
+
+    // MARK: - org-items-in-personal-folders 4.2
+
+    /// An organization item filed in a personal folder shows in that folder. That it stays in its
+    /// collection is covered by `OrgItemsInFoldersTests`; the organization is collapsed in the
+    /// sidebar by default. Moving one there by drag and drop saves on the server, which the test
+    /// states don't have.
+    func testOrgItemFiledInFolder_showsInFolder() throws {
+        app.terminate()
+        app.launch(in: UITestLaunch.vault + ["--ui-test-org-folders"])
+        XCTAssertTrue(app.waitForVaultBrowser(), "Vault browser must be visible")
+
+        app.selectSidebarRow("Work")
+        let row = app.element(Fixture.row("omega"))
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "The org item is listed in the folder it is filed in")
+        // The row's identifier sits on each of its texts, so the badge is one of those texts.
+        let badge = app.staticTexts.matching(NSPredicate(
+            format: "identifier == %@ AND (label == %@ OR value == %@)", Fixture.row("omega"), "Acme", "Acme")).firstMatch
+        XCTAssertTrue(badge.exists, "It still shows its organization")
+    }
 }
