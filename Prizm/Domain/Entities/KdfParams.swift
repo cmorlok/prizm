@@ -1,7 +1,7 @@
 import Foundation
 
 /// Key derivation function algorithm identifiers as defined by the Bitwarden API.
-/// Returned by the `/accounts/prelogin` endpoint and persisted in the Keychain.
+/// Returned by the prelogin endpoint (`/identity/accounts/prelogin/password`) and persisted in the Keychain.
 nonisolated enum KdfType: Int, Codable, Equatable {
     /// PBKDF2-SHA256 (Bitwarden default, kdfType = 0).
     case pbkdf2 = 0

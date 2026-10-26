@@ -7,7 +7,7 @@ import os.log
 /// Concrete implementation of `AuthRepository`.
 ///
 /// Orchestrates the full Bitwarden login flow:
-///   1. POST `/accounts/prelogin` → KDF params
+///   1. POST `/identity/accounts/prelogin/password` → KDF params
 ///   2. Derive master key (PBKDF2 or Argon2id) locally
 ///   3. POST `/connect/token` → access + refresh tokens
 ///   4. Decrypt encUserKey → vault symmetric keys
