@@ -11,6 +11,7 @@
 #   - shell-lint:       shellcheck on every *.sh in the repo
 #   - plists:           Info.plist, *.entitlements, ExportOptions.plist parse as property lists
 #   - xcschemes:        shared Xcode schemes are well-formed XML
+#   - compose-model:    .devcontainer/compose.yaml keeps the container contract (compose-model.sh)
 # Advisory (reported; blocking only with --strict):
 #   - openspec-specs:   main specs validate. Known debt: most upstream specs predate the
 #                       "## Purpose / ## Requirements" structure, so this fails on main today.
@@ -40,7 +41,7 @@ for arg in "$@"; do
   case "${arg}" in
     --strict) strict=1 ;;
     --swift-format) swift_format=1 ;;
-    -h|--help) sed -n '2,27p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help) sed -n '2,28p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) die "unknown option: ${arg}" ;;
   esac
 done
@@ -95,6 +96,8 @@ sys.exit(bad)
 PY
 }
 
+check_compose_model() { scripts/container/compose-model.sh; }
+
 check_xcschemes() {
   local files=()
   mapfile -t files < <(git ls-files '*.xcscheme')
@@ -127,6 +130,7 @@ check_swift_format() {
 
 run openspec-changes blocking check_openspec_changes
 run shell-lint       blocking check_shellcheck
+run compose-model    blocking check_compose_model
 run plists           blocking check_plists
 run xcschemes        blocking check_xcschemes
 run openspec-specs   advisory check_openspec_specs

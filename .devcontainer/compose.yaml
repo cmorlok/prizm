@@ -1,0 +1,87 @@
+# Compose project for the Prizm devcontainer and the on-demand Vaultwarden test rig.
+#
+# Opening the devcontainer starts only prizm-dev. The rig services carry the profile "rig" and
+# start only when a command names them (see .devcontainer/README.md). Never run
+# `docker compose down` or a bare `docker compose up` against this project: `down` removes
+# prizm-dev, and a bare `up` recreates it.
+#
+# No variable interpolation anywhere: the Dev Containers CLI reads this model with every profile
+# enabled, so a required variable would break opening the container.
+name: prizm
+
+x-vaultwarden: &vw
+  restart: "no"
+  environment:
+    # Must equal the clients' origin: attachment URLs are built from it.
+    DOMAIN: https://localhost:8443
+    # Loopback-only rig without SMTP: a fresh data dir must accept registrations, and
+    # registration returns the verification token directly.
+    SIGNUPS_ALLOWED: "true"
+    SIGNUPS_VERIFY: "false"
+    DISABLE_ICON_DOWNLOAD: "true"
+    LOG_LEVEL: info
+    # Off by default in Vaultwarden. Groups are part of collection access, and the org event log
+    # shows which client type made a change.
+    ORG_GROUPS_ENABLED: "true"
+    ORG_EVENTS_ENABLED: "true"
+
+services:
+  prizm-dev:
+    # Keep in sync with PRIZM_CONTAINER in scripts/lib/common.sh, which finds the container by
+    # this name. Only one Prizm devcontainer can run at a time under it.
+    container_name: prizm-dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Bump deliberately; see the version policy at the top of the Dockerfile.
+      args:
+        NODE_VERSION: "24.21.0"
+        ACTIONLINT_VERSION: "1.7.12"
+        SHELLCHECK_VERSION: "0.11.0"
+        GH_VERSION: "2.102.0"
+        OPENSPEC_VERSION: "1.14.1"
+        GSD_VERSION: "1.16.0"
+    # overrideCommand defaults to false for Compose; without a long-running command the image's
+    # CMD exits and the container stops.
+    command: ["sleep", "infinity"]
+    volumes:
+      # Fixed container path, independent of the clone's folder name or location on the host.
+      # Keep in sync with PRIZM_CONTAINER_WORKSPACE in scripts/lib/common.sh.
+      - ..:/workspaces/prizm
+      # The container user's home, so the Claude Code login, shell history and tool config
+      # survive container rebuilds. The host's home and the Docker socket are not mounted.
+      - prizm-dev-home:/home/developer
+
+  vaultwarden-1-37-4:
+    <<: *vw
+    # The server under test. Tag plus digest, so a re-pushed tag cannot change the server.
+    image: vaultwarden/server:1.37.4@sha256:efb3cde962015fcc036b2ea625242248611943b27212ebf4392841fb30fad055
+    profiles: [rig]
+    volumes: ["../dev-vault/1.37.4:/data"]
+
+  vaultwarden-1-37-3:
+    <<: *vw
+    # The comparison version, and the server the fixtures are authored on.
+    image: vaultwarden/server:1.37.3@sha256:1587c45feaa479f1f5e8af3b00eded36bff77bcf1880cf8dbf0541706dd470e0
+    profiles: [rig]
+    volumes: ["../dev-vault/1.37.3:/data"]
+
+  # TLS front for the clients on the Mac. It picks its upstream at request time, so it needs no
+  # depends_on and both Vaultwarden versions can run side by side.
+  edge:
+    image: nginx:1.30.5-alpine@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94
+    profiles: [rig]
+    restart: "no"
+    # Loopback only: the rig must not be reachable from other machines.
+    ports: ["127.0.0.1:8443:8443"]
+    volumes:
+      - ./rig/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../dev-vault/certs:/certs:ro
+      - ../dev-vault/nginx:/etc/nginx/rig:ro
+      - ../dev-vault/logs:/var/log/nginx/rig
+
+volumes:
+  prizm-dev-home:
+    # Explicit name: keeps the existing volume (Claude login, history) instead of creating an
+    # empty project-prefixed one.
+    name: prizm-dev-home
