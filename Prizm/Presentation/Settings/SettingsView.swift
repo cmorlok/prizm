@@ -22,7 +22,7 @@ struct SettingsView: View {
             case .biometryNotAvailable, .biometryNotEnrolled, .passcodeNotSet:
                 break
             default:
-                logger.error("Biometric availability check failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("Biometric availability check failed: \(ErrorLog.describe(error), privacy: .public)")
             }
         }
         return capable

@@ -28,6 +28,10 @@ string in `validationErrors`/`ValidationErrors` (keys in sorted order, so the re
 limit text. Empty strings are skipped. Anything else (not JSON, HTML, no message) gives no server
 message, and the description is "Server error <code>.". The message is cut at 300 characters.
 
+**Deviation:** with several validation keys, the official clients take the first key in the
+JSON's order. `JSONSerialization` keeps no order, so Prizm takes the first in sorted order. Only
+Bitwarden responses with several invalid fields are affected; Vaultwarden sends one key (`""`).
+
 Identity and API responses use the same order. On Vaultwarden all three fields carry the same text;
 on Bitwarden identity errors, `ErrorModel.Message` is the only readable one.
 
@@ -38,7 +42,11 @@ on Bitwarden identity errors, `ErrorModel.Message` is the only readable one.
   "decodingFailed", "baseURLNotSet")
 - `URLError`: "URLError <code>"
 - anything else: `"<domain> <code>"` of its `NSError` bridge, which for a Swift enum is the type
-  name and case index, with no associated values
+  name and a per-case code, with no associated values. `KeychainError` conforms to `LogSafeError`
+  to keep its OSStatus.
+
+`ErrorLog`'s conformances are `nonisolated`: actors log through it, and a main-actor conformance
+would fail the dynamic cast there.
 
 Every log call that writes an error with `privacy: .public` uses it. Error messages in logs are
 dropped on purpose: a message can quote user input or server text. The status, URL error code or

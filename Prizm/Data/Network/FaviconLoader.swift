@@ -69,7 +69,7 @@ actor FaviconLoader {
             cache.setObject(image, forKey: key)
             return image
         } catch {
-            logger.debug("Favicon fetch failed for \(domain, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            logger.debug("Favicon fetch failed for \(domain, privacy: .public): \(ErrorLog.describe(error), privacy: .public)")
             return nil
         }
     }

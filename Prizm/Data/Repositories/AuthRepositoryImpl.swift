@@ -321,7 +321,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         do {
             userId = try readString(key: KeychainKey.activeUserId)
         } catch {
-            logger.error("No active user ID in Keychain: \(error.localizedDescription, privacy: .public)")
+            logger.error("No active user ID in Keychain: \(ErrorLog.describe(error), privacy: .public)")
             throw AuthError.invalidCredentials
         }
 
@@ -332,7 +332,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         do {
             restoredAccount = try account(for: userId)
         } catch {
-            logger.error("Missing session data in Keychain: \(error.localizedDescription, privacy: .public)")
+            logger.error("Missing session data in Keychain: \(ErrorLog.describe(error), privacy: .public)")
             throw AuthError.invalidCredentials
         }
 
@@ -345,7 +345,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
             kdfJSON    = try readString(key: kdfKey)
             encUserKey = try readString(key: encKeyKey)
         } catch {
-            logger.error("Missing session data in Keychain: \(error.localizedDescription, privacy: .public)")
+            logger.error("Missing session data in Keychain: \(ErrorLog.describe(error), privacy: .public)")
             throw AuthError.invalidCredentials
         }
 
@@ -357,7 +357,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         do {
             kdfParams = try JSONDecoder().decode(KdfParams.self, from: kdfData)
         } catch {
-            logger.error("KDF params decode failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("KDF params decode failed: \(ErrorLog.describe(error), privacy: .public)")
             throw AuthError.invalidCredentials
         }
 
@@ -410,14 +410,14 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
                     } catch {
                         // Persisting the refreshed token failed — the next launch will use
                         // the old (expired) token and the user may be signed out unexpectedly.
-                        logger.error("Unlock: failed to persist refreshed tokens — next launch may require re-auth: \(error.localizedDescription, privacy: .public)")
+                        logger.error("Unlock: failed to persist refreshed tokens — next launch may require re-auth: \(ErrorLog.describe(error), privacy: .public)")
                     }
                     if DebugConfig.isEnabled {
                         logger.debug("[debug] unlock: access token refreshed successfully")
                     }
                 } catch {
                     // Refresh failed — keep the old token; sync will fail with 401 (non-fatal).
-                    logger.warning("Unlock: token refresh failed — sync may fail: \(error.localizedDescription, privacy: .public)")
+                    logger.warning("Unlock: token refresh failed — sync may fail: \(ErrorLog.describe(error), privacy: .public)")
                 }
             }
         } else {
@@ -441,7 +441,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         do {
             return try account(for: userId)
         } catch {
-            logger.error("Failed to reconstruct account for stored userId: \(error.localizedDescription, privacy: .public)")
+            logger.error("Failed to reconstruct account for stored userId: \(ErrorLog.describe(error), privacy: .public)")
             return nil
         }
     }
@@ -466,7 +466,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
                 do {
                     try keychain.delete(key: KeychainKey.user(userId, suffix))
                 } catch {
-                    logger.debug("Keychain delete \(suffix) skipped: \(error.localizedDescription, privacy: .public)")
+                    logger.debug("Keychain delete \(suffix) skipped: \(ErrorLog.describe(error), privacy: .public)")
                 }
             }
         }
@@ -474,7 +474,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         do {
             try keychain.delete(key: KeychainKey.activeUserId)
         } catch {
-            logger.debug("activeUserId delete skipped: \(error.localizedDescription, privacy: .public)")
+            logger.debug("activeUserId delete skipped: \(ErrorLog.describe(error), privacy: .public)")
         }
 
         // Use self.lockVault() rather than crypto.lockVault() directly so that the
@@ -538,7 +538,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
                 break
             }
         }
-        logger.error("Biometric availability check failed: \(error.localizedDescription, privacy: .public)")
+        logger.error("Biometric availability check failed: \(ErrorLog.describe(error), privacy: .public)")
     }
 
     func enableBiometricUnlock() async throws {
@@ -578,7 +578,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         do {
             restoredAccount = try account(for: userId)
         } catch {
-            logger.error("Missing session data for biometric unlock: \(error.localizedDescription, privacy: .public)")
+            logger.error("Missing session data for biometric unlock: \(ErrorLog.describe(error), privacy: .public)")
             throw AuthError.biometricUnavailable
         }
 
@@ -646,7 +646,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
                         try? writeString(newRefresh, key: KeychainKey.user(userId, "refreshToken"))
                     }
                 } catch {
-                    logger.warning("Biometric unlock: token refresh failed — sync may fail: \(error.localizedDescription, privacy: .public)")
+                    logger.warning("Biometric unlock: token refresh failed — sync may fail: \(ErrorLog.describe(error), privacy: .public)")
                 }
             }
         }
@@ -673,7 +673,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         do {
             restoredAccount = try account(for: userId)
         } catch {
-            logger.error("Missing session data for embedded biometric unlock: \(error.localizedDescription, privacy: .public)")
+            logger.error("Missing session data for embedded biometric unlock: \(ErrorLog.describe(error), privacy: .public)")
             throw AuthError.biometricUnavailable
         }
 
@@ -716,7 +716,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
                         try? writeString(newRefresh, key: KeychainKey.user(userId, "refreshToken"))
                     }
                 } catch {
-                    logger.warning("Embedded biometric: token refresh failed: \(error.localizedDescription, privacy: .public)")
+                    logger.warning("Embedded biometric: token refresh failed: \(ErrorLog.describe(error), privacy: .public)")
                 }
             }
         }
@@ -815,7 +815,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         do {
             env = try JSONDecoder().decode(ServerEnvironment.self, from: envData)
         } catch {
-            logger.error("Server environment decode failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("Server environment decode failed: \(ErrorLog.describe(error), privacy: .public)")
             throw AuthError.invalidCredentials
         }
         return Account(userId: userId, email: email, name: name, serverEnvironment: env)

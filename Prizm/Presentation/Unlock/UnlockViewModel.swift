@@ -97,11 +97,11 @@ final class UnlockViewModel: ObservableObject {
                 password = ""
                 await checkEnrollmentOrSync()
             } catch let err as AuthError {
-                logger.error("Unlock failed: \(err.localizedDescription, privacy: .public)")
+                logger.error("Unlock failed: \(ErrorLog.describe(err), privacy: .public)")
                 errorMessage = err.errorDescription
                 flowState    = .unlock
             } catch {
-                logger.error("Unlock failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("Unlock failed: \(ErrorLog.describe(error), privacy: .public)")
                 errorMessage = error.localizedDescription
                 flowState    = .unlock
             }
@@ -197,7 +197,7 @@ final class UnlockViewModel: ObservableObject {
             do {
                 try await auth.enableBiometricUnlock()
             } catch {
-                logger.error("Enable biometric unlock failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("Enable biometric unlock failed: \(ErrorLog.describe(error), privacy: .public)")
             }
             UserDefaults.standard.set(true, forKey: "biometricEnrollmentPromptShown")
             showEnrollmentPrompt = false
@@ -219,7 +219,7 @@ final class UnlockViewModel: ObservableObject {
             do {
                 try await auth.signOut()
             } catch {
-                logger.error("Sign-out failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("Sign-out failed: \(ErrorLog.describe(error), privacy: .public)")
             }
             flowState = .login
         }
@@ -254,7 +254,7 @@ final class UnlockViewModel: ObservableObject {
             })
             flowState = .vault
         } catch {
-            logger.error("Post-unlock sync failed (non-fatal): \(error.localizedDescription, privacy: .public)")
+            logger.error("Post-unlock sync failed (non-fatal): \(ErrorLog.describe(error), privacy: .public)")
             flowState = .vault
         }
     }
