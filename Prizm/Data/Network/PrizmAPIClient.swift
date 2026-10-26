@@ -5,7 +5,8 @@ import os.log
 
 /// Bitwarden REST API client for auth and vault sync operations.
 ///
-/// All requests include the `X-Client-Version` and `Bitwarden-Client-Version` headers.
+/// All requests to the configured server include `Device-Type`, `Bitwarden-Client-Name` and
+/// `Bitwarden-Client-Version` (values in `Config`).
 /// The identity token request additionally sends `client_id` and `deviceType` as form parameters.
 /// Reference: https://contributing.bitwarden.com/architecture/adr/integration-identifiers/
 /// Missing or invalid headers result in `400 Bad Request` / `403 Forbidden` from the server.
@@ -397,7 +398,7 @@ nonisolated struct AttachmentDownloadResponse: Decodable {
 /// URLSession-backed Bitwarden API client.
 ///
 /// All requests include the required Bitwarden client identification headers:
-/// - `X-Client-Version: "2024.12.0"` (version string, required by upstream Bitwarden)
+/// - `Device-Type: 7` (MacOsDesktop) and `Bitwarden-Client-Name: desktop`
 /// - `Bitwarden-Client-Version: "2024.12.0"` (>= 2024.12.0 required for SSH key support on Vaultwarden)
 ///
 /// The identity token request additionally sends these as form body parameters:
@@ -424,11 +425,10 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
     // deviceType 7 = macOS desktop per the Bitwarden DeviceType enum:
     // https://github.com/bitwarden/server/blob/main/src/Core/Enums/DeviceType.cs
     private enum ClientHeaders {
-        static let clientId      = "desktop"
-        // Vaultwarden gates SSH key ciphers (type 5) behind >= 2024.12.0.
-        static let clientVersion = "2024.12.0"
-        static let deviceType    = "7"
-        static let userAgent     = "Prizm/2024.12.0"
+        static let clientId      = Config.clientName
+        static let clientVersion = Config.bitwardenClientVersion
+        static let deviceType    = String(Config.deviceType)
+        static let userAgent     = Config.userAgent
     }
 
     // MARK: - Init
@@ -530,6 +530,9 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
             "client_id":       ClientHeaders.clientId,
             "deviceType":      ClientHeaders.deviceType,
             "deviceIdentifier": deviceIdentifier,
+            // Deliberately not "macos" as the official desktop app sends: the device name shows in
+            // the web vault's device list and the new-device email, and "Prizm" tells this app apart
+            // from the official one on the same Mac (client-identification-headers, D4).
             "deviceName":      "Prizm",
         ]
         if let token    = twoFactorToken    { params["twoFactorToken"]    = token }
@@ -1108,9 +1111,13 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
     /// Builds a `URLRequest` pre-loaded with mandatory Bitwarden client identification headers.
     private func baseRequest(url: URL) -> URLRequest {
         var req = URLRequest(url: url)
+        // Identification is for the configured server only; blob storage, signed download URLs and
+        // favicons use plain requests (client-identification-headers, D5).
+        assert(baseURL == nil || url.host == baseURL?.host, "baseRequest is only for the configured server")
         req.setValue(ClientHeaders.userAgent,     forHTTPHeaderField: "User-Agent")
         req.setValue("application/json",          forHTTPHeaderField: "Accept")
-        req.setValue(ClientHeaders.clientVersion, forHTTPHeaderField: "X-Client-Version")
+        req.setValue(ClientHeaders.deviceType,    forHTTPHeaderField: "Device-Type")
+        req.setValue(ClientHeaders.clientId,      forHTTPHeaderField: "Bitwarden-Client-Name")
         req.setValue(ClientHeaders.clientVersion, forHTTPHeaderField: "Bitwarden-Client-Version")
         return req
     }
