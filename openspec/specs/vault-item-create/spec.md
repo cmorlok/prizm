@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Choose folder and collection when creating or editing an item.
+
+## Requirements
 
 ### Requirement: Edit and create sheets include a folder picker
 The system SHALL display a "Folder" picker in both the item edit sheet and the item create sheet when folders exist AND the item is a personal vault item (`organizationId == nil`). The picker SHALL list all folders sorted alphabetically by name, plus a "None" option at the top. For existing items, the picker SHALL pre-select the item's current folder (or "None" if unfoldered). For new items, the picker SHALL default to "None". The selected folder SHALL be included as `folderId` in the cipher payload when saving. When no folders exist, or when the item belongs to an org, the folder picker SHALL NOT be displayed.

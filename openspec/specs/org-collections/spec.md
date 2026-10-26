@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Model organizations and collections from the sync and show them in the sidebar.
+
+## Requirements
 
 ### Requirement: Organization and Collection domain entities exist
 The Domain layer SHALL define an `Organization` struct with fields: `id: String`, `name: String`, `role: OrgRole`, and `canManageCollections: Bool` (derived from role). `OrgRole` SHALL be an enum: `.owner`, `.admin`, `.manager`, `.user`, `.custom`. The Domain layer SHALL define an `OrgCollection` struct with fields: `id: String`, `organizationId: String`, `name: String`. Both are value types (`struct`). No crypto imports in the Domain layer.

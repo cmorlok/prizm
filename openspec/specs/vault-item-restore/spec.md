@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Restore trashed items and mark trashed items in the detail view.
+
+## Requirements
 
 ### Requirement: User can restore a trashed vault item
 The system SHALL allow the user to restore a trashed vault item back to the active vault via `PUT /ciphers/{id}/restore`. The Restore action SHALL be available in the Trash list context menu and in the detail view of a trashed item.

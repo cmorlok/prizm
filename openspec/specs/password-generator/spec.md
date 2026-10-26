@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Generate passwords and passphrases with configurable options.
+
+## Requirements
 
 ### Requirement: User can generate a random password with configurable options
 The system SHALL provide a password generator that produces cryptographically random character-based passwords. The generator SHALL support the following configuration options: length (integer, 5–128 inclusive, default 16), uppercase letters toggle (A–Z, default on), lowercase letters toggle (a–z, default on), digits toggle (0–9, default on), symbols toggle (`!@#$%^&*()_+-=[]{}|;':",.<>?/`, default on), and avoid-ambiguous-characters toggle (excludes `0`, `O`, `I`, `l`, `1`, `|` from all enabled sets, default off). The generated password SHALL contain at least one character from each enabled character set. The generated password SHALL NOT contain whitespace characters (space, tab, newline). The system SHALL prevent the user from disabling all character sets simultaneously — the last remaining enabled set's toggle SHALL be locked and non-interactive.

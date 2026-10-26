@@ -1,3 +1,9 @@
+## Purpose
+
+Build, sign and package Prizm for Developer ID distribution.
+
+## Requirements
+
 
 ### Requirement: App icon is present at all required sizes
 The app SHALL have an icon defined in `Assets.xcassets/AppIcon.appiconset` at all

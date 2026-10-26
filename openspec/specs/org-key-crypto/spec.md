@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Unwrap organization keys at sync time and decrypt organization items with them.
+
+## Requirements
 
 ### Requirement: RSA private key is decrypted at sync time
 The system SHALL decrypt the user's RSA private key (`profile.privateKey` EncString) using the vault symmetric key during `SyncRepositoryImpl.sync()`, when the sync response contains a non-empty `organizations` array and a non-nil `profile.privateKey`. The decrypted RSA private key is used immediately within the same sync call to unwrap org keys and is not retained beyond that scope. Zeroing and clearing on vault lock applies to `OrgKeyCache` (which holds the unwrapped org keys). The private key bytes SHALL NOT be logged.

@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Let the user add, remove and reorder the website URIs of a login.
+
+## Requirements
 
 ### Requirement: User can add a new website URI to a Login item
 The edit form for Login items SHALL always display a "Websites" section, even when no URIs exist. The section SHALL contain an "Add Website" button that appends a new blank URI row with an empty URI string and no match type (default). The new row SHALL be immediately editable.

@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Let the user mark items as favorites from the detail view and the item list.
+
+## Requirements
 
 ### Requirement: User can toggle favorite from the detail view
 The detail view toolbar SHALL display a star toggle button. When the item is not favorited, the button SHALL show an empty star (`star`). When favorited, it SHALL show a filled star (`star.fill`). Tapping the button SHALL toggle the favorite status, update the server, and refresh the item list and sidebar counts immediately.

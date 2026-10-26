@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+
+Browse the vault in a three-pane layout with predictable focus.
+
+## Requirements
 
 ### Requirement: User can browse their vault in a three-pane layout
 The system SHALL display a `NavigationSplitView` with a sidebar (categories + counts), a middle item list, and a detail pane. The sidebar SHALL be organised into sections: *Menu Items* (All Items, Favorites), *Folders* (section header always visible; folder rows shown when folders exist), *Types* (Login, Card, Identity, Secure Note, SSH Key), *Organizations* (section visible only when the user belongs to at least one org; each org is a disclosure group containing its collections), and *Trash*, each with a live item count. Soft-deleted items (Trash) SHALL be excluded from all non-Trash views.

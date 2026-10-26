@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+
+Offer item creation from the content pane toolbar.
+
+## Requirements
 
 ### Requirement: Content pane provides new item creation via toolbar button
 The content column SHALL display a `+` button in the toolbar via `ToolbarItem(placement: .primaryAction)`. The button SHALL open a `Menu` listing all `ItemType` cases. Selecting a type opens the create sheet for that type. The button SHALL carry `AccessibilityID.Create.newItemButton`.

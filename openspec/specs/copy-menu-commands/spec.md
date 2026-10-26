@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Copy item fields through Item menu commands and their shortcuts.
+
+## Requirements
 
 ### Requirement: Copy field commands in Item menu
 The Item menu SHALL provide Copy Username (⇧⌘C), Copy Password (⌥⌘C), Copy Code (⌃⌘C), and Copy Website (⌥⇧⌘C) commands. Each command SHALL copy the corresponding field from the selected Login item to the clipboard with 30-second auto-clear. Copy Code SHALL copy the item's current generated verification code, not the stored TOTP seed. Commands SHALL be disabled when the selected item does not have the corresponding field or is not a Login item.
