@@ -25,13 +25,15 @@ deleting its folder, keeps its organization and collections).
 ## 4. Presentation (0.5 d)
 
 - [x] 4.1 `ItemEditView`: folder picker for org items below the collection picker (design D2). View model test: saving an org item with a new folder sends `folderId` and keeps `organizationId` and `collectionIds`.
-- [ ] 4.2 Drag and drop of an org item onto a folder. View model test, plus an XCUITest journey: drag an org item to a folder; it appears there and still shows its organization badge.
+- [x] 4.2 Drag and drop of an org item onto a folder. View model test, plus an XCUITest journey: drag an org item to a folder; it appears there and still shows its organization badge.
+  Repository tests cover the bulk move and the single-item drag (`/partial`). XCUITest `VaultBrowserJourneyTests.testOrgItemFiledInFolder_showsInFolder` checks that a filed org item shows in its folder (`--ui-test-org-folders`); the drop itself saves on the server, which the UI test states do not have.
 - [x] 4.3 VoiceOver: the folder picker label is "Folder" for both item kinds (§VIII).
 
 ## 5. Specs and release (0.25 d)
 
 - [x] 5.1 CHANGELOG "Fixed": organization items filed in your folders in other Bitwarden apps now show in those folders, and you can file organization items into folders in Prizm.
-- [ ] 5.2 Before archiving: repair the structure of `openspec/specs/org-vault-items/spec.md` (add `## Purpose` and `## Requirements`) in a separate commit with no requirement changes. Then replace the folder rule at line 19 and the scenario at lines 31-34 with the requirement from this change.
+- [x] 5.2 Before archiving: repair the structure of `openspec/specs/org-vault-items/spec.md` (add `## Purpose` and `## Requirements`) in a separate commit with no requirement changes. Then replace the folder rule at line 19 and the scenario at lines 31-34 with the requirement from this change.
+  Done in `fix/000-openspec-main-spec-repair`.
 - [x] 5.3 `openspec validate org-items-in-personal-folders --type change --strict`.
 
 ## Results (2026-10-26)
@@ -52,6 +54,6 @@ deleting its folder, keeps its organization and collections).
   like the official clients' "partial-edit" mode. Any other change still sends the full PUT, which
   fails for read-only items as before (modelling `edit` is out of scope). The collection picker
   got the label "Collection".
-- **Not verified on the Mac yet** (test runner hung): unit tests.
+- **Verified on the Mac (2026-10-26):** all 686 unit tests pass on this branch; the full UI suite passes on the top of the series (`fix/017`).
 - Open: 1.1 (rig, two members), 4.2 XCUITest, 5.2 at archive time.
 
