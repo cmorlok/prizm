@@ -1,3 +1,9 @@
+## Purpose
+
+Lock the vault manually and automatically when the Mac sleeps or locks.
+
+## Requirements
+
 ### Requirement: User can lock the vault manually with ⌘L
 The system SHALL provide a **Lock Vault** command in the application menu with the keyboard shortcut ⌘L. The command SHALL be enabled only when the vault is unlocked (vault browser visible or sync in progress). Activating the command SHALL immediately zero all in-memory key material, clear the vault item cache, and transition to the unlock screen. If biometric unlock is enabled, the system SHALL automatically trigger the biometric prompt as soon as the unlock screen appears. The user SHALL always be able to unlock by entering their master password.
 

@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Let the user reveal masked fields briefly by holding the Option key.
+
+## Requirements
 
 ### Requirement: Option-key peek temporarily reveals masked fields
 The system SHALL temporarily reveal all masked field values while the user holds the Option (⌥) key. Releasing the key SHALL immediately return all fields to their masked state. The peek SHALL NOT alter the persisted reveal/hide toggle state of any field.

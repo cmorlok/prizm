@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+
+Show contextual actions for the selected item in the detail pane toolbar.
+
+## Requirements
 
 ### Requirement: Detail pane toolbar shows contextual action buttons
 The detail column SHALL display contextual action buttons in the toolbar. Button visibility depends on the current state:

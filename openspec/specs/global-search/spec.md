@@ -1,3 +1,7 @@
+## Purpose
+
+Search the whole vault from anywhere with ⌘F and highlight matches.
+
 ## Requirements
 
 ### Requirement: User can activate global search with ⌘F

@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Publish an honest accessibility conformance statement for Prizm.
+
+## Requirements
 
 ### Requirement: Accessibility conformance statement SHALL exist at repo root
 The project SHALL include an `ACCESSIBILITY.md` file at the repository root documenting the current accessibility conformance level against EN 301 549 Chapter 11 (which maps WCAG 2.1 criteria to native software).

@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Organize vault items in personal folders: browse, create, rename, delete and move.
+
+## Requirements
 
 ### Requirement: User can browse vault items by folder
 The system SHALL display a "Folders" section in the sidebar between the Menu section and the Types section. The "Folders" section header SHALL always be visible (even when no folders exist) to provide access to the create button. Each folder row SHALL display the folder name and a badge with the count of items assigned to that folder. Folders SHALL be sorted alphabetically by decrypted name (case-insensitive). Selecting a folder SHALL display all items assigned to that folder in the item list, regardless of item type. The item list SHALL be sorted alphabetically by name, consistent with other sidebar selections. Items without a `folderId` SHALL NOT appear under any folder — they remain accessible via All Items, Favorites, and Type filters only.

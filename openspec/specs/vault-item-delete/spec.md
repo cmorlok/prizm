@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Move items to the trash and delete trashed items permanently.
+
+## Requirements
 
 ### Requirement: User can soft-delete an active vault item
 The system SHALL allow the user to move an active vault item to trash via a Delete action available in the vault list context menu and in the item detail view toolbar. Soft-delete SHALL call `DELETE /ciphers/{id}` and set `deletedDate` on the item without permanently removing it from the server. The Delete button text in the detail toolbar SHALL render in red.

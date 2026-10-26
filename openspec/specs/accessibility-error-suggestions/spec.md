@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Error messages tell the user how to fix the problem where they can.
+
+## Requirements
 
 ### Requirement: Error messages SHALL include corrective suggestions where actionable
 Error messages displayed to the user SHALL include a brief suggestion for how to resolve the issue when a corrective action is known.

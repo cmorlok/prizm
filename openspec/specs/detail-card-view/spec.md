@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+
+Group the fields of the item detail pane into styled section cards.
+
+## Requirements
 
 ### Requirement: CardBackground ViewModifier (MODIFIED)
 The system SHALL provide a `CardBackground` `ViewModifier` that applies a `#FAFAFA` (light) / `#2C2C2C` (dark) background via the `CardBackground` color asset, rounded corners (radius 10), and a subtle 0.5pt border at 8% opacity. The modifier SHALL NOT apply a drop shadow. A `.cardBackground()` `View` extension SHALL expose it ergonomically.

@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Make every control usable with VoiceOver: labels, hints, values, headings and announcements.
+
+## Requirements
 
 ### Requirement: Icon-only buttons SHALL have accessibility labels
 Every `Button` whose visible content is only an `Image(systemName:)` SHALL have an `.accessibilityLabel` that describes the action. The label SHALL match the existing `.help()` tooltip text where one exists.

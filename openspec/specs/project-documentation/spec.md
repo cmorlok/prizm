@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Keep README, DEVELOPMENT.md and SECURITY.md complete and accurate.
+
+## Requirements
 
 ### Requirement: README exists and is release-quality
 The repository SHALL contain a `README.md` at the root that serves as the primary

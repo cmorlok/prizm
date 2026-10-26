@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Store secrets in the data protection keychain without per-developer signing settings in the repo.
+
+## Requirements
 
 ### Requirement: Data protection keychain access
 The app SHALL store and retrieve all keychain items using the data protection keychain (`kSecUseDataProtectionKeychain: true`) scoped to the `$(AppIdentifierPrefix)com.prizm` access group, so that access is controlled by the app's entitlements rather than per-binary code-signature ACLs.

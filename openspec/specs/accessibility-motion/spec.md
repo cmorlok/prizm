@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Respect the Reduce Motion preference in all animations.
+
+## Requirements
 
 ### Requirement: Animations SHALL be suppressed when Reduce Motion is enabled
 When the macOS "Reduce motion" accessibility setting is enabled, all `withAnimation` and `.animation` calls SHALL apply state changes immediately without animation.

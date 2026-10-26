@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Show and edit organization items alongside personal items.
+
+## Requirements
 
 ### Requirement: VaultItem carries organizationId and collectionIds
 `VaultItem` SHALL include `organizationId: String?` (nil for personal items) and `collectionIds: [String]` (empty for personal items). `DraftVaultItem` SHALL mirror these fields. `CipherMapper.toRawCipher` SHALL round-trip `organizationId` and `collectionIds` unchanged for org items. All existing `VaultItem` init call sites SHALL continue to compile via default parameter values (`organizationId: nil`, `collectionIds: []`).

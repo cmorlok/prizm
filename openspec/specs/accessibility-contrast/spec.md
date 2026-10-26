@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Keep tinted backgrounds and controls readable, including with Increase Contrast.
+
+## Requirements
 
 ### Requirement: Background tint colours SHALL meet WCAG non-text contrast ratio
 All custom `Color.opacity()` values used as background tints on banners, borders, and interactive indicators SHALL produce a minimum 3:1 contrast ratio against the adjacent background in both light and dark mode.
