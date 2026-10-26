@@ -23,7 +23,7 @@ no dependencies. Ship it as a patch release before any other change that needs a
 - [ ] 3.2 Interop check of the fallback: sign in on Vaultwarden 1.35.4 (a throw-away container next to the rig). If that is not possible, record that tasks 1.3 and 1.5 cover it.
 - [ ] 3.3 README: update "Tested against Vaultwarden …" to the versions checked in 3.1 and 3.2.
 - [x] 3.4 CHANGELOG "Fixed": signing in works again on Vaultwarden 1.37.4 and on current Bitwarden self-hosted servers (prelogin now uses the identity service). Older servers keep working.
-- [ ] 3.5 Add the `LegacyPreloginEndpoint` row to the "Legacy adapters" table in `openspec/changes/FIX-ORDER.md` if it is not there.
+- [x] 3.5 Add the `LegacyPreloginEndpoint` row to the "Legacy adapters" table in `openspec/changes/FIX-ORDER.md` if it is not there.
 - [x] 3.6 `openspec validate fix-prelogin-identity-endpoint --type change --strict`.
 
 ## Results (2026-10-25)
@@ -35,4 +35,10 @@ no dependencies. Ship it as a patch release before any other change that needs a
   not run against a server.
 - Open: 3.1 and 3.2 need the rig (not built yet); 3.3 waits for them, so README still names 1.35.4.
   3.5: `FIX-ORDER.md` lives on the change-request branch; add the `LegacyPreloginEndpoint` row there.
+
+## Verification (2026-10-26, `/opsx:verify`)
+
+- No code gaps. 3.5: the row is in `FIX-ORDER.md` on the change-request branch. Design D2 now says
+  where the legacy request is sent and logged.
+- Open by design: 3.1–3.3 (test server, then the README line).
 

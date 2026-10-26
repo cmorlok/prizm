@@ -88,8 +88,9 @@ today. Vaultwarden 1.32.0–1.35.x and Bitwarden servers before v2025.12.0 do no
 
 - `PrizmAPIClientImpl.preLogin` calls the primary route. Only when it answers **404 or 405** does it
   call `LegacyPreloginEndpoint` (new file `Prizm/Data/Network/Legacy/LegacyPreloginEndpoint.swift`).
-- The adapter sends the same body to `{base}/identity/accounts/prelogin` and decodes the same
-  `PreLoginResponse`. It logs at `.info` that the legacy route was used (no email).
+- The adapter holds the legacy path and the fallback rule. `preLogin` sends the same body to
+  `{base}/identity/accounts/prelogin` through it, decodes the same `PreLoginResponse` and logs at
+  `.info` that the legacy route was used (no email).
 - The primary route's 404 or 405 is logged at `.info`, not `.error`: it is expected on these
   servers.
 - It carries the marker
