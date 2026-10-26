@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix: clicking the favorite star twice quickly left the item starred. Repeated clicks are now
+  applied in order, and the item ends in the state of the last click.
 - Fix: locking Prizm (⌘L, sleep, screensaver) while it unlocked, signed in or synced right after
   could show the vault again when that ended, or was ignored. The lock now stays in effect.
 - Fix: when the server rejects a request, Prizm shows the server's message (for example "Folder

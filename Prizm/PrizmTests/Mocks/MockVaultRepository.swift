@@ -242,8 +242,21 @@ final class MockVaultRepository: VaultRepository {
     private(set) var setFavoriteCalls: [(itemId: String, isFavorite: Bool)] = []
 
     /// Flips the cached item like the real repository; throws `stubbedSetFavoriteError` if set.
+    /// Runs while a favorite request is "in flight", to hold it there.
+    var whileSetFavoriteInFlight: (() async -> Void)?
+
+    /// Requests finished (success or failure), and the most that were open at once.
+    private(set) var setFavoriteCompletions = 0
+    private(set) var maxConcurrentSetFavorite = 0
+    private var openSetFavorite = 0
+
     func setFavorite(itemId: String, isFavorite: Bool) async throws -> VaultItem {
         setFavoriteCalls.append((itemId, isFavorite))
+        openSetFavorite += 1
+        maxConcurrentSetFavorite = max(maxConcurrentSetFavorite, openSetFavorite)
+        await whileSetFavoriteInFlight?()
+        openSetFavorite -= 1
+        setFavoriteCompletions += 1
         if let error = stubbedSetFavoriteError { throw error }
         guard let idx = populatedItems.firstIndex(where: { $0.id == itemId }) else {
             throw VaultError.itemNotFound(itemId)
