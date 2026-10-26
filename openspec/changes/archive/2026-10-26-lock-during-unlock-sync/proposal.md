@@ -38,9 +38,11 @@ the Mac sees an unlocked-looking Prizm when they come back.
 
 - Only the current unlock view model drives the screen (`switchToLatest`); a view model replaced by
   a lock, or removed when signing out, no longer has any effect.
-- A lock also applies while a sign-in loads keys and syncs (`.loading`).
+- A lock also applies while a sign-in loads keys and syncs (`.loading`), and while an unlock
+  derives keys. A flow that started before a lock changes nothing afterwards (design D5).
 - The vault is shown only if the vault is still unlocked and no lock started or finished
-  meanwhile; keys a flow loaded after a lock are torn down again. A flow that ends after a lock leads to the
+  meanwhile; a login or unlock that started before a lock loads no keys (design D6), and keys a
+  stale flow still loaded are torn down unless a newer unlock owns them (design D2). A flow that ends after a lock leads to the
   unlock screen (or the login screen when no account is stored), for both the login and the unlock
   flow.
 - `AuthRepository.isVaultUnlocked` tells the presentation layer whether keys are loaded.
@@ -51,7 +53,7 @@ the Mac sees an unlocked-looking Prizm when they come back.
 _None._
 
 ### Modified Capabilities
-- `vault-lock`: a lock during a running sync stays in effect.
+- `vault-lock`: a lock during a running sync stays in effect (ADDED), and Lock Vault and the automatic locks also apply while a sign-in or password unlock is in progress (MODIFIED).
 
 ## Non-Goals
 
@@ -62,7 +64,7 @@ _None._
 ## Impact
 
 - **Domain:** `AuthRepository.isVaultUnlocked`.
-- **Data:** `AuthRepositoryImpl.isVaultUnlocked` (reads `PrizmCryptoService.isUnlocked`).
+- **Data:** `AuthRepositoryImpl.isVaultUnlocked` (reads `PrizmCryptoService.isUnlocked`); a lock counter so a login or unlock that started before a lock loads no keys (design D6).
 - **Presentation/App:** `RootViewModel` subscription and vault transition.
 - **Security review:** yes (lock state, §III).
 

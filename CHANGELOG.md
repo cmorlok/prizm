@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-- Fix: locking Prizm (⌘L, sleep, screensaver) while it synced right after unlocking or signing in
-  could show the vault again when the sync ended. The lock now stays in effect.
+- Fix: locking Prizm (⌘L, sleep, screensaver) while it unlocked, signed in or synced right after
+  could show the vault again when that ended, or was ignored. The lock now stays in effect.
 - Fix: when the server rejects a request, Prizm shows the server's message (for example "Folder
   name too long") instead of "Server error 400:" followed by the raw response. The macOS log no
   longer records error messages or server responses, only status codes and error types.
