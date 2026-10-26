@@ -14,7 +14,7 @@ import SwiftUI
 /// ```swift
 /// FieldRowView(label: "Username", value: item.username, itemId: item.id)
 /// FieldRowView(label: "Password", value: item.password, itemId: item.id, isMasked: true)
-/// FieldRowView(label: "Website", value: uri.uri, itemId: item.id, url: URL(string: uri.uri))
+/// FieldRowView(label: "Website", value: uri.uri, itemId: item.id, url: URILaunchTarget.url(for: uri))
 /// ```
 struct FieldRowView: View {
 
@@ -38,6 +38,7 @@ struct FieldRowView: View {
                 Spacer()
                 hoverActions
                 MaskedFieldView(label: label, value: value, itemId: itemId)
+                    .accessibilityHint(copyHint)
             } else if isMultiLine {
                 VStack(alignment: .leading, spacing: 2) {
                     if !label.isEmpty {
@@ -50,6 +51,7 @@ struct FieldRowView: View {
                         // A selectable Text keeps the accessibility value it was created with;
                         // without this, VoiceOver read the previous item's value after switching.
                         .accessibilityValue(value ?? "—")
+                        .accessibilityHint(copyHint)
                 }
                 Spacer()
                 hoverActions
@@ -64,6 +66,7 @@ struct FieldRowView: View {
                     .textSelection(.enabled)
                     // See the multi-line case above.
                     .accessibilityValue(value ?? "—")
+                    .accessibilityHint(copyHint)
                 browserLink
             }
         }
@@ -76,8 +79,13 @@ struct FieldRowView: View {
                 isHovered = hovering
             }
         }
-        .accessibilityHint(value != nil && !(value?.isEmpty ?? true) ? "Copies \(label) to clipboard" : "")
         .accessibilityIdentifier(AccessibilityID.Field.row(label))
+    }
+
+    /// On the value elements only: on the row it would also reach the "Open" button, whose own
+    /// hint is "Opens in browser" (safe-uri-launch).
+    private var copyHint: String {
+        value != nil && !(value?.isEmpty ?? true) ? "Copies \(label) to clipboard" : ""
     }
 
     private func copyValue() {

@@ -196,6 +196,8 @@
 		9CE03FAF8938D6B276BF6CD0 /* EmptyTrashUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E0CC4D012DF5134640ADADD /* EmptyTrashUseCase.swift */; };
 		9C69F0563C110E769255D12E /* EmptyTrashUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17EED397A28B285C0BD7FF6A /* EmptyTrashUseCaseImpl.swift */; };
 		B2ED6F0BF6ADC48D703F96E8 /* ClipboardService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2C46997E2E7353C3620B17B /* ClipboardService.swift */; };
+		C35B57366256048CC0F117AD /* URILaunchPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BF035335283019BA2C1E3B6 /* URILaunchPolicy.swift */; };
+		229F4957F20D04456182853A /* URILaunchTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21A9990FFB396404B3E52BBE /* URILaunchTarget.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -407,6 +409,8 @@
 		4E0CC4D012DF5134640ADADD /* EmptyTrashUseCase.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EmptyTrashUseCase.swift; sourceTree = "<group>"; };
 		17EED397A28B285C0BD7FF6A /* EmptyTrashUseCaseImpl.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EmptyTrashUseCaseImpl.swift; sourceTree = "<group>"; };
 		F2C46997E2E7353C3620B17B /* ClipboardService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClipboardService.swift; sourceTree = "<group>"; };
+		9BF035335283019BA2C1E3B6 /* URILaunchPolicy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = URILaunchPolicy.swift; sourceTree = "<group>"; };
+		21A9990FFB396404B3E52BBE /* URILaunchTarget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = URILaunchTarget.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -715,6 +719,7 @@
 				D4C3B2A1F6E54789D4C3B2A1 /* VerticalLabeledContentStyle.swift */,
 				1A2B3C4D5E6F7A8B9C0D1E2F /* CardBackground.swift */,
 				CC1002000000000000000002 /* EmbeddedTouchIDView.swift */,
+				21A9990FFB396404B3E52BBE /* URILaunchTarget.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -846,6 +851,7 @@
 				AA0002020000000200000002 /* PasswordGeneratorConfig.swift */,
 				AA0002030000000300000003 /* PasswordGenerator.swift */,
 				5C4F1CA442CEB4D208ED7FCC /* TOTPSeedParser.swift */,
+				9BF035335283019BA2C1E3B6 /* URILaunchPolicy.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -1268,6 +1274,8 @@
 				9CE03FAF8938D6B276BF6CD0 /* EmptyTrashUseCase.swift in Sources */,
 				9C69F0563C110E769255D12E /* EmptyTrashUseCaseImpl.swift in Sources */,
 				B2ED6F0BF6ADC48D703F96E8 /* ClipboardService.swift in Sources */,
+				C35B57366256048CC0F117AD /* URILaunchPolicy.swift in Sources */,
+				229F4957F20D04456182853A /* URILaunchTarget.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
