@@ -198,6 +198,7 @@
 		B2ED6F0BF6ADC48D703F96E8 /* ClipboardService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2C46997E2E7353C3620B17B /* ClipboardService.swift */; };
 		C35B57366256048CC0F117AD /* URILaunchPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BF035335283019BA2C1E3B6 /* URILaunchPolicy.swift */; };
 		229F4957F20D04456182853A /* URILaunchTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21A9990FFB396404B3E52BBE /* URILaunchTarget.swift */; };
+		7C86BF8D70EA0A284B3D72C2 /* ItemFieldNormalisation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FBECAE1E5694389ADDC6E6 /* ItemFieldNormalisation.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -411,6 +412,7 @@
 		F2C46997E2E7353C3620B17B /* ClipboardService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClipboardService.swift; sourceTree = "<group>"; };
 		9BF035335283019BA2C1E3B6 /* URILaunchPolicy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = URILaunchPolicy.swift; sourceTree = "<group>"; };
 		21A9990FFB396404B3E52BBE /* URILaunchTarget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = URILaunchTarget.swift; sourceTree = "<group>"; };
+		41FBECAE1E5694389ADDC6E6 /* ItemFieldNormalisation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ItemFieldNormalisation.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -852,6 +854,7 @@
 				AA0002030000000300000003 /* PasswordGenerator.swift */,
 				5C4F1CA442CEB4D208ED7FCC /* TOTPSeedParser.swift */,
 				9BF035335283019BA2C1E3B6 /* URILaunchPolicy.swift */,
+				41FBECAE1E5694389ADDC6E6 /* ItemFieldNormalisation.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -1276,6 +1279,7 @@
 				B2ED6F0BF6ADC48D703F96E8 /* ClipboardService.swift in Sources */,
 				C35B57366256048CC0F117AD /* URILaunchPolicy.swift in Sources */,
 				229F4957F20D04456182853A /* URILaunchTarget.swift in Sources */,
+				7C86BF8D70EA0A284B3D72C2 /* ItemFieldNormalisation.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

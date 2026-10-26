@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Changed: card brand and expiry month are chosen from lists and saved in the same format as other
+  Bitwarden apps ("Amex", month "3", year "2027"); the brand is detected from the card number, and
+  the detail view shows the expiry as "03 / 2027". Values that match no list entry are kept.
+- Fix: new logins no longer get an empty website entry.
 - Fix: organization items that you filed in your folders in other Bitwarden apps now show in those
   folders (folder counts include them), and you can file organization items into folders in Prizm,
   with the edit sheet or drag and drop, also items in read-only collections. Folders stay personal;

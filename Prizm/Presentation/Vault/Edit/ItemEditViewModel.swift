@@ -126,10 +126,11 @@ final class ItemEditViewModel: ObservableObject {
             saveError = nil
             do {
                 let saved: VaultItem
+                let toSave = draftToSave()
                 if let createUseCase {
-                    saved = try await createUseCase.execute(draft: draft)
+                    saved = try await createUseCase.execute(draft: toSave)
                 } else if let editUseCase {
-                    saved = try await editUseCase.execute(draft: draft)
+                    saved = try await editUseCase.execute(draft: toSave)
                 } else {
                     preconditionFailure("ItemEditViewModel: no use case configured")
                 }
@@ -143,6 +144,22 @@ final class ItemEditViewModel: ObservableObject {
             }
             isSaving = false
         }
+    }
+
+    /// The draft in the format official clients write (card-field-normalisation).
+    ///
+    /// An edit that changes only folder and/or favorite is sent as is, so it stays a `/partial`
+    /// save, which also works for items in read-only collections (org-items-in-personal-folders;
+    /// same test as `VaultRepositoryImpl.update`). New items are always normalised.
+    private func draftToSave() -> DraftVaultItem {
+        if createUseCase == nil {
+            var perUserChangeOnly = original
+            perUserChangeOnly.folderId = draft.folderId
+            perUserChangeOnly.isFavorite = draft.isFavorite
+            if perUserChangeOnly == draft { return draft }
+        }
+        let currentYear = Calendar(identifier: .gregorian).component(.year, from: Date())
+        return draft.normalisedForSave(currentYear: currentYear)
     }
 
     // MARK: - Discard

@@ -25,6 +25,8 @@ struct FieldRowView: View {
     var isMultiLine: Bool = false
     var url:      URL?  = nil
     var onCopy:   ((String) -> Void)? = nil
+    /// What VoiceOver reads instead of `value`, when the shown text reads badly ("03 / 2027").
+    var spokenValue: String? = nil
 
     @State private var isHovered = false
     @State private var showCopied = false
@@ -50,7 +52,7 @@ struct FieldRowView: View {
                         .textSelection(.enabled)
                         // A selectable Text keeps the accessibility value it was created with;
                         // without this, VoiceOver read the previous item's value after switching.
-                        .accessibilityValue(value ?? "—")
+                        .accessibilityValue(spokenValue ?? value ?? "—")
                         .accessibilityHint(copyHint)
                 }
                 Spacer()
@@ -65,7 +67,7 @@ struct FieldRowView: View {
                     .lineLimit(1)
                     .textSelection(.enabled)
                     // See the multi-line case above.
-                    .accessibilityValue(value ?? "—")
+                    .accessibilityValue(spokenValue ?? value ?? "—")
                     .accessibilityHint(copyHint)
                 browserLink
             }

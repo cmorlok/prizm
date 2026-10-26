@@ -7,7 +7,7 @@ The card edit form SHALL offer the brand as a picker with "Not set" and the valu
 
 #### Scenario: Lower-case brand from an earlier Prizm version
 - **GIVEN** a card with brand "visa"
-- **WHEN** the user opens the edit sheet and saves
+- **WHEN** the user changes the cardholder name and saves
 - **THEN** the brand SHALL be saved as "Visa"
 
 #### Scenario: Unknown brand is kept
