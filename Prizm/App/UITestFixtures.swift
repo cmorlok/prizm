@@ -101,7 +101,11 @@ enum UITestFixtures {
             login(id: "alpha", name: "Alpha Bank", totp: rfcSeed),
             login(id: "beta", name: "Beta Mail",
                   totp: "otpauth://totp/Beta:me?secret=\(rfcSeed)&digits=8&period=60&algorithm=SHA256"),
-            login(id: "gamma", name: "Gamma No Seed", totp: nil),
+            login(id: "gamma", name: "Gamma No Seed", totp: nil, uris: [
+                // safe-uri-launch: a scheme that must not get an open button, and a scheme-less address.
+                LoginURI(uri: "file:///Applications/Calculator.app", matchType: nil),
+                LoginURI(uri: "example.com/login", matchType: nil),
+            ]),
             login(id: "delta", name: "Delta Bad Seed", totp: "not-a-seed!"),
             login(id: "zeta", name: "Zeta Trashed", totp: rfcSeed, isDeleted: true),
             login(id: "kappa", name: "Kappa Login", totp: nil, isFavorite: true, attachments: [
@@ -126,11 +130,11 @@ enum UITestFixtures {
 
     private static func login(
         id: String, name: String, totp: String?, isDeleted: Bool = false,
-        isFavorite: Bool = false, attachments: [Attachment] = []
+        isFavorite: Bool = false, attachments: [Attachment] = [], uris: [LoginURI] = []
     ) -> VaultItem {
         item(id: id, name: name, isDeleted: isDeleted, isFavorite: isFavorite, attachments: attachments,
              content: .login(LoginContent(
-                 username: "user-\(id)", password: "pw-\(id)", uris: [], totp: totp, notes: nil, customFields: []
+                 username: "user-\(id)", password: "pw-\(id)", uris: uris, totp: totp, notes: nil, customFields: []
              )))
     }
 
