@@ -63,8 +63,9 @@ struct ItemEditView: View {
             }
             .padding(.bottom, Spacing.pageHeaderBottom)
 
-            // Collection picker — shown for org items (replaces folder picker).
-            // Folder picker — shown for personal items when folders exist.
+            // Collection picker — shown for org items. Folder picker — shown for every item when
+            // folders exist: folders are personal and also hold org items, as in the official item
+            // form (org-items-in-personal-folders).
             if viewModel.draft.organizationId != nil {
                 // Org item: collection picker
                 let orgCollections = viewModel.collections.filter {
@@ -95,13 +96,15 @@ struct ItemEditView: View {
                                 }
                             } label: { EmptyView() }
                             .pickerStyle(.menu)
+                            .accessibilityLabel("Collection")
                             Spacer()
                         }
                         .padding(.vertical, Spacing.rowVertical)
                         .padding(.horizontal, Spacing.rowHorizontal)
                     }
                 }
-            } else if !viewModel.folders.isEmpty {
+            }
+            if !viewModel.folders.isEmpty {
                 DetailSectionCard("Folder") {
                     HStack {
                         Picker(selection: $viewModel.draft.folderId) {
@@ -111,6 +114,7 @@ struct ItemEditView: View {
                             }
                         } label: { EmptyView() }
                         .pickerStyle(.menu)
+                        .accessibilityLabel("Folder")
                         Spacer()
                     }
                     .padding(.vertical, Spacing.rowVertical)

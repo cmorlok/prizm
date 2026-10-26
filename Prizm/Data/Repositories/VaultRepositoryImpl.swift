@@ -131,9 +131,9 @@ actor VaultRepositoryImpl: VaultRepository {
             bySelection[.type(type)] = sorted(active.filter { $0.content.matchesItemType(type) })
         }
         for folder in folderStore {
-            bySelection[.folder(folder.id)] = sorted(active.filter {
-                $0.organizationId == nil && $0.folderId == folder.id
-            })
+            // Folders are per user and hold org items too: each user files any item they can see,
+            // and the sync sends that user's folder for org items (org-items-in-personal-folders).
+            bySelection[.folder(folder.id)] = sorted(active.filter { $0.folderId == folder.id })
         }
         // Index by collection — cover all collectionIds referenced in items, not just those
         // present in collectionStore. Items may reference collections that haven't been fetched
@@ -270,6 +270,21 @@ actor VaultRepositoryImpl: VaultRepository {
             vaultKeys = try await crypto.currentKeys()
         } catch PrizmCryptoServiceError.vaultLocked {
             throw VaultError.vaultLocked
+        }
+
+        // Folder and favorite are per-user fields. When nothing else changed, they go through
+        // /partial, which needs read access only, like the official clients' "partial-edit" mode.
+        // A full PUT is refused for an org item in a read-only collection
+        // (org-items-in-personal-folders).
+        if let cached = items.first(where: { $0.id == draft.id }) {
+            var perUserChangeOnly = DraftVaultItem(cached)
+            perUserChangeOnly.folderId = draft.folderId
+            perUserChangeOnly.isFavorite = draft.isFavorite
+            if perUserChangeOnly == draft {
+                let updated = try await sendPartial(itemId: draft.id, folderId: draft.folderId, favorite: draft.isFavorite)
+                logger.info("Item updated (folder/favorite only): \(draft.id, privacy: .public)")
+                return updated ?? cached.with(folderId: draft.folderId).with(isFavorite: draft.isFavorite)
+            }
         }
 
         let orgKeysSnapshot = await orgKeyCache.snapshot()

@@ -81,8 +81,21 @@ enum UITestFixtures {
     /// With `--ui-test-no-codes`, every sample item has no TOTP seed (to see the empty state).
     static var withoutSeeds: Bool { CommandLine.arguments.contains("--ui-test-no-codes") }
 
+    /// With `--ui-test-org-folders`, the vault also has a folder "Work" and an organization item
+    /// filed in it (org-items-in-personal-folders). Off by default, so the sidebar the other
+    /// journeys walk through is unchanged.
+    static var withOrgFolders: Bool { CommandLine.arguments.contains("--ui-test-org-folders") }
+
+    static var folders: [Folder] { withOrgFolders ? [Folder(id: "work", name: "Work")] : [] }
+    static var organizations: [Organization] {
+        withOrgFolders ? [Organization(id: "org-acme", name: "Acme", role: .user, membershipId: .known("m-uitest"))] : []
+    }
+    static var collections: [OrgCollection] {
+        withOrgFolders ? [OrgCollection(id: "col-shared", organizationId: "org-acme", name: "Shared")] : []
+    }
+
     static var items: [VaultItem] {
-        let all = seededItems
+        let all = seededItems + (withOrgFolders ? [orgItemInFolder] : [])
         guard withoutSeeds else { return all }
         return all.map { item in
             guard case .login = item.content else { return item }
@@ -124,6 +137,16 @@ enum UITestFixtures {
                 notes: "A secure note for UI tests.", customFields: []
             ))),
         ]
+    }
+
+    private static var orgItemInFolder: VaultItem {
+        VaultItem(
+            id: "omega", name: "Omega Shared", isFavorite: false, isDeleted: false,
+            creationDate: Date(timeIntervalSince1970: 1_700_000_000),
+            revisionDate: Date(timeIntervalSince1970: 1_700_000_000),
+            content: .secureNote(SecureNoteContent(notes: "shared", customFields: [])),
+            folderId: "work", organizationId: "org-acme", collectionIds: ["col-shared"]
+        )
     }
 
     private static func login(
