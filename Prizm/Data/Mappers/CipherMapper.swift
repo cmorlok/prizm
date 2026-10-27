@@ -627,8 +627,13 @@ nonisolated final class CipherMapper: Sendable {
             // TODO: append the replaced password here when the password changes. Deferred to the
             // password-history change; until then the stored history goes back unchanged (design D3).
             passwordHistory: base?.passwordHistory,
-            // Stale-write protection sets it; until then a request never carries one.
-            lastKnownRevisionDate: nil
+            // The stored record's own revision string, byte for byte, so the server rejects an edit
+            // based on an older copy instead of overwriting a change made elsewhere. Never formatted
+            // from a `Date` and never the epoch fallback (a changed fraction or a default date is a
+            // different revision from the one the server holds). nil on create: no base. Prizm's own
+            // operations refresh the stored revision, so the check fires only for other clients'
+            // changes.
+            lastKnownRevisionDate: base?.revisionDate
         )
     }
 

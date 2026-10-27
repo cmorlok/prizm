@@ -1,4 +1,5 @@
 import Foundation
+import XCTest
 @testable import Prizm
 
 /// The one place tests build `VaultRepositoryImpl` and `SyncRepositoryImpl`.
@@ -153,10 +154,35 @@ enum RepositoryFixtures {
 
     /// The same with a revision string as it is, for a test whose stored record carries its own
     /// (a fixture record with six fractional digits, say).
-    static func answerUpdates(of api: MockPrizmAPIClient, withRevisionString revision: String) {
+    ///
+    /// `collectionsRevision` and `getRevision` also prepare the answers to the requests an
+    /// organization save sends after the PUT (`/collections`, and the fetch that replaces a
+    /// collections answer without a cipher). Both carry the content the PUT sent, as a server's do,
+    /// and only the revision differs: a follow-up answer built from the record stored before the
+    /// save would hold another client's content and is not a conflict-free refresh.
+    static func answerUpdates(
+        of api: MockPrizmAPIClient, withRevisionString revision: String,
+        collectionsRevision: String? = nil, getRevision: String? = nil
+    ) {
         api.whileUpdatingCipher = { [api] in
-            guard let sent = api.lastUpdatedCipher, let answer = try? withRevision(sent, revision) else { return }
-            api.updateCipherResponse = answer
+            // A failure is reported here, not skipped: without the stamped answer the mock echoes the
+            // request (which has no revision) and the next save fails with `itemRevisionUnavailable`,
+            // far from the cause.
+            guard let sent = api.lastUpdatedCipher else {
+                XCTFail("answerUpdates: no update request was recorded, so there is nothing to answer")
+                return
+            }
+            do {
+                api.updateCipherResponse = try withRevision(sent, revision)
+                if let collectionsRevision {
+                    api.updateCipherCollectionsResponse = try withRevision(sent, collectionsRevision)
+                }
+                if let getRevision {
+                    api.getCipherResponses[sent.id] = try withRevision(sent, getRevision)
+                }
+            } catch {
+                XCTFail("answerUpdates: could not stamp the answer for \(sent.id): \(error)")
+            }
         }
     }
 

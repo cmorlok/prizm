@@ -431,6 +431,20 @@ final class RawCipherStoreTests: XCTestCase {
         XCTAssertTrue(revision.hasSuffix(".002000Z"), "The nearest millisecond is written, not the one below: \(revision)")
     }
 
+    /// A setup failure of the update-answer helper is reported where it happens. Silently leaving
+    /// the mock's bare echo (no revision) in place would fail a later save with
+    /// `itemRevisionUnavailable`, far from the cause.
+    func testAnswerUpdates_withoutARecordedRequest_reportsTheSetupFailure() async {
+        let api = MockPrizmAPIClient()
+        RepositoryFixtures.answerUpdates(of: api, withRevisionString: "2026-10-26T10:00:00.123456Z")
+        XCTAssertNil(api.lastUpdatedCipher, "No update request has been recorded yet")
+
+        XCTExpectFailure("The helper has no request to answer and says so")
+        await api.whileUpdatingCipher?()
+
+        XCTAssertNil(api.updateCipherResponse, "Nothing is stamped without a request")
+    }
+
     func testSeedRecords_orgItemWithoutItsKey_throws() async throws {
         let store = RawCipherStore()
 

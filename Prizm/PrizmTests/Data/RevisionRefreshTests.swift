@@ -658,16 +658,10 @@ final class RevisionRefreshTests: XCTestCase {
 
     // MARK: - Org save: the revision comes from after the collection update
 
-    private static let orgId = "org-acme"
-    private static let orgKeys = CryptoKeys(
-        encryptionKey: Data(repeating: 0xAC, count: 32),
-        macKey:        Data(repeating: 0xCE, count: 32)
-    )
-
     /// The official server changes the revision on `PUT /collections`, so the revision an org save
     /// leaves behind is the collection answer's, not the item PUT's.
     func testOrgSave_takesTheRevisionFromTheCollectionsAnswer() async throws {
-        let (rig, item) = try await orgRig()
+        let (rig, item) = try await StaleWriteRig.makeOrg()
         answerPut(of: rig, revision: Self.r2, collectionIds: [])
         answerFollowUps(of: rig, collectionsRevision: Self.r3)
         var draft = StaleWriteRig.renamed(item)
@@ -687,7 +681,7 @@ final class RevisionRefreshTests: XCTestCase {
     }
 
     func testOrgSaveWithoutCollectionsCipher_refreshesWithGet() async throws {
-        let (rig, item) = try await orgRig()
+        let (rig, item) = try await StaleWriteRig.makeOrg()
         answerPut(of: rig, revision: Self.r2, collectionIds: [])
         rig.api.updateCipherCollectionsResponse = nil
         answerFollowUps(of: rig, getRevision: Self.r3)
@@ -704,7 +698,7 @@ final class RevisionRefreshTests: XCTestCase {
     }
 
     func testCollectionsFailure_throwsCollectionChangeNotSavedAndKeepsTheSave() async throws {
-        let (rig, item) = try await orgRig()
+        let (rig, item) = try await StaleWriteRig.makeOrg()
         answerPut(of: rig, revision: Self.r2, collectionIds: [])
         rig.api.updateCipherCollectionsShouldThrow = APIError.httpError(statusCode: 500, body: "")
         answerFollowUps(of: rig, getRevision: Self.r3)
@@ -728,7 +722,7 @@ final class RevisionRefreshTests: XCTestCase {
     }
 
     func testCollectionsFailureAndFailedRefresh_keepTheSavedRecordAndItsRevision() async throws {
-        let (rig, item) = try await orgRig()
+        let (rig, item) = try await StaleWriteRig.makeOrg()
         answerPut(of: rig, revision: Self.r2, collectionIds: [])
         rig.api.updateCipherCollectionsShouldThrow = APIError.httpError(statusCode: 500, body: "")
         rig.api.getCipherShouldThrow = APIError.httpError(statusCode: 500, body: "")
@@ -752,7 +746,7 @@ final class RevisionRefreshTests: XCTestCase {
     /// Retry policy: the same draft again as a full PUT, with its base moved to the cached
     /// revision. The PUT is not a conflict because the save before it was Prizm's own.
     func testRetryAfterCollectionsFailure_hasNoConflict() async throws {
-        let (rig, item) = try await orgRig()
+        let (rig, item) = try await StaleWriteRig.makeOrg()
         answerPut(of: rig, revision: Self.r2, collectionIds: [])
         rig.api.updateCipherCollectionsShouldThrow = APIError.httpError(statusCode: 500, body: "")
         answerFollowUps(of: rig, getRevision: Self.r3)
@@ -778,7 +772,7 @@ final class RevisionRefreshTests: XCTestCase {
 
     /// `PUT /collections` can say "out of date" too; it is not the item PUT, so it is not a conflict.
     func testCollectionsOutOfDate_isNotAConflict() async throws {
-        let (rig, item) = try await orgRig()
+        let (rig, item) = try await StaleWriteRig.makeOrg()
         answerPut(of: rig, revision: Self.r2, collectionIds: [])
         rig.api.updateCipherCollectionsShouldThrow = APIError.httpError(
             statusCode: 400,
@@ -797,28 +791,6 @@ final class RevisionRefreshTests: XCTestCase {
     }
 
     // MARK: - Helpers
-
-    /// A rig with one organization item cached and stored (revision `r1`), and its key available.
-    private func orgRig() async throws -> (StaleWriteRig, VaultItem) {
-        let api = MockPrizmAPIClient()
-        let crypto = MockPrizmCryptoService()
-        await crypto.unlockWith(keys: StaleWriteRig.vaultKeys)
-        crypto.stubbedVaultKeys = StaleWriteRig.vaultKeys
-        let orgKeyCache = OrgKeyCache()
-        await orgKeyCache.replaceAll(with: [Self.orgId: Self.orgKeys])
-        let store = RawCipherStore()
-        let vault = await RepositoryFixtures.vaultRepository(
-            apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache, recordStore: store)
-        let item = VaultItem(
-            id: "o1", name: "Shared", isFavorite: false, isDeleted: false, creationDate: Date(),
-            revisionDate: RepositoryFixtures.revisionDate,
-            content: .login(LoginContent(username: "u", password: "p", uris: [], totp: nil, notes: nil, customFields: [])),
-            organizationId: Self.orgId)
-        try await RepositoryFixtures.seedRecords(
-            for: [item], in: store, vaultKeys: StaleWriteRig.vaultKeys, orgKeys: [Self.orgId: Self.orgKeys])
-        await vault.populate(items: [item], folders: [], organizations: [], collections: [], syncedAt: Date())
-        return (StaleWriteRig(api: api, store: store, vault: vault), item)
-    }
 
     /// Makes the item PUT answer with the request it received, stamped with `revision` and reporting
     /// `collectionIds`: the official server's PUT answer holds the collections from before the

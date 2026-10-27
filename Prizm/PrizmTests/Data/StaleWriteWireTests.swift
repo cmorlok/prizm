@@ -25,6 +25,34 @@ struct StaleWriteRig {
         return StaleWriteRig(api: api, store: store, vault: vault)
     }
 
+    static let orgId = "org-acme"
+    static let orgKeys = CryptoKeys(
+        encryptionKey: Data(repeating: 0xAC, count: 32),
+        macKey:        Data(repeating: 0xCE, count: 32)
+    )
+
+    /// A rig with one organization item `o1` cached and stored (revision `RepositoryFixtures.revisionDate`),
+    /// and the organization key available.
+    static func makeOrg() async throws -> (StaleWriteRig, VaultItem) {
+        let api = MockPrizmAPIClient()
+        let crypto = MockPrizmCryptoService()
+        await crypto.unlockWith(keys: vaultKeys)
+        crypto.stubbedVaultKeys = vaultKeys
+        let orgKeyCache = OrgKeyCache()
+        await orgKeyCache.replaceAll(with: [orgId: orgKeys])
+        let store = RawCipherStore()
+        let vault = await RepositoryFixtures.vaultRepository(
+            apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache, recordStore: store)
+        let item = VaultItem(
+            id: "o1", name: "Shared", isFavorite: false, isDeleted: false, creationDate: Date(),
+            revisionDate: RepositoryFixtures.revisionDate,
+            content: .login(LoginContent(username: "u", password: "p", uris: [], totp: nil, notes: nil, customFields: [])),
+            organizationId: orgId)
+        try await RepositoryFixtures.seedRecords(for: [item], in: store, vaultKeys: vaultKeys, orgKeys: [orgId: orgKeys])
+        await vault.populate(items: [item], folders: [], organizations: [], collections: [], syncedAt: Date())
+        return (StaleWriteRig(api: api, store: store, vault: vault), item)
+    }
+
     static func login(_ id: String, name: String = "Login", revisionDate: Date = RepositoryFixtures.revisionDate) -> VaultItem {
         VaultItem(id: id, name: name, isFavorite: false, isDeleted: false, creationDate: Date(),
                   revisionDate: revisionDate,
@@ -70,8 +98,9 @@ struct StaleWriteRig {
 }
 
 /// What `VaultRepositoryImpl.update()` does with the revision of the stored server record: refuses
-/// an edit when it has no readable revision, compares it with the draft's, and leaves Prizm's own
-/// operations alone (openspec change fix-cipher-edit-data-loss, tasks 4.1 to 4.3).
+/// an edit when it has no readable revision, compares it with the draft's, leaves Prizm's own
+/// operations alone, and sends the stored string as `lastKnownRevisionDate` (openspec change
+/// fix-cipher-edit-data-loss, tasks 4.1 to 4.3).
 @MainActor
 final class StaleWriteWireTests: XCTestCase {
 
@@ -352,5 +381,153 @@ final class StaleWriteWireTests: XCTestCase {
         XCTAssertEqual(rig.api.updateCipherCallCount, 1, "The edit reaches the server, no false conflict")
         XCTAssertEqual(rig.api.softDeleteCallCount, 1)
         XCTAssertEqual(rig.api.restoreCallCount, 1)
+    }
+
+    // MARK: - The wire: the stored revision string goes out unchanged
+
+    // Three server revisions, a minute apart, as the server writes them (six fractional digits).
+    private static let r1 = RepositoryFixtures.serverRevisionString(for: RepositoryFixtures.revisionDate)
+    private static let r2 = RepositoryFixtures.serverRevisionString(for: RepositoryFixtures.revisionDate.addingTimeInterval(60))
+    private static let r3 = RepositoryFixtures.serverRevisionString(for: RepositoryFixtures.revisionDate.addingTimeInterval(120))
+
+    /// The string is copied, never rebuilt from a date: a date holds milliseconds, the server's
+    /// string six fractional digits, and re-formatting would send another revision than the server
+    /// holds (and the server compares whole seconds, so a wrong string is a false conflict or a
+    /// missed one).
+    func testUpdate_sendsTheStoredRevisionStringByteForByte() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1")
+        try await rig.storeRecord(of: item, revision: "2026-10-26T10:00:00.123456Z")
+
+        _ = try await rig.vault.update(StaleWriteRig.renamed(item))
+
+        let sent = try XCTUnwrap(rig.api.lastUpdatedCipher)
+        XCTAssertEqual(sent.lastKnownRevisionDate, "2026-10-26T10:00:00.123456Z")
+        let body = try encodedBody(sent)
+        XCTAssertEqual(body["lastKnownRevisionDate"] as? String, "2026-10-26T10:00:00.123456Z",
+                       "The encoded body carries the key with the stored string")
+    }
+
+    /// A new item has no server copy, so there is nothing to be out of date against.
+    func testCreate_sendsNoLastKnownRevisionDate() async throws {
+        let rig = await StaleWriteRig.make()
+
+        _ = try await rig.vault.create(DraftVaultItem(StaleWriteRig.login("n1", name: "New")))
+
+        let sent = try XCTUnwrap(rig.api.lastCreatedCipher)
+        XCTAssertNil(sent.lastKnownRevisionDate)
+        XCTAssertNil(try encodedBody(sent)["lastKnownRevisionDate"], "The key is absent from the create body")
+    }
+
+    func testTwoEditsInARow_secondSendsTheFirstResponsesRevision() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1")
+        try await rig.storeRecord(of: item, revision: Self.r1)
+        await rig.cache(item)
+        RepositoryFixtures.answerUpdates(of: rig.api, withRevisionString: "2026-10-26T10:00:05.654321Z")
+
+        _ = try await rig.vault.update(StaleWriteRig.renamed(item))
+        XCTAssertEqual(rig.api.lastUpdatedCipher?.lastKnownRevisionDate, Self.r1, "The first edit sends the synced revision")
+        let latest = try await rig.vault.itemDetail(id: "c1")
+        var second = DraftVaultItem(latest)
+        second.name = "Renamed again"
+        _ = try await rig.vault.update(second)
+
+        XCTAssertEqual(rig.api.updateCipherCallCount, 2, "The second save succeeds")
+        XCTAssertEqual(rig.api.lastUpdatedCipher?.lastKnownRevisionDate, "2026-10-26T10:00:05.654321Z",
+                       "The second edit sends the string the server returned for the first")
+    }
+
+    /// The update sends the revision the server gave the item when it restored it, not the synced one.
+    func testDeleteRestoreEdit_sendsThePostRestoreRevision() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1")
+        try await rig.storeRecord(of: item, revision: Self.r1)
+        await rig.cache(item)
+        let storedRecord = await rig.store.record(for: "c1")
+        let stored = try XCTUnwrap(storedRecord)
+        rig.api.getCipherResponses["c1"] = try RepositoryFixtures.withRevision(stored, Self.r2)
+        rig.api.restoreCipherResponse = try RepositoryFixtures.withRevision(stored, Self.r3)
+
+        try await rig.vault.deleteItem(id: "c1")
+        try await rig.vault.restoreItem(id: "c1")
+        let latest = try await rig.vault.itemDetail(id: "c1")
+        var draft = DraftVaultItem(latest)
+        draft.name = "Renamed after restore"
+        _ = try await rig.vault.update(draft)
+
+        XCTAssertEqual(rig.api.lastUpdatedCipher?.lastKnownRevisionDate, Self.r3)
+    }
+
+    /// Restore and edit within one second differ only in the fraction: the string is still the
+    /// restore answer's, byte for byte.
+    func testRestoreThenEditInTheSameSecond_sendsTheRestoreRevision() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1").with(isDeleted: true)
+        try await rig.storeRecord(of: item, revision: Self.r1)
+        await rig.cache(item)
+        let sameSecond = RepositoryFixtures.serverRevisionString(
+            for: RepositoryFixtures.revisionDate.addingTimeInterval(0.5))
+        XCTAssertEqual(sameSecond.prefix(19), Self.r1.prefix(19), "Both revisions are in the same second")
+        XCTAssertNotEqual(sameSecond, Self.r1)
+        let storedRecord = await rig.store.record(for: "c1")
+        let stored = try XCTUnwrap(storedRecord)
+        rig.api.restoreCipherResponse = try RepositoryFixtures.withRevision(stored, sameSecond)
+
+        try await rig.vault.restoreItem(id: "c1")
+        let latest = try await rig.vault.itemDetail(id: "c1")
+        var draft = DraftVaultItem(latest)
+        draft.name = "Renamed in the same second"
+        _ = try await rig.vault.update(draft)
+
+        XCTAssertEqual(rig.api.lastUpdatedCipher?.lastKnownRevisionDate, sameSecond)
+    }
+
+    func testOrgEditTwice_secondSendsTheCollectionsRevision() async throws {
+        let (rig, item) = try await StaleWriteRig.makeOrg()
+        RepositoryFixtures.answerUpdates(of: rig.api, withRevisionString: Self.r2, collectionsRevision: Self.r3)
+        var first = StaleWriteRig.renamed(item)
+        first.collectionIds = ["col-a"]
+
+        _ = try await rig.vault.update(first)
+        XCTAssertEqual(rig.api.lastUpdatedCipher?.lastKnownRevisionDate, Self.r1)
+        let latest = try await rig.vault.itemDetail(id: "o1")
+        var second = DraftVaultItem(latest)
+        second.name = "Renamed again"
+        _ = try await rig.vault.update(second)
+
+        XCTAssertEqual(rig.api.updateCipherCallCount, 2, "The second org edit is sent, not stopped by the pre-check")
+        XCTAssertEqual(rig.api.lastUpdatedCipher?.lastKnownRevisionDate, Self.r3,
+                       "The second edit sends the collections answer's revision, not the item PUT's")
+    }
+
+    func testRetryAfterCollectionsFailure_sendsTheStoredRevision() async throws {
+        let (rig, item) = try await StaleWriteRig.makeOrg()
+        RepositoryFixtures.answerUpdates(of: rig.api, withRevisionString: Self.r2, getRevision: Self.r3)
+        rig.api.updateCipherCollectionsShouldThrow = APIError.httpError(statusCode: 500, body: "")
+        var draft = StaleWriteRig.renamed(item)
+        draft.collectionIds = ["col-a"]
+        do {
+            _ = try await rig.vault.update(draft)
+            XCTFail("The collection update fails")
+        } catch VaultError.collectionChangeNotSaved {
+            // expected
+        }
+        XCTAssertEqual(rig.api.lastUpdatedCipher?.lastKnownRevisionDate, Self.r1)
+
+        rig.api.updateCipherCollectionsShouldThrow = nil
+        var retry = draft
+        let cached = try await rig.vault.itemDetail(id: "o1")
+        retry.revisionDate = cached.revisionDate
+        _ = try await rig.vault.update(retry)
+
+        XCTAssertEqual(rig.api.updateCipherCallCount, 2, "The retry is a full PUT")
+        XCTAssertEqual(rig.api.lastUpdatedCipher?.lastKnownRevisionDate, Self.r3,
+                       "It carries the revision the stored record holds after the refresh")
+    }
+
+    private func encodedBody(_ cipher: RawCipher) throws -> [String: Any] {
+        let data = try JSONEncoder().encode(cipher)
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 }

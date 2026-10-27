@@ -77,10 +77,13 @@ nonisolated struct RawCipher: Codable {
     /// `nil` = key absent, `.null` = key present with `null`; both are written back as received.
     let passwordHistory: JSONValue?
     /// Request-only, encode-only: the revision date the client last saw, which the server uses to
-    /// refuse a stale update (HTTP 400). Prizm never sets it until stale-write protection ships, so
-    /// today it is always nil on a request. Never read when decoding, so a value in a server record
-    /// can never be sent back: a stale one would defeat the check it exists for. No server sends it
-    /// (the 1.37.4 golden fixture has none), so nothing is lost.
+    /// refuse an update of an outdated copy (HTTP 400). Every update sends the stored record's raw
+    /// `revisionDate` string unchanged (`CipherMapper.buildRawCipher` takes it from the base record),
+    /// so a change made elsewhere is rejected instead of overwritten; a create sends none, and a
+    /// formatted or epoch date is never sent, because a changed fraction is a different revision.
+    /// Never read when decoding, so a value in a server record can never be sent back: a stale one
+    /// would defeat the check it exists for. No server sends it (the 1.37.4 golden fixture has
+    /// none), so nothing is lost.
     let lastKnownRevisionDate: String?
     /// Decode-time diagnostic: the top-level key names of the payload that `CipherKeys` does not
     /// classify, sorted. Names only, never values. Not a `CodingKey` and never encoded, so a request
