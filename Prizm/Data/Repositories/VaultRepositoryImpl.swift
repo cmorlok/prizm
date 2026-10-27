@@ -245,40 +245,53 @@ actor VaultRepositoryImpl: VaultRepository {
 
     // MARK: - Update (write path — called by EditVaultItemUseCaseImpl)
 
-    /// Re-encrypts `draft`, calls `PUT /api/ciphers/{id}`, splices the server-confirmed
-    /// item into the in-memory cache, and returns it.
+    /// Saves `draft` over the item's last server record: re-encrypts what the user edited, calls
+    /// `PUT /api/ciphers/{id}`, splices the server-confirmed item into the in-memory cache, and
+    /// returns it.
     ///
-    /// - Security goal: the vault's symmetric keys are used to re-encrypt every sensitive
-    ///   field before the request leaves the device. The re-encryption boundary is the call
-    ///   to `CipherMapper.toRawCipher` — after that point only EncString ciphertext exists
-    ///   in the `RawCipher` struct. Plaintext is never serialised into the JSON body.
-    ///   Algorithm: EncString type-2 (AES-256-CBC + HMAC-SHA256); see `CipherMapper.toRawCipher`
-    ///   for the full algorithm reference and security notes.
+    /// - Security goal: every edited field is re-encrypted with the key the server expects for the
+    ///   item before the request leaves the device, and the save fails instead of guessing when that
+    ///   key cannot be established. The re-encryption boundary is the call to
+    ///   `CipherMapper.toRawCipher(_:overlaying:effectiveKeys:encryptedFor:)`; after it only EncString
+    ///   ciphertext exists in the `RawCipher`. Plaintext is never serialised into the JSON body.
+    ///   Algorithm: EncString type-2 (AES-256-CBC + HMAC-SHA256); see `CipherMapper` for the full
+    ///   algorithm reference and security notes.
     ///
-    /// - Data flow (re-encryption boundary):
-    ///   1. Obtain current symmetric keys from `PrizmCryptoService` — throws immediately
-    ///      if the vault is locked, preventing writes from a locked state.
-    ///   2. `CipherMapper.toRawCipher` encrypts every sensitive field with the vault key, or with
-    ///      the organization key for an org item (`encryptionKeys(for:)`, which never falls back).
-    ///      No plaintext value crosses this call boundary in the outbound direction.
-    ///   3. The encrypted `RawCipher` is sent via `PUT /api/ciphers/{id}` with `encryptedFor` set to
-    ///      the profile id of the last sync (`ProfileIdCache`). Without one nothing is sent and
-    ///      `VaultError.profileIdUnavailable` is thrown. The folder/favorite-only `/partial` request
-    ///      carries no `encryptedFor` and needs no id.
-    ///   4. The server response is decoded and re-mapped to a `VaultItem` — we use the
-    ///      *response* (not the draft) so the server's revision date and any server-side
-    ///      normalisation are captured correctly.
-    ///   5. The in-memory cache is patched in-place so the UI reflects the latest state
-    ///      without triggering a full re-sync.
+    /// - Check order. Each step fails before anything is encrypted or sent, and a failure changes
+    ///   neither the stored record, nor the item cache, nor the caller's draft:
+    ///   1. Vault locked → `VaultError.vaultLocked`.
+    ///   2. A change of folder or favorite only goes through `/partial` and needs none of the below.
+    ///   3. The cached item's edit block → `itemNotEditable`.
+    ///   4. The stored server record is missing → `itemRecordUnavailable`.
+    ///   5. The stored record's own edit block → `itemNotEditable`.
+    ///   6. The draft's organization differs from the record's → `itemRecordUnavailable` (a draft
+    ///      cannot move an item between organizations, and its collections are never sent on a guess).
+    ///   7. The active key follows the stored record's organization: that organization's key, or the
+    ///      vault key for a personal item. A missing organization key → `organizationKeyUnavailable`.
+    ///   8. The profile id for `encryptedFor` → `profileIdUnavailable`.
+    ///   9. The effective key: the item's own key unwrapped with the active key, or the active key
+    ///      for an item without one. A key that does not unwrap → `itemKeyUnavailable`.
+    ///   10. The key check: the stored name must verify and decrypt under that key
+    ///       (`CipherMapper.verifyKey`) → `itemKeyUnavailable`.
+    ///   11. The overlay: the draft's edits over the stored record.
     ///
     /// - What is NOT done:
+    ///   • No fallback to another key at any step. In particular the vault key is never tried for an
+    ///     organization item, and the attachment key service (which falls back to the vault key on a
+    ///     cache miss) is not used on this path.
     ///   • Biometric re-authentication is not required before writing (see TODO below).
     ///   • Offline writes are not queued; a network failure surfaces as a thrown error
     ///     and leaves the local cache unchanged (see TODO below).
     ///
-    /// - Throws: `VaultError.vaultLocked` if the vault is locked (translated from `PrizmCryptoServiceError`).
+    /// - Data flow after the checks: the encrypted `RawCipher` is sent via `PUT /api/ciphers/{id}`;
+    ///   the server response (not the draft, so its revision date and normalisation are captured) is
+    ///   stored as the item's new record and re-mapped to a `VaultItem`; the in-memory cache is
+    ///   patched in place so the UI reflects the latest state without a full re-sync.
+    ///
+    /// - Throws: `VaultError.vaultLocked`, `itemNotEditable`, `itemRecordUnavailable`,
+    ///   `organizationKeyUnavailable`, `profileIdUnavailable` or `itemKeyUnavailable` as above.
     /// - Throws: `APIError` on network or HTTP failure.
-    /// - Throws: `CipherMapperError` if the reverse mapper or response mapper fails.
+    /// - Throws: `CipherMapperError` if the response mapper fails.
     func update(_ draft: DraftVaultItem) async throws -> VaultItem {
         // TODO: Require biometric re-auth before encrypting and sending — deferred pending
         // SecureEnclave entitlement approval.
@@ -318,11 +331,52 @@ actor VaultRepositoryImpl: VaultRepository {
             throw VaultError.itemNotEditable(blockReason)
         }
 
+        // The server's last record of this item: the save is built over it, and without it nothing is
+        // sent (there would be no key and no preserved values to base the request on).
+        guard let base = await recordStore.record(for: draft.id) else {
+            logger.error("Save refused: no stored record for \(draft.id, privacy: .public)")
+            throw VaultError.itemRecordUnavailable
+        }
+
+        // The stored record's own shape, checked again here: the cached item above can be older than
+        // the record (a sync replaced it), and a caller other than the edit sheet reaches this too.
+        if let reason = mapper.editBlock(for: base) {
+            logger.error("Save refused: stored record of \(draft.id, privacy: .public) cannot be edited (\(String(describing: reason), privacy: .public))")
+            throw VaultError.itemNotEditable(reason)
+        }
+
+        // The key follows the stored record, never the draft: a draft that names another
+        // organization than the record would be encrypted under a key the server does not expect for
+        // the item, and its collections would be sent on a guess.
+        guard draft.organizationId == base.organizationId else {
+            logger.error("Save refused: draft of \(draft.id, privacy: .public) is in \(draft.organizationId?.prefix(8) ?? "personal", privacy: .public), stored record in \(base.organizationId?.prefix(8) ?? "personal", privacy: .public)")
+            throw VaultError.itemRecordUnavailable
+        }
+
+        // Read once: a lock or a sync during the save cannot change the keys used for this request.
         let orgKeysSnapshot = await orgKeyCache.snapshot()
-        let encryptionKeys = try encryptionKeys(for: draft, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot)
+        let activeKeys = try encryptionKeys(organizationId: base.organizationId, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot)
         let profileId = try await requireProfileId()
 
-        let rawCipher = try mapper.toRawCipher(draft, encryptedWith: encryptionKeys, encryptedFor: profileId)
+        // The item's own key when it has one, else the active key (never the other way round, and
+        // never a fallback). Failing here and at the key check below sends nothing and encrypts
+        // nothing: the overlay runs only after both.
+        let effectiveKeys: CryptoKeys
+        do {
+            effectiveKeys = try mapper.effectiveKeys(for: base, activeKeys: activeKeys)
+            try mapper.verifyKey(effectiveKeys, against: base)
+        } catch {
+            logger.error("Save refused: no usable key for \(draft.id, privacy: .public)")
+            throw VaultError.itemKeyUnavailable
+        }
+
+        let rawCipher: RawCipher
+        do {
+            rawCipher = try mapper.toRawCipher(draft, overlaying: base, effectiveKeys: effectiveKeys, encryptedFor: profileId)
+        } catch CipherMapperError.storedValueUnreadable {
+            logger.error("Save refused: a stored value of \(draft.id, privacy: .public) cannot be read with its key")
+            throw VaultError.itemKeyUnavailable
+        }
 
         // TODO: Queue encrypted rawCipher for offline persistence (deferred — requires WAL).
         let updatedRaw = try await apiClient.updateCipher(id: draft.id, cipher: rawCipher)
@@ -368,12 +422,12 @@ actor VaultRepositoryImpl: VaultRepository {
         }
 
         let orgKeysSnapshot = await orgKeyCache.snapshot()
-        let encryptionKeys = try encryptionKeys(for: draft, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot)
+        let encryptionKeys = try encryptionKeys(organizationId: draft.organizationId, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot)
         let profileId = try await requireProfileId()
 
         // An org create carries `encryptedFor` inside `cipher` (OrgCipherCreateRequest encodes the
         // RawCipher there); a personal create has it at the top level.
-        let rawCipher = try mapper.toRawCipher(draft, encryptedWith: encryptionKeys, encryptedFor: profileId)
+        let rawCipher = try mapper.toNewRawCipher(draft, encryptedWith: encryptionKeys, encryptedFor: profileId)
 
         let createdRaw: RawCipher
         if draft.organizationId != nil {
@@ -683,18 +737,20 @@ actor VaultRepositoryImpl: VaultRepository {
 
     // MARK: - Private helpers
 
-    /// The key an item must be encrypted with: its organization's key for an org item, the vault
-    /// key otherwise.
+    /// The key an item's own key (or, without one, its fields) is encrypted with: its organization's
+    /// key for an org item, the vault key otherwise. On update, `organizationId` is the stored
+    /// record's, not the draft's; on create it is the draft's.
     ///
     /// Security goal: an org item must only ever be encrypted with its organization key.
     /// Encrypting it with the user's key makes it unreadable for every other member and for this
     /// user's next sync, while the server stores it as is. Mirrors the SDK's
     /// `Cipher::key_identifier` (`bitwarden-vault/src/cipher/cipher.rs`), which has no fallback.
     /// Intentionally NOT done: falling back to the vault key when the org key is missing (before
-    /// fix-org-key-required-on-write it did, for example while a sync rebuilt the key cache).
-    private func encryptionKeys(for draft: DraftVaultItem, vaultKeys: CryptoKeys,
+    /// fix-org-key-required-on-write it did, for example while a sync rebuilt the key cache), and
+    /// using the attachment key service, whose cache miss returns the vault key.
+    private func encryptionKeys(organizationId: String?, vaultKeys: CryptoKeys,
                                 orgKeys: [String: CryptoKeys]) throws -> CryptoKeys {
-        guard let orgId = draft.organizationId else { return vaultKeys }
+        guard let orgId = organizationId else { return vaultKeys }
         guard let orgKey = orgKeys[orgId] else {
             logger.error("No key for org \(orgId.prefix(8), privacy: .public)…; save refused")
             throw VaultError.organizationKeyUnavailable

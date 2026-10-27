@@ -89,7 +89,7 @@ final class RawCipherStoreTests: XCTestCase {
     /// Its name is a real type-2 EncString under `vaultKeys`, as a server record is, so a save built
     /// over it can check the key against it.
     private func richRecord(_ id: String) throws -> RawCipher {
-        let name = try CipherMapper().toRawCipher(DraftVaultItem(vaultItem(id)), encryptedWith: vaultKeys).name
+        let name = try CipherMapper().toNewRawCipher(DraftVaultItem(vaultItem(id)), encryptedWith: vaultKeys, encryptedFor: RepositoryFixtures.profileId).name
         return RawCipher(
             id: id, organizationId: nil, folderId: nil, type: 1, name: name, notes: nil,
             favorite: false, reprompt: nil, deletedDate: nil, creationDate: nil,
@@ -323,15 +323,18 @@ final class RawCipherStoreTests: XCTestCase {
         XCTAssertEqual(stored?.revisionDate, "2026-10-27T10:00:00.000Z", "The response, not the request, is stored")
     }
 
-    func testUpdate_doesNotCopyTheStoredRecordIntoTheRequest() async throws {
+    func testUpdate_sendsThePreservedValuesOfTheStoredRecord() async throws {
         let rig = await makeRig(seedProfileId: RepositoryFixtures.profileId)
-        await seed(rig.store, [try richRecord("c1")])
+        let stored = try richRecord("c1")
+        await seed(rig.store, [stored])
 
         _ = try await rig.vault.update(loginDraft(id: "c1", name: "Renamed"))
 
+        // A save is built over the stored record: what Prizm does not model goes back as received.
         let sent = try XCTUnwrap(rig.api.lastUpdatedCipher)
-        XCTAssertNil(sent.passwordHistory, "Nothing is copied from the stored record into a request yet")
-        XCTAssertNil(sent.login?.extras["fido2Credentials"])
+        XCTAssertEqual(sent.passwordHistory, stored.passwordHistory)
+        XCTAssertEqual(sent.login?.extras["fido2Credentials"], stored.login?.extras["fido2Credentials"])
+        XCTAssertNotNil(sent.login?.extras["fido2Credentials"])
     }
 
     func testCreatePersonalAndOrg_storeTheCreatedCipher() async throws {

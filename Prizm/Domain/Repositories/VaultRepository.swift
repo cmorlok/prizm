@@ -126,6 +126,12 @@ nonisolated enum VaultError: Error, LocalizedError {
     /// A full save of an item Prizm cannot write back was refused before anything was encrypted or
     /// sent. Folder and favorite changes of the same item are not affected.
     case itemNotEditable(EditBlockReason)
+    /// Prizm holds no server record for the item, or the draft's organization differs from the stored
+    /// record's, so a save has nothing safe to be built over. Nothing was encrypted or sent.
+    case itemRecordUnavailable
+    /// The item's own key could not be unwrapped, or the key check on the stored name failed, so
+    /// Prizm does not know which key the server expects. Nothing was encrypted or sent.
+    case itemKeyUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -147,6 +153,10 @@ nonisolated enum VaultError: Error, LocalizedError {
             return "Prizm couldn't confirm which account this item belongs to. Lock and unlock Prizm, then try again."
         case .itemNotEditable(let reason):
             return reason.userMessage
+        case .itemRecordUnavailable:
+            return "Prizm couldn't load this item's latest saved version. Lock and unlock the vault, then try again."
+        case .itemKeyUnavailable:
+            return "Prizm couldn't load the encryption key for this item. Lock and unlock the vault, then try again."
         }
     }
 }

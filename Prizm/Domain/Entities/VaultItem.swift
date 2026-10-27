@@ -3,11 +3,6 @@ import Foundation
 /// Why Prizm refuses to edit an item. Set only by the Data layer, from the server record
 /// (`CipherMapper.editBlock(for:)`); Presentation shows its message and never looks at raw shapes.
 nonisolated enum EditBlockReason: Equatable, Hashable, Sendable {
-    /// Another Bitwarden client gave the item its own encryption key, and the save path does not yet
-    /// send or use that key, so a save would re-encrypt the item under the wrong key. Temporary: it
-    /// goes when saves are written with the item's own key.
-    case hasOwnKey
-
     /// The server stores this item as an encrypted blob in a format Prizm does not understand
     /// (its legacy `data` field holds a record with a `format_version`). Saving the typed fields
     /// would make the official server ignore them or overwrite the blob.
@@ -22,18 +17,24 @@ nonisolated enum EditBlockReason: Equatable, Hashable, Sendable {
     /// section over whatever the server holds.
     case unmappable
 
+    /// The item's name is an EncString of the old type 0 (AES-CBC without a MAC, written by early
+    /// Bitwarden clients). Prizm reads it but never writes it back: a save must prove the key
+    /// against the stored name, and a type-0 name proves nothing because nothing authenticates it
+    /// (`CipherMapper.verifyKey`). The item stays readable; only editing is refused.
+    case legacyEncryption
+
     /// Plain language plus a next step, no jargon. Shown in the detail pane, read by VoiceOver as
     /// the Edit button's hint, and used as the error text when a save is refused.
     var userMessage: String {
         switch self {
-        case .hasOwnKey:
-            return "Prizm can't edit items with their own encryption key yet. Edit it in the Bitwarden web vault or browser extension."
         case .unsupportedFormat:
             return "This item uses a format Prizm can't edit yet. Edit it in the Bitwarden web vault or browser extension."
         case .partiallyAvailable:
             return "Prizm received only part of this item, so it can't be edited here. Edit it in the Bitwarden web vault or browser extension."
         case .unmappable:
             return "Some of this item's details are missing, so Prizm can't edit it without losing data. Edit it in the Bitwarden web vault or browser extension."
+        case .legacyEncryption:
+            return "Prizm can't edit this item because it uses an older encryption format. Edit it in the Bitwarden web vault or browser extension."
         }
     }
 }

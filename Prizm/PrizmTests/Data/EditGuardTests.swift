@@ -6,10 +6,9 @@ import XCTest
 /// while folder and favorite changes (which carry no item data) still work, and local rebuilds after
 /// delete, restore and attachment changes keep the reason.
 ///
-/// `hasOwnKey` is temporary: the write path does not yet send or use the item's own key, so saving
-/// such an item would re-encrypt it under the wrong key. The other reasons (a blob, a partial item,
-/// a missing type section) are lasting; the repository tests below use `unsupportedFormat` as the
-/// example of a blocked item, so removing the temporary reason touches the keyed-record tests only.
+/// The reasons are lasting ones: a blob, a partial item, a missing type section. An item with its own
+/// key is editable (saves are written with that key); the repository tests below use
+/// `unsupportedFormat` as the example of a blocked item.
 @MainActor
 final class EditGuardTests: XCTestCase {
 
@@ -43,13 +42,13 @@ final class EditGuardTests: XCTestCase {
 
     // MARK: - Mapper
 
-    func testKeyedRecord_mapsWithTheOwnKeyReason() throws {
+    func testKeyedRecord_isEditable() throws {
         let raw = KeyedCipherBuilder.login(
             id: "k", name: "Keyed", activeKeys: vaultKeys, itemKey: KeyedCipherBuilder.randomKeys()
         )
 
-        XCTAssertEqual(mapper.editBlock(for: raw), .hasOwnKey)
-        XCTAssertEqual(try mapper.map(raw: raw, vaultKeys: vaultKeys).item.editBlock, .hasOwnKey)
+        XCTAssertNil(mapper.editBlock(for: raw))
+        XCTAssertNil(try mapper.map(raw: raw, vaultKeys: vaultKeys).item.editBlock)
     }
 
     func testKeylessRecord_hasNoEditBlock() throws {
@@ -99,18 +98,6 @@ final class EditGuardTests: XCTestCase {
     }
 
     // MARK: - Message
-
-    func testOwnKeyReason_messageIsPlainLanguageWithANextStep() {
-        let message = EditBlockReason.hasOwnKey.userMessage
-
-        XCTAssertEqual(
-            message,
-            "Prizm can't edit items with their own encryption key yet. Edit it in the Bitwarden web vault or browser extension."
-        )
-        for jargon in ["blob", "partialData", "cipher"] {
-            XCTAssertFalse(message.localizedCaseInsensitiveContains(jargon), "\"\(jargon)\" is jargon")
-        }
-    }
 
     func testItemNotEditable_messageIsTheReasonsMessage() {
         let error = VaultError.itemNotEditable(.unsupportedFormat)
@@ -278,6 +265,26 @@ final class EditGuardTests: XCTestCase {
         XCTAssertNil(mapper.editBlock(for: try payload(type: 2, sections: #""secureNote": null"#)))
     }
 
+    // MARK: - Legacy encryption (type-0 name)
+
+    /// A name Prizm cannot write back with a proven key: every save of such an item fails the key
+    /// check, so the Edit button is disabled with a reason instead of offering a save that cannot
+    /// succeed.
+    func testTypeZeroName_isBlockedAsLegacyEncryption() throws {
+        let typeZeroName = "0.AAAAAAAAAAAAAAAAAAAAAA==|AAAAAAAAAAAAAAAAAAAAAA=="
+        let keyless = try decoded(keylessLogin(), adding: ["name": typeZeroName])
+        let keyed = try decoded(
+            KeyedCipherBuilder.login(id: "k", name: "Keyed", activeKeys: vaultKeys, itemKey: KeyedCipherBuilder.randomKeys()),
+            adding: ["name": typeZeroName])
+
+        XCTAssertEqual(mapper.editBlock(for: keyless), .legacyEncryption)
+        XCTAssertEqual(mapper.editBlock(for: keyed), .legacyEncryption, "an item with its own key too")
+    }
+
+    func testTypeTwoName_isNotBlockedAsLegacyEncryption() {
+        XCTAssertNil(mapper.editBlock(for: keylessLogin()))
+    }
+
     // MARK: - Precedence
 
     func testReasonPrecedence() throws {
@@ -328,11 +335,11 @@ final class EditGuardTests: XCTestCase {
     // MARK: - Messages
 
     func testReasonMessages_arePlainLanguageWithANextStep() {
-        let reasons: [EditBlockReason] = [.hasOwnKey, .unsupportedFormat, .partiallyAvailable, .unmappable]
+        let reasons: [EditBlockReason] = [.unsupportedFormat, .partiallyAvailable, .unmappable, .legacyEncryption]
         for reason in reasons {
             // Exhaustive on purpose: a new reason does not compile until it is listed above.
             switch reason {
-            case .hasOwnKey, .unsupportedFormat, .partiallyAvailable, .unmappable: break
+            case .unsupportedFormat, .partiallyAvailable, .unmappable, .legacyEncryption: break
             }
             let message = reason.userMessage
 

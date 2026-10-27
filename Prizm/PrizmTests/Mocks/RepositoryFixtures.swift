@@ -104,7 +104,7 @@ enum RepositoryFixtures {
             } else {
                 keys = vaultKeys
             }
-            let record = try mapper.toRawCipher(DraftVaultItem(item), encryptedWith: keys)
+            let record = try mapper.toNewRawCipher(DraftVaultItem(item), encryptedWith: keys, encryptedFor: RepositoryFixtures.profileId)
             let mappedBack = try mapper.map(raw: record, vaultKeys: vaultKeys, orgKeys: orgKeys).item
             guard mappedBack.name == item.name else {
                 throw SeedError(description: "Seeded record of item \(item.id) does not map back to its name")

@@ -84,7 +84,7 @@ enum UITestFixtures {
             } else {
                 keys = vaultKeys
             }
-            return try! mapper.toRawCipher(DraftVaultItem(item), encryptedWith: keys)
+            return try! mapper.toNewRawCipher(DraftVaultItem(item), encryptedWith: keys, encryptedFor: "ui-test-seed")
         }
     }
 

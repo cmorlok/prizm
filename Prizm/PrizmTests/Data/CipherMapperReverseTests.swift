@@ -1,7 +1,7 @@
 import XCTest
 @testable import Prizm
 
-/// Round-trip tests for `CipherMapper.toRawCipher(_:encryptedWith:)`.
+/// Round-trip tests for `CipherMapper.toNewRawCipher(_:encryptedWith:encryptedFor:)`.
 ///
 /// Each test converts a `VaultItem` → `DraftVaultItem` → `RawCipher` (via reverse mapper)
 /// → `VaultItem` (via forward mapper) and verifies the final item equals the original.
@@ -26,7 +26,7 @@ final class CipherMapperReverseTests: XCTestCase {
 
     private func roundTrip(_ item: VaultItem) throws -> VaultItem {
         let draft      = DraftVaultItem(item)
-        let rawCipher  = try sut.toRawCipher(draft, encryptedWith: keys)
+        let rawCipher  = try sut.toNewRawCipher(draft, encryptedWith: keys, encryptedFor: RepositoryFixtures.profileId)
         return try sut.map(raw: rawCipher, keys: keys).item
     }
 
