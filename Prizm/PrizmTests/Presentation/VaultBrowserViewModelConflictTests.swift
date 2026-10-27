@@ -48,7 +48,8 @@ final class VaultBrowserViewModelConflictTests: XCTestCase {
             deleteCollection: StubDeleteCollection(),
             syncTimestamp:    syncRepo,
             getLastSyncDate:  GetLastSyncDateUseCaseImpl(repository: syncRepo),
-            sync:             sync
+            sync:             sync,
+            conflictResyncRetryDelay: .zero
         )
     }
 
@@ -87,6 +88,51 @@ final class VaultBrowserViewModelConflictTests: XCTestCase {
         XCTAssertNil(sut.syncErrorMessage)
     }
 
+    func testResync_syncInProgress_retriesUntilItsOwnSyncRan() async {
+        sync.executeErrors = [SyncError.syncInProgress, SyncError.syncInProgress, nil]
+
+        let outcome = await sut.resyncAfterConflict()
+
+        XCTAssertEqual(outcome, .synced)
+        XCTAssertEqual(sync.executeCount, 3, "Only the third call ran its own sync; the first two met the running one")
+    }
+
+    func testResync_syncInProgressTwentyTimes_fails() async {
+        sync.executeErrors = Array(repeating: SyncError.syncInProgress, count: 20)
+
+        let outcome = await sut.resyncAfterConflict()
+
+        XCTAssertEqual(outcome, .failed("Sync is already in progress."))
+        XCTAssertEqual(sync.executeCount, 20)
+    }
+
+    func testResyncFailure_isNotAnnouncedByTheBrowser() async {
+        XCTAssertFalse(sut.syncErrorFromConflictResync)
+
+        sync.executeError = SyncError.networkUnavailable
+        _ = await sut.resyncAfterConflict()
+        XCTAssertTrue(sut.syncErrorFromConflictResync)
+        XCTAssertEqual(sut.syncErrorMessage, SyncError.networkUnavailable.localizedDescription)
+
+        sync.executeError = nil
+        _ = await sut.resyncAfterConflict()
+        XCTAssertFalse(sut.syncErrorFromConflictResync, "A successful sync clears the flag")
+
+        sync.executeError = SyncError.networkUnavailable
+        _ = await sut.resyncAfterConflict()
+        sut.dismissSyncError()
+        XCTAssertFalse(sut.syncErrorFromConflictResync, "Dismissing the banner clears the flag")
+
+        _ = await sut.resyncAfterConflict()
+        sut.handleSyncError("Some other failure")
+        XCTAssertFalse(sut.syncErrorFromConflictResync, "An error from anywhere else is announced as usual")
+
+        _ = await sut.resyncAfterConflict()
+        XCTAssertTrue(sut.syncErrorFromConflictResync)
+        sut.clearSession()
+        XCTAssertFalse(sut.syncErrorFromConflictResync, "A lock clears the flag")
+    }
+
     // MARK: - latestItem
 
     func testLatestItem_findsTheSyncedItem() async {
@@ -96,6 +142,27 @@ final class VaultBrowserViewModelConflictTests: XCTestCase {
 
         guard case .available(let found) = latest else { return XCTFail("Expected .available, got \(latest)") }
         XCTAssertEqual(found.name, "New")
+    }
+
+    func testLatestItem_trashedOrMissing_isGone() async {
+        await vault.populate(items: [item(id: "trashed", isDeleted: true)], folders: [], organizations: [],
+                             collections: [], syncedAt: .now)
+
+        let trashed = await sut.latestItem(id: "trashed")
+        let missing = await sut.latestItem(id: "never-existed")
+
+        XCTAssertEqual(trashed, .gone, "A trashed item cannot be edited")
+        XCTAssertEqual(missing, .gone)
+    }
+
+    func testLatestItem_blockedItem_isAvailable() async {
+        await vault.populate(items: [item(editBlock: .unsupportedFormat)], folders: [], organizations: [],
+                             collections: [], syncedAt: .now)
+
+        let latest = await sut.latestItem(id: "item-1")
+
+        guard case .available(let found) = latest else { return XCTFail("Expected .available, got \(latest)") }
+        XCTAssertEqual(found.editBlock, .unsupportedFormat)
     }
 }
 

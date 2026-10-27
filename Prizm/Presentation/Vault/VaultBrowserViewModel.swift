@@ -76,6 +76,11 @@ final class VaultBrowserViewModel: ObservableObject {
     }
     @Published private(set) var lastSyncedAt: Date?
     @Published var syncErrorMessage: String? = nil
+    /// True while `syncErrorMessage` holds the failure of a conflict resync. The edit sheet shows
+    /// a conflict, and its status line announces that failure; the browser's banner shows it
+    /// without announcing it a second time. Cleared by a successful sync, a dismissal, a lock and
+    /// any other sync error.
+    @Published private(set) var syncErrorFromConflictResync = false
     /// Reflects whether the edit sheet is currently open. Used by `MenuBarViewModel`
     /// to enable/disable the Edit and Save menu bar actions.
     @Published private(set) var editSheetOpen: Bool = false
@@ -118,6 +123,7 @@ final class VaultBrowserViewModel: ObservableObject {
     private var syncTimestamp:          any SyncTimestampRepository
     private var getLastSyncDate:        any GetLastSyncDateUseCase
     private let sync:                   any SyncUseCase
+    private let conflictResyncRetryDelay: Duration
     private let logger = Logger(subsystem: "com.prizm", category: "VaultBrowserViewModel")
 
     // MARK: - Menu bar action relay
@@ -191,7 +197,8 @@ final class VaultBrowserViewModel: ObservableObject {
         deleteCollection:  any DeleteCollectionUseCase,
         syncTimestamp:     any SyncTimestampRepository,
         getLastSyncDate:   any GetLastSyncDateUseCase,
-        sync:              any SyncUseCase
+        sync:              any SyncUseCase,
+        conflictResyncRetryDelay: Duration = .milliseconds(500)
     ) {
         self.vault                  = vault
         self.search                 = search
@@ -211,6 +218,7 @@ final class VaultBrowserViewModel: ObservableObject {
         self.syncTimestamp          = syncTimestamp
         self.getLastSyncDate        = getLastSyncDate
         self.sync                   = sync
+        self.conflictResyncRetryDelay = conflictResyncRetryDelay
         refreshItems()
         refreshCounts()
         refreshFolders()
@@ -272,6 +280,7 @@ final class VaultBrowserViewModel: ObservableObject {
 
     /// Dismisses the sync error banner (FR-049).
     func dismissSyncError() {
+        syncErrorFromConflictResync = false
         syncErrorMessage = nil
     }
 
@@ -290,6 +299,7 @@ final class VaultBrowserViewModel: ObservableObject {
     func clearSession() {
         isSessionOpen = false
         sessionGeneration &+= 1
+        syncErrorFromConflictResync = false
         itemSelection     = nil
         displayedItems    = []
         itemCounts        = [:]
@@ -409,11 +419,18 @@ final class VaultBrowserViewModel: ObservableObject {
         // attachments), and the detail pane would show "No attachments" even
         // after a sync that correctly mapped them.
         refreshItemSelection()
+        syncErrorFromConflictResync = false
         syncErrorMessage = nil
     }
 
     /// Called when a sync fails mid-session (FR-049).
     func handleSyncError(_ message: String) {
+        showSyncError(message, fromConflictResync: false)
+    }
+
+    /// The flag is set before the message, so a view that reacts to the message already sees it.
+    private func showSyncError(_ message: String, fromConflictResync: Bool) {
+        syncErrorFromConflictResync = fromConflictResync
         syncErrorMessage = message
     }
 
@@ -425,26 +442,53 @@ final class VaultBrowserViewModel: ObservableObject {
     /// The edit view model gets this closure instead of the sync use case or the repository: the
     /// browser already owns sync results, the session generation and the selection. The sheet
     /// refills only from `.synced`, a sync that started after the conflict.
+    ///
+    /// A sync that is already running does not count. It may have fetched the vault before the
+    /// competing write, so refilling from it could show the very copy the server just rejected.
+    /// The resync waits and asks again until its own sync ran. The bounds (500 ms apart, 20 tries)
+    /// are a choice: a running sync normally ends within seconds, and after about ten seconds the
+    /// user sees the message and can press reload again.
     func resyncAfterConflict() async -> ConflictResync {
         let generation = sessionGeneration
-        do {
-            let result = try await sync.execute(progress: { _ in })
-            // A lock or sign-out while the sync ran: the vault store was cleared, so this result
-            // must not repopulate the browser or reach the sheet.
-            guard isCurrent(generation) else {
-                return .failed(VaultError.vaultLocked.localizedDescription)
+        var attempt = 0
+        while true {
+            attempt += 1
+            do {
+                let result = try await sync.execute(progress: { _ in })
+                // A lock or sign-out while the sync ran: the vault store was cleared, so this
+                // result must not repopulate the browser or reach the sheet.
+                guard isCurrent(generation) else { return lockedWhileSyncing() }
+                handleSyncCompleted(syncedAt: result.syncedAt)
+                return .synced
+            } catch SyncError.syncInProgress where attempt < ConflictResyncLimit.attempts {
+                do {
+                    try await Task.sleep(for: conflictResyncRetryDelay)
+                } catch {
+                    return failedConflictResync(error, startedIn: generation)
+                }
+                guard isCurrent(generation) else { return lockedWhileSyncing() }
+            } catch {
+                return failedConflictResync(error, startedIn: generation)
             }
-            handleSyncCompleted(syncedAt: result.syncedAt)
-            return .synced
-        } catch {
-            guard isCurrent(generation) else {
-                return .failed(VaultError.vaultLocked.localizedDescription)
-            }
-            let message = error.localizedDescription
-            logger.error("Conflict resync failed: \(ErrorLog.describe(error), privacy: .public)")
-            handleSyncError(message)
-            return .failed(message)
         }
+    }
+
+    private enum ConflictResyncLimit {
+        /// Total sync attempts, the first one included.
+        static let attempts = 20
+    }
+
+    private func lockedWhileSyncing() -> ConflictResync {
+        logger.info("Conflict resync dropped: the vault was locked meanwhile")
+        return .failed(VaultError.vaultLocked.localizedDescription)
+    }
+
+    private func failedConflictResync(_ error: Error, startedIn generation: Int) -> ConflictResync {
+        guard isCurrent(generation) else { return lockedWhileSyncing() }
+        let message = error.localizedDescription
+        logger.error("Conflict resync failed: \(ErrorLog.describe(error), privacy: .public)")
+        showSyncError(message, fromConflictResync: true)
+        return .failed(message)
     }
 
     /// Reads the item with `id` from the vault store, to refill the edit sheet after a resync.
