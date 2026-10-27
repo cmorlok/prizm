@@ -558,11 +558,11 @@ nonisolated final class CipherMapper: Sendable {
     ///   would make a secret plaintext for nothing. A website takes the unknown keys of the stored
     ///   website with the same text, a custom field those of the stored field with the same name and
     ///   type (first unused match each), never those of the one at the same position.
-    /// - Never copied from `base`: `folderId`, `favorite`, `organizationId`, `collectionIds`. Prizm's
-    ///   own folder, favorite and collection changes do not refresh the stored record until
-    ///   stale-write protection does, so a stored value could revert the user's change. The
-    ///   response-only keys (`data`, the legacy `login.uri`, `edit`, `permissions`) never reach the
-    ///   model, so they cannot be sent.
+    /// - Never copied from `base`: `folderId`, `favorite`, `organizationId`, `collectionIds`. The
+    ///   current folder, favorite and collection choice is in the model. The stored record is
+    ///   refreshed only after such a change, in the background, so it can still hold the old value,
+    ///   and copying it would revert the user's change. The response-only keys (`data`, the legacy
+    ///   `login.uri`, `edit`, `permissions`) never reach the model, so they cannot be sent.
     /// - Set by Prizm: `login.passwordRevisionDate` is the save time when the password was changed,
     ///   added or cleared, else the stored value as received (`passwordRevisionDate(newPassword:base:keys:)`).
     /// - Intentionally NOT done: re-encrypting only the fields that changed; adding, dropping or

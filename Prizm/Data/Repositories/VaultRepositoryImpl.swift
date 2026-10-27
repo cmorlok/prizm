@@ -49,6 +49,10 @@ actor VaultRepositoryImpl: VaultRepository {
     /// have finished.
     var queuedWriteCount: Int { writeTails.count }
 
+    /// How many fetches a bulk move's background refresh keeps in flight: a drag of many items must
+    /// not open hundreds of requests at once.
+    nonisolated private static let bulkRefreshConcurrency = 4
+
     // MARK: - Read indexes (rebuilt by buildIndexes() after every mutation)
 
     /// Pre-filtered, sorted item lists keyed by SidebarSelection.
@@ -378,7 +382,8 @@ actor VaultRepositoryImpl: VaultRepository {
             perUserChangeOnly.folderId = draft.folderId
             perUserChangeOnly.isFavorite = draft.isFavorite
             if perUserChangeOnly == draft {
-                let updated = try await sendPartial(itemId: draft.id, folderId: draft.folderId, favorite: draft.isFavorite)
+                let updated = try await sendPartial(itemId: draft.id, folderId: draft.folderId, favorite: draft.isFavorite,
+                                                    storeGeneration: storeGeneration)
                 logger.info("Item updated (folder/favorite only): \(draft.id, privacy: .public)")
                 return updated ?? cached.with(folderId: draft.folderId).with(isFavorite: draft.isFavorite)
             }
@@ -716,20 +721,24 @@ actor VaultRepositoryImpl: VaultRepository {
     // MARK: - Attachment cache patch
 
     /// Replaces the `attachments` array for the item identified by `cipherId` in the
-    /// in-memory store without triggering a full re-sync.
+    /// in-memory store without triggering a full re-sync, then refreshes the item's stored record
+    /// and cached revision (`refreshRecord`): the official server changes the revision on every
+    /// attachment change, and none of the attachment requests answers with the cipher.
     func updateAttachments(_ attachments: [Attachment], for cipherId: String) async {
+        let storeGeneration = recordStore.currentGeneration()
         // Non-throwing for its caller: the queue itself cannot fail, so an error here is not
         // expected; it is logged and dropped.
         do {
             try await serialised([cipherId]) { [self] in
-                await performUpdateAttachments(attachments, for: cipherId)
+                await performUpdateAttachments(attachments, for: cipherId, storeGeneration: storeGeneration)
             }
         } catch {
             logger.error("updateAttachments: queued write failed — id=\(cipherId, privacy: .public) \(ErrorLog.describe(error), privacy: .public)")
         }
     }
 
-    private func performUpdateAttachments(_ attachments: [Attachment], for cipherId: String) async {
+    private func performUpdateAttachments(_ attachments: [Attachment], for cipherId: String,
+                                          storeGeneration: RawCipherStore.Generation) async {
         guard let idx = items.firstIndex(where: { $0.id == cipherId }) else {
             logger.error("updateAttachments: cipher not found in cache — id=\(cipherId, privacy: .public)")
             return
@@ -738,6 +747,7 @@ actor VaultRepositoryImpl: VaultRepository {
         items[idx] = old.with(attachments: attachments)
         buildIndexes()
         logger.info("Vault item attachments updated: cipher=\(cipherId, privacy: .public) count=\(attachments.count, privacy: .public)")
+        await refreshRecord(id: cipherId, from: nil, token: storeGeneration)
     }
 
     // MARK: - Folder CRUD
@@ -865,32 +875,49 @@ actor VaultRepositoryImpl: VaultRepository {
     // MARK: - Move to folder
 
     func moveItemToFolder(itemId: String, folderId: String?) async throws {
+        let storeGeneration = recordStore.currentGeneration()
         try await serialised([itemId]) { [self] in
-            try await performMoveItemToFolder(itemId: itemId, folderId: folderId)
+            try await performMoveItemToFolder(itemId: itemId, folderId: folderId, storeGeneration: storeGeneration)
         }
     }
 
-    private func performMoveItemToFolder(itemId: String, folderId: String?) async throws {
+    private func performMoveItemToFolder(itemId: String, folderId: String?,
+                                         storeGeneration: RawCipherStore.Generation) async throws {
         guard let old = items.first(where: { $0.id == itemId }) else { return }
-        try await sendPartial(itemId: itemId, folderId: folderId, favorite: old.isFavorite)
+        try await sendPartial(itemId: itemId, folderId: folderId, favorite: old.isFavorite,
+                              storeGeneration: storeGeneration)
         logger.info("Item moved to folder: \(itemId, privacy: .public)")
     }
 
     /// Waits for the running writes of every item in `itemIds` and then moves them in one request;
     /// it never fails because one of them is being written.
+    ///
+    /// Returns once the move request succeeded and the cache is patched. Each moved item's record
+    /// and revision are then refreshed in the background (one fetch per item, at most
+    /// `bulkRefreshConcurrency` at a time) while the item stays queued, so a later write to a moved
+    /// item runs after that item's fetch, and only that one's. A failed fetch is only logged.
     func moveItemsToFolder(itemIds: [String], folderId: String?) async throws {
-        try await serialised(itemIds) { [self] in
-            try await performMoveItemsToFolder(itemIds: itemIds, folderId: folderId)
-        }
+        let storeGeneration = recordStore.currentGeneration()
+        try await serialised(itemIds, withTrailingTasks: { [self] in
+            try await performMoveItemsToFolder(itemIds: itemIds, folderId: folderId, storeGeneration: storeGeneration)
+        })
     }
 
-    private func performMoveItemsToFolder(itemIds: [String], folderId: String?) async throws {
+    /// Returns the background refresh of each moved item as that item's trailing task in the queue.
+    private func performMoveItemsToFolder(
+        itemIds: [String], folderId: String?, storeGeneration: RawCipherStore.Generation
+    ) async throws -> (result: Void, trailing: [String: Task<Void, Never>]) {
         try await apiClient.moveCiphersToFolder(ids: itemIds, folderId: folderId)
         for i in items.indices where itemIds.contains(items[i].id) {
             items[i] = items[i].with(folderId: folderId)
         }
         buildIndexes()
         logger.info("Bulk move to folder: \(itemIds.count, privacy: .public) item(s)")
+        // Started here, inside the queued body, so the fetches begin at once; `serialised` keeps
+        // each task as the queue tail of its own item. Duplicate ids are fetched once.
+        var seen = Set<String>()
+        let unique = itemIds.filter { seen.insert($0).inserted }
+        return ((), startRefreshes(of: unique, token: storeGeneration))
     }
 
     // MARK: - Favorite
@@ -901,16 +928,19 @@ actor VaultRepositoryImpl: VaultRepository {
     /// partial request carries no item data, so it cannot drop fields Prizm does not model, needs
     /// no key, and works on read-only org items (fix-favorite-and-folder-partial-updates, D1).
     func setFavorite(itemId: String, isFavorite: Bool) async throws -> VaultItem {
-        try await serialised([itemId]) { [self] in
-            try await performSetFavorite(itemId: itemId, isFavorite: isFavorite)
+        let storeGeneration = recordStore.currentGeneration()
+        return try await serialised([itemId]) { [self] in
+            try await performSetFavorite(itemId: itemId, isFavorite: isFavorite, storeGeneration: storeGeneration)
         }
     }
 
-    private func performSetFavorite(itemId: String, isFavorite: Bool) async throws -> VaultItem {
+    private func performSetFavorite(itemId: String, isFavorite: Bool,
+                                    storeGeneration: RawCipherStore.Generation) async throws -> VaultItem {
         guard let old = items.first(where: { $0.id == itemId }) else {
             throw VaultError.itemNotFound(itemId)
         }
-        let updated = try await sendPartial(itemId: itemId, folderId: old.folderId, favorite: isFavorite)
+        let updated = try await sendPartial(itemId: itemId, folderId: old.folderId, favorite: isFavorite,
+                                            storeGeneration: storeGeneration)
         logger.info("Favorite set: \(itemId, privacy: .public)")
         // The server saved it; if a lock or sync removed the item from the cache meanwhile, report
         // the item as it now is on the server.
@@ -921,7 +951,10 @@ actor VaultRepositoryImpl: VaultRepository {
     ///
     /// - Each request carries both per-user fields, so the server keeps the last request's pair;
     ///   caching that pair keeps the cache equal to the server when a move and a star overlap.
-    /// - Neither server bumps the cipher's revision on /partial, so the cached one stays (D3).
+    /// - Vaultwarden 1.37.4 does not bump the cipher's revision on /partial (tested) and the official
+    ///   server does not either (source-reviewed, not tested), but the answer carries no cipher
+    ///   either, so the item is fetched afterwards like after every own operation
+    ///   (`refreshRecord`); the item returned is the cached one after that refresh.
     /// - The item is looked up again after the request: this actor is reentrant, and a sync can
     ///   replace the cache meanwhile.
     /// - Throws `VaultError.partialUpdateNotSaved` when the response shows another state: Bitwarden's
@@ -929,7 +962,8 @@ actor VaultRepositoryImpl: VaultRepository {
     ///   A field missing from the response is not checked.
     /// - Returns: the updated cached item, or nil if it is no longer cached.
     @discardableResult
-    private func sendPartial(itemId: String, folderId: String?, favorite: Bool) async throws -> VaultItem? {
+    private func sendPartial(itemId: String, folderId: String?, favorite: Bool,
+                             storeGeneration: RawCipherStore.Generation) async throws -> VaultItem? {
         let response = try await apiClient.updateCipherPartial(id: itemId, folderId: folderId, favorite: favorite)
         if let saved = response.favorite, saved != favorite {
             logger.error("Partial update not saved by the server (favorite): \(itemId, privacy: .public)")
@@ -942,7 +976,10 @@ actor VaultRepositoryImpl: VaultRepository {
         guard let idx = items.firstIndex(where: { $0.id == itemId }) else { return nil }
         items[idx] = items[idx].with(folderId: folderId).with(isFavorite: favorite)
         buildIndexes()
-        return items[idx]
+        await refreshRecord(id: itemId, from: nil, token: storeGeneration)
+        // Looked up once more: the fetch suspended this actor, and a lock or a sync can have
+        // changed the cache meanwhile.
+        return items.first(where: { $0.id == itemId })
     }
 
     // MARK: - Private helpers
@@ -977,14 +1014,24 @@ actor VaultRepositoryImpl: VaultRepository {
         }
     }
 
-    /// Takes the server's current record of one item after an operation of Prizm's own and makes the
-    /// stored record and the cached item's revision match it, so the next edit starts from the
-    /// revision the server holds. `known` is the operation's answer when it carried the cipher;
+    /// Takes the server's current record of one item after an operation of Prizm's own, stores it,
+    /// and moves the cached item's revision to it when that is safe, so the next edit starts from
+    /// the revision the server holds. `known` is the operation's answer when it carried the cipher;
     /// otherwise the item is fetched.
     ///
     /// Runs whether or not the server changed the revision: Vaultwarden bumps it on soft delete and
     /// restore only, the official server also on attachments and collection changes, and one extra
     /// fetch costs less than a wrong guess about either.
+    ///
+    /// - The revision is moved only when nothing the user sees has changed. The cached item was
+    ///   built from the record stored before the operation. If the fetched record's item content
+    ///   (everything but `RecordContent.ignoredMembers`) differs from that record's, another client
+    ///   changed the item in between, and the cached copy is out of date. Moving its revision on
+    ///   would make a later save look current and overwrite that change, so the cached revision
+    ///   stays, the next save fails the local pre-check with `VaultError.conflict`, and a reload
+    ///   resolves it. The same holds when the cached revision was already behind the stored record's:
+    ///   a conflict an earlier refresh left is not repaired by a later one. The check compares
+    ///   ciphertext only; nothing is decrypted.
     ///
     /// - Security goal: nothing decrypted is created or kept by a refresh. It never maps or decrypts
     ///   the record (no key is read); only the ciphertext record in the store and the cached item's
@@ -1030,6 +1077,8 @@ actor VaultRepositoryImpl: VaultRepository {
             logger.error("Revision refresh ignored: the answer for \(id, privacy: .public) has no readable revision")
             return
         }
+        // The record the cached item was built from, read before it is replaced below.
+        let before = await recordStore.record(for: id)
         guard recordStore.isCurrent(token) else {
             logger.info("Revision refresh dropped, the vault was cleared while it ran: \(id, privacy: .public)")
             return
@@ -1039,8 +1088,38 @@ actor VaultRepositoryImpl: VaultRepository {
         // write: a lock that landed during the await must not get a cached item back.
         guard recordStore.isCurrent(token),
               let idx = items.firstIndex(where: { $0.id == id }) else { return }
+        guard let before,
+              let beforeRevision = CipherMapper.parseRevisionDate(before.revisionDate),
+              CipherMapper.sameRevision(items[idx].revisionDate, beforeRevision),
+              RecordContent.isSame(before, fresh) else {
+            logger.info("Revision refresh found the item changed elsewhere, cached revision kept: \(id, privacy: .public)")
+            return
+        }
         items[idx] = items[idx].with(revisionDate: revision)
         buildIndexes()
+    }
+
+    /// Starts one refresh task per id, with at most `bulkRefreshConcurrency` fetches in flight, and
+    /// returns the tasks by id: a finished fetch makes room for the next waiting one. Each task
+    /// ends when its own item's refresh has ended, which is what the item's queue tail waits for,
+    /// so a later write to one moved item never waits for the fetches of the others. A failed
+    /// fetch is logged by `refreshRecord` and does not stop the others.
+    private func startRefreshes(of ids: [String], token: RawCipherStore.Generation) -> [String: Task<Void, Never>] {
+        let slots = FetchSlots(limit: Self.bulkRefreshConcurrency)
+        var tasks: [String: Task<Void, Never>] = [:]
+        for id in ids {
+            tasks[id] = Task { [self] in
+                await slots.acquire()
+                await refreshRecord(id: id, from: nil, token: token)
+                await slots.release()
+            }
+        }
+        let all = Array(tasks.values)
+        Task { [logger] in
+            for task in all { await task.value }
+            logger.info("Revision refresh after the bulk move ended: \(ids.count, privacy: .public) item(s)")
+        }
+        return tasks
     }
 
     /// Removes the records of permanently deleted items; a refusal is logged by count, not by id.
@@ -1094,16 +1173,60 @@ actor VaultRepositoryImpl: VaultRepository {
     private func serialised<T: Sendable>(
         _ ids: [String], _ operation: @escaping @Sendable () async throws -> T
     ) async throws -> T {
+        try await serialised(ids, withTrailingTasks: { (try await operation(), [:]) })
+    }
+
+    /// The same queue for an operation that hands back background work to keep in it, one task per
+    /// item.
+    ///
+    /// Each trailing task is part of the write to its own item: the tail registered for that item
+    /// awaits the operation and then that item's task, so a later write to the item waits for both
+    /// and not for the tasks of the other items. The caller resumes with the operation's result as
+    /// soon as the operation itself has returned, without waiting for the trailing tasks.
+    ///
+    /// Why one tail per item and not a second one for the background work: a tail registered after
+    /// the operation would replace the first, and the first one's removal check would then pass
+    /// over it while the work still runs; a wrapper that returns early must not shorten the queue.
+    /// Here each tail stays registered until its trailing task has ended, and is removed then, only
+    /// where it is still the registered one (a later write has already queued behind it and
+    /// replaced it).
+    private func serialised<T: Sendable>(
+        _ ids: [String],
+        withTrailingTasks operation: @escaping @Sendable () async throws -> (result: T, trailing: [String: Task<Void, Never>])
+    ) async throws -> T {
+        var seen = Set<String>()
+        let ids = ids.filter { seen.insert($0).inserted }
         let previous = ids.compactMap { writeTails[$0] }
-        let run = Task<Result<T, Error>, Never> {
+        let run = Task<Result<(result: T, trailing: [String: Task<Void, Never>]), Error>, Never> {
             for earlier in previous { await earlier.value }
             do { return .success(try await operation()) } catch { return .failure(error) }
         }
-        let tail = Task<Void, Never> { _ = await run.value }
-        for id in ids { writeTails[id] = tail }
-        let result = await run.value
-        for id in ids where writeTails[id] == tail { writeTails[id] = nil }
-        return try result.get()
+        var tails: [String: Task<Void, Never>] = [:]
+        for id in ids {
+            tails[id] = Task<Void, Never> {
+                if case .success(let done) = await run.value, let trailing = done.trailing[id] {
+                    await trailing.value
+                }
+            }
+            writeTails[id] = tails[id]
+        }
+        let outcome = await run.value
+        if case .success(let done) = outcome, !done.trailing.isEmpty {
+            for (id, tail) in tails {
+                Task { [self] in
+                    await tail.value
+                    releaseTails([id: tail])
+                }
+            }
+            return done.result
+        }
+        releaseTails(tails)
+        return try outcome.get().result
+    }
+
+    /// Removes each tail from the id it was registered for, unless a later write replaced it.
+    private func releaseTails(_ tails: [String: Task<Void, Never>]) {
+        for (id, tail) in tails where writeTails[id] == tail { writeTails[id] = nil }
     }
 
     private func sorted(_ input: [VaultItem]) -> [VaultItem] {
@@ -1175,5 +1298,67 @@ nonisolated private extension VaultItem {
         case .secureNote, .sshKey:
             return false
         }
+    }
+}
+
+// MARK: - Bounded concurrency for the bulk refresh
+
+/// Hands out at most `limit` slots at a time, to the oldest waiting request first. The bulk refresh
+/// takes one before each fetch, so no more than `limit` fetches are in flight whatever the number of
+/// moved items.
+private actor FetchSlots {
+    private var free: Int
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    init(limit: Int) { free = limit }
+
+    func acquire() async {
+        if free > 0 {
+            free -= 1
+            return
+        }
+        await withCheckedContinuation { waiting.append($0) }
+    }
+
+    func release() {
+        if waiting.isEmpty {
+            free += 1
+        } else {
+            waiting.removeFirst().resume()
+        }
+    }
+}
+
+// MARK: - What a refresh compares
+
+/// Decides whether two server records of one item hold the same item content, from ciphertext and
+/// plain members alone: nothing is decrypted, and no key is needed.
+///
+/// Compared as the JSON each record is sent as (`RawCipher.encode(to:)`), so every member Prizm
+/// reads or writes counts, including the unknown keys inside `login`, `fields` and the other
+/// rebuilt levels. A record that cannot be encoded is not the same.
+nonisolated private enum RecordContent {
+
+    /// Members that change without the item's content changing, or that Prizm's own operations
+    /// change: the revision, the trash state, the folder, the favorite flag, the collections, and
+    /// the request-only members. A refresh runs after exactly these operations (soft delete,
+    /// restore, favorite, move, collection update), so a difference here is expected and says
+    /// nothing about another client. Attachments are never encoded, so they are not listed.
+    static let ignoredMembers: Set<String> = [
+        "revisionDate", "deletedDate", "folderId", "favorite", "collectionIds",
+        "encryptedFor", "lastKnownRevisionDate",
+    ]
+
+    static func isSame(_ lhs: RawCipher, _ rhs: RawCipher) -> Bool {
+        guard let left = members(of: lhs), let right = members(of: rhs) else { return false }
+        return left == right
+    }
+
+    private static func members(of cipher: RawCipher) -> [String: JSONValue]? {
+        guard let data = try? JSONEncoder().encode(cipher),
+              let value = try? JSONDecoder().decode(JSONValue.self, from: data),
+              case .object(var members) = value else { return nil }
+        for key in ignoredMembers { members[key] = nil }
+        return members
     }
 }

@@ -83,7 +83,9 @@ protocol VaultRepository: AnyObject, Sendable {
     func create(_ draft: DraftVaultItem) async throws -> VaultItem
 
     /// Replaces the `attachments` array for the vault item identified by `cipherId`,
-    /// patching the in-memory cache without a full re-sync.
+    /// patching the in-memory cache without a full re-sync. It also refreshes the item's stored
+    /// server record and cached revision (one request for the item): an attachment change can
+    /// change the revision on the server, and the next edit must start from the new one.
     func updateAttachments(_ attachments: [Attachment], for cipherId: String) async
 
     // MARK: - Folder CRUD

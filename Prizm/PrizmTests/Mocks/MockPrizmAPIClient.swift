@@ -275,10 +275,13 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     nonisolated(unsafe) var getCipherCalls: [String] = []
     /// Runs while a GET is "in flight", for example to lock the vault or to hold the request.
     nonisolated(unsafe) var whileGettingCipher: (@Sendable () async -> Void)?
+    /// The same, told which item is fetched, for a test that must hold or release one item's GET.
+    nonisolated(unsafe) var whileGettingCipherById: (@Sendable (String) async -> Void)?
 
     func getCipher(id: String) async throws -> RawCipher {
         callLog.append("GET \(id)")
         getCipherCalls.append(id)
+        await whileGettingCipherById?(id)
         await whileGettingCipher?()
         if let err = getCipherShouldThrow { throw err }
         guard let answer = getCipherResponses[id] else {

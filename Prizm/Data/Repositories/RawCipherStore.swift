@@ -15,9 +15,9 @@ import Synchronization
 ///   `VaultRepositoryImpl.clearVault()`, which lock and sign-out both reach.
 ///
 /// - Filled by: sync (every cipher of the response, including ones that fail to decrypt), create
-///   and update (the server's answer), and soft delete and restore (the restore answer, or a fetch
-///   of the item: `VaultRepositoryImpl.refreshRecord`). Emptied by: permanent delete (per id) and
-///   `clear()`.
+///   and update (the server's answer), and every other own operation of the repository: soft delete,
+///   restore, attachment changes, favorite and moves (the restore answer, or a fetch of the item:
+///   `VaultRepositoryImpl.refreshRecord`). Emptied by: permanent delete (per id) and `clear()`.
 ///
 /// - The fence: `clear()` and `invalidate()` replace the current `Generation` token with a new one.
 ///   Every write takes the token an operation read when it STARTED and is refused when it is stale.
@@ -41,9 +41,8 @@ import Synchronization
 ///   • The store fences its own writes. The repository's item cache is fenced by the repository,
 ///     which checks `isCurrent(_:)` itself right before the write; `populate` is fenced the same
 ///     way with the token its sync read at the start.
-///   • Only soft delete and restore refresh the record after Prizm's own operation. Attachment,
-///     favorite, move and collection changes do not yet (OpenSpec task 4.4), so the record can be
-///     older than the server's after them until the next sync.
+///   • A collection change of an organization item does not refresh the record yet (OpenSpec task
+///     4.4), so the record can be older than the server's after it until the next sync.
 ///   • No fallback for a missing record: `VaultRepositoryImpl.update` reads the store and refuses a
 ///     full save without a record (`itemRecordUnavailable`), so the store is not optional.
 ///

@@ -204,6 +204,25 @@ final class RevisionRefreshTests: XCTestCase {
         XCTAssertTrue(cached.isEmpty, "Nor the item list")
     }
 
+    func testAttachmentRefreshFinishingAfterLock_writesNothing() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1")
+        try await seed([item], in: rig)
+        rig.api.getCipherResponses["c1"] = try await record("c1", in: rig, revision: Self.r2)
+        let attachment = Attachment(id: "att-1", fileName: "a.txt", encryptedKey: "2.k|k|k", size: 10,
+                                    sizeName: "10 B", url: nil, isUploadIncomplete: false)
+        let vault = rig.vault
+        rig.api.whileGettingCipher = { await vault.clearVault() }
+
+        await rig.vault.updateAttachments([attachment], for: "c1")
+
+        XCTAssertEqual(rig.api.getCipherCalls, ["c1"], "The refresh did start")
+        let storedCount = await rig.store.count
+        XCTAssertEqual(storedCount, 0, "The refresh does not refill the record store after the lock")
+        let cached = try await rig.vault.allItems()
+        XCTAssertTrue(cached.isEmpty, "Nor the item list")
+    }
+
     // MARK: - Idempotency
 
     func testRefreshTwice_isIdempotent() async throws {
@@ -251,7 +270,7 @@ final class RevisionRefreshTests: XCTestCase {
 
     // MARK: - A refresh never decrypts
 
-    func testRefresh_storesAnUnreadableRecordAndPatchesOnlyTheRevision() async throws {
+    func testRefresh_storesAnUnreadableRecordAsReceivedAndMapsNothing() async throws {
         let rig = await StaleWriteRig.make()
         let item = StaleWriteRig.login("c1", name: "Original")
         try await seed([item], in: rig)
@@ -266,7 +285,340 @@ final class RevisionRefreshTests: XCTestCase {
         XCTAssertEqual(stored?.name, "2.AAAA|BBBB|CCCC", "The record is stored as received")
         let cached = try await rig.vault.itemDetail(id: "c1")
         XCTAssertEqual(cached.name, "Original", "Nothing was mapped: the cached item keeps its decrypted name")
+        // The name differs from the record the item was built from, so the revision is not taken
+        // over (see testRefreshFindingChangedContent_leavesTheCachedRevisionAndTheNextSaveConflicts).
+        try assertRevision(cached.revisionDate, is: Self.r1)
+    }
+
+    // MARK: - Attachments, favorite and single move
+
+    func testAttachmentChange_refreshesAndNextEditSaves() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1")
+        try await seed([item], in: rig)
+        // The official server bumps the revision on an attachment change; Vaultwarden does not.
+        rig.api.getCipherResponses["c1"] = try await record("c1", in: rig, revision: Self.r2)
+        let attachment = Attachment(id: "att-1", fileName: "a.txt", encryptedKey: "2.k|k|k", size: 10,
+                                    sizeName: "10 B", url: nil, isUploadIncomplete: false)
+
+        await rig.vault.updateAttachments([attachment], for: "c1")
+
+        XCTAssertEqual(rig.api.getCipherCalls, ["c1"])
+        let stored = await rig.store.record(for: "c1")
+        XCTAssertEqual(stored?.revisionDate, Self.r2)
+        let cached = try await rig.vault.itemDetail(id: "c1")
         try assertRevision(cached.revisionDate, is: Self.r2)
+        XCTAssertEqual(cached.attachments.map(\.id), ["att-1"], "The refresh keeps the patched attachments")
+
+        var draft = DraftVaultItem(cached)
+        draft.name = "Renamed after the attachment"
+        _ = try await rig.vault.update(draft)
+        XCTAssertEqual(rig.api.callLog, ["GET c1", "PUT c1"], "The next edit passes the pre-check and is sent")
+    }
+
+    func testFavorite_refreshesWithGet() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1")
+        try await seed([item], in: rig)
+        rig.api.getCipherResponses["c1"] = try await record("c1", in: rig, revision: Self.r2)
+
+        let updated = try await rig.vault.setFavorite(itemId: "c1", isFavorite: true)
+
+        XCTAssertEqual(rig.api.callLog, ["partial c1", "GET c1"])
+        XCTAssertTrue(updated.isFavorite)
+        try assertRevision(updated.revisionDate, is: Self.r2)
+        let stored = await rig.store.record(for: "c1")
+        XCTAssertEqual(stored?.revisionDate, Self.r2)
+        let cached = try await rig.vault.itemDetail(id: "c1")
+        try assertRevision(cached.revisionDate, is: Self.r2)
+    }
+
+    func testSingleMove_refreshesWithGet() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1")
+        try await seed([item], in: rig)
+        rig.api.getCipherResponses["c1"] = try await record("c1", in: rig, revision: Self.r2)
+
+        try await rig.vault.moveItemToFolder(itemId: "c1", folderId: "work")
+
+        XCTAssertEqual(rig.api.callLog, ["partial c1", "GET c1"])
+        let cached = try await rig.vault.itemDetail(id: "c1")
+        XCTAssertEqual(cached.folderId, "work")
+        try assertRevision(cached.revisionDate, is: Self.r2)
+        let stored = await rig.store.record(for: "c1")
+        XCTAssertEqual(stored?.revisionDate, Self.r2)
+    }
+
+    func testFolderOnlyEdit_refreshesToo() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1")
+        try await seed([item], in: rig)
+        rig.api.getCipherResponses["c1"] = try await record("c1", in: rig, revision: Self.r2)
+        var draft = DraftVaultItem(item)
+        draft.folderId = "work"
+
+        let saved = try await rig.vault.update(draft)
+
+        XCTAssertEqual(rig.api.callLog, ["partial c1", "GET c1"], "A folder-only save goes through /partial, then refreshes")
+        try assertRevision(saved.revisionDate, is: Self.r2)
+    }
+
+    // MARK: - Content changed elsewhere: the refresh must not hide the conflict
+
+    /// Another client changed the item's content after the sync, then Prizm starred it. The refresh
+    /// finds a record whose content is not the one Prizm holds, so it stores that record but leaves
+    /// the cached revision where it was: the next save fails the local check instead of sending a
+    /// request built on content the user never saw, which would overwrite the other change.
+    func testRefreshFindingChangedContent_leavesTheCachedRevisionAndTheNextSaveConflicts() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1")
+        try await seed([item], in: rig)
+        rig.api.getCipherResponses["c1"] = try await record(
+            "c1", in: rig, revision: Self.r2, replacing: ["name": "2.AAAA|BBBB|CCCC"])
+
+        let starred = try await rig.vault.setFavorite(itemId: "c1", isFavorite: true)
+
+        XCTAssertTrue(starred.isFavorite, "Prizm's own change took effect")
+        try assertRevision(starred.revisionDate, is: Self.r1)
+        let stored = await rig.store.record(for: "c1")
+        XCTAssertEqual(stored?.revisionDate, Self.r2, "The server's record is stored as received")
+        XCTAssertEqual(stored?.name, "2.AAAA|BBBB|CCCC")
+
+        var draft = DraftVaultItem(starred)
+        draft.name = "Renamed after the other client's change"
+        do {
+            _ = try await rig.vault.update(draft)
+            XCTFail("A save over content another client changed must be refused")
+        } catch VaultError.conflict {
+            // expected
+        }
+        XCTAssertEqual(rig.api.updateCipherCallCount, 0, "No request is sent")
+    }
+
+    /// Vaultwarden changes the revision on a soft delete and nothing else; the official server may
+    /// change per-user members. Neither is a change of the item's content, so the revision is taken
+    /// and the next edit is not a conflict.
+    func testRefreshFindingOnlyMetadataChanged_adoptsTheRevision() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1")
+        try await seed([item], in: rig)
+        rig.api.getCipherResponses["c1"] = try await record(
+            "c1", in: rig, revision: Self.r2,
+            replacing: ["deletedDate": Self.r2, "favorite": true, "folderId": "work", "collectionIds": ["col-a"]])
+
+        try await rig.vault.deleteItem(id: "c1")
+
+        let cached = try await rig.vault.itemDetail(id: "c1")
+        try assertRevision(cached.revisionDate, is: Self.r2)
+        var draft = DraftVaultItem(cached)
+        draft.name = "Renamed after the soft delete"
+        _ = try await rig.vault.update(draft)
+        XCTAssertEqual(rig.api.updateCipherCallCount, 1, "The edit passes the pre-check and is sent")
+    }
+
+    /// A later own operation does not repair a conflict an earlier refresh left: the cached revision
+    /// is older than the stored record's, so it stays where it is however often the same content
+    /// is fetched again.
+    func testSecondRefreshAfterAChangedContent_keepsTheConflict() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1")
+        try await seed([item], in: rig)
+        rig.api.getCipherResponses["c1"] = try await record(
+            "c1", in: rig, revision: Self.r2, replacing: ["name": "2.AAAA|BBBB|CCCC"])
+        _ = try await rig.vault.setFavorite(itemId: "c1", isFavorite: true)
+        rig.api.getCipherResponses["c1"] = try await record(
+            "c1", in: rig, revision: Self.r3, replacing: ["name": "2.AAAA|BBBB|CCCC"])
+
+        let unstarred = try await rig.vault.setFavorite(itemId: "c1", isFavorite: false)
+
+        try assertRevision(unstarred.revisionDate, is: Self.r1)
+        var draft = DraftVaultItem(unstarred)
+        draft.name = "Renamed"
+        do {
+            _ = try await rig.vault.update(draft)
+            XCTFail("The conflict is still there")
+        } catch VaultError.conflict {
+            // expected
+        }
+        XCTAssertEqual(rig.api.updateCipherCallCount, 0)
+    }
+
+    // MARK: - Bulk move: background, bounded, chained as the queue tail
+
+    func testBulkMove_refreshesEveryItemInTheBackground() async throws {
+        let rig = await StaleWriteRig.make()
+        let items = ["c1", "c2", "c3"].map { StaleWriteRig.login($0) }
+        try await seed(items, in: rig)
+        for item in items {
+            rig.api.getCipherResponses[item.id] = try await record(item.id, in: rig, revision: Self.r2)
+        }
+        let gate = FetchGate()
+        rig.api.whileGettingCipher = { await gate.hold() }
+
+        try await rig.vault.moveItemsToFolder(itemIds: ["c1", "c2", "c3"], folderId: "work")
+
+        // The move has returned while no fetch has finished: the refresh runs on in the background.
+        let whileHeld = await rig.vault.queuedWriteCount
+        XCTAssertEqual(whileHeld, 3, "Every moved item stays queued until its fetch has finished")
+        let inFolder = try await rig.vault.items(for: .folder("work"))
+        XCTAssertEqual(inFolder.count, 3, "The move itself is cached before the fetches")
+        let entered = await gate.waitUntilEntered(3)
+        XCTAssertTrue(entered, "All three fetches start")
+
+        await gate.open()
+        let drained = await waitUntilQueueIsEmpty(rig.vault)
+        XCTAssertTrue(drained)
+        XCTAssertEqual(rig.api.getCipherCalls.sorted(), ["c1", "c2", "c3"], "Each item is fetched once")
+        for item in items {
+            let cached = try await rig.vault.itemDetail(id: item.id)
+            try assertRevision(cached.revisionDate, is: Self.r2)
+            let stored = await rig.store.record(for: item.id)
+            XCTAssertEqual(stored?.revisionDate, Self.r2)
+        }
+    }
+
+    func testBulkMove_atMostFourRefreshesAtOnce() async throws {
+        let rig = await StaleWriteRig.make()
+        let ids = ["c1", "c2", "c3", "c4", "c5", "c6"]
+        let items = ids.map { StaleWriteRig.login($0) }
+        try await seed(items, in: rig)
+        for id in ids {
+            rig.api.getCipherResponses[id] = try await record(id, in: rig, revision: Self.r2)
+        }
+        let gate = FetchGate()
+        rig.api.whileGettingCipher = { await gate.hold() }
+
+        try await rig.vault.moveItemsToFolder(itemIds: ids, folderId: "work")
+
+        let four = await gate.waitUntilEntered(4)
+        XCTAssertTrue(four, "Four fetches start")
+        await settle()
+        let whileClosed = await gate.entered
+        XCTAssertEqual(whileClosed, 4, "The fifth fetch waits until one of the four has finished")
+
+        await gate.open()
+        let drained = await waitUntilQueueIsEmpty(rig.vault)
+        XCTAssertTrue(drained)
+        XCTAssertEqual(rig.api.getCipherCalls.sorted(), ids, "All six are fetched in the end")
+        let peak = await gate.peak
+        XCTAssertLessThanOrEqual(peak, 4, "No more than four fetches were ever in flight")
+    }
+
+    func testBulkMove_laterWriteWaitsForThatItemsRefresh() async throws {
+        let rig = await StaleWriteRig.make()
+        let items = [StaleWriteRig.login("c1"), StaleWriteRig.login("c2")]
+        try await seed(items, in: rig)
+        // The server did not bump the revision, as on Vaultwarden: the draft below still matches.
+        for item in items {
+            rig.api.getCipherResponses[item.id] = try await record(item.id, in: rig, revision: Self.r1)
+        }
+        let gate = FetchGate()
+        rig.api.whileGettingCipher = { await gate.hold() }
+        let vault = rig.vault
+
+        try await vault.moveItemsToFolder(itemIds: ["c1", "c2"], folderId: "work")
+        let update = Task { try await vault.update(StaleWriteRig.renamed(items[0])) }
+        let fetching = await gate.waitUntilEntered(1)
+        XCTAssertTrue(fetching)
+        await settle()
+        XCTAssertFalse(rig.api.callLog.contains("PUT c1"), "The update of a moved item waits for that item's fetch")
+
+        await gate.open()
+        _ = try await update.value
+        let log = rig.api.callLog
+        let get = try XCTUnwrap(log.firstIndex(of: "GET c1"))
+        let put = try XCTUnwrap(log.firstIndex(of: "PUT c1"))
+        XCTAssertLessThan(get, put, "Fetch first, then the update")
+        let drained = await waitUntilQueueIsEmpty(rig.vault)
+        XCTAssertTrue(drained)
+    }
+
+    /// The design and the scenario "Bulk move, then edit" say a write waits for that item's fetch,
+    /// not for the whole batch: c1's own fetch has finished, c2's is still held.
+    func testBulkMove_laterWriteWaitsOnlyForThatItemsFetch() async throws {
+        let rig = await StaleWriteRig.make()
+        let items = [StaleWriteRig.login("c1"), StaleWriteRig.login("c2")]
+        try await seed(items, in: rig)
+        for item in items {
+            rig.api.getCipherResponses[item.id] = try await record(item.id, in: rig, revision: Self.r1)
+        }
+        let gate = PerItemFetchGate()
+        rig.api.whileGettingCipherById = { id in await gate.hold(id) }
+        let vault = rig.vault
+
+        try await vault.moveItemsToFolder(itemIds: ["c1", "c2"], folderId: "work")
+        let entered = await gate.waitUntilEntered(2)
+        XCTAssertTrue(entered, "Both fetches start")
+
+        await gate.open("c1")
+        let update = Task { try await vault.update(StaleWriteRig.renamed(items[0])) }
+        var sent = false
+        for _ in 0..<400 where !sent {
+            sent = rig.api.callLog.contains("PUT c1")
+            if !sent { try? await Task.sleep(for: .milliseconds(5)) }
+        }
+        XCTAssertTrue(sent, "The update of c1 is sent once c1's own fetch is done, while c2's is still held")
+
+        await gate.open("c2")
+        _ = try await update.value
+        let drained = await waitUntilQueueIsEmpty(rig.vault)
+        XCTAssertTrue(drained)
+    }
+
+    func testBulkMove_queueIsEmptyAfterTheRefresh() async throws {
+        let rig = await StaleWriteRig.make()
+        let items = [StaleWriteRig.login("c1"), StaleWriteRig.login("c2")]
+        try await seed(items, in: rig)
+        for item in items {
+            rig.api.getCipherResponses[item.id] = try await record(item.id, in: rig, revision: Self.r2)
+        }
+
+        try await rig.vault.moveItemsToFolder(itemIds: ["c1", "c2"], folderId: "work")
+
+        let drained = await waitUntilQueueIsEmpty(rig.vault)
+        XCTAssertTrue(drained, "The queue keeps nothing once the background refresh has ended")
+        let count = await rig.vault.queuedWriteCount
+        XCTAssertEqual(count, 0)
+    }
+
+    func testBulkMoveRefreshFailure_isOnlyLogged() async throws {
+        let rig = await StaleWriteRig.make()
+        let items = [StaleWriteRig.login("c1"), StaleWriteRig.login("c2")]
+        try await seed(items, in: rig)
+        rig.api.getCipherShouldThrow = APIError.httpError(statusCode: 500, body: "secret body")
+
+        try await rig.vault.moveItemsToFolder(itemIds: ["c1", "c2"], folderId: "work")
+
+        let drained = await waitUntilQueueIsEmpty(rig.vault)
+        XCTAssertTrue(drained)
+        XCTAssertEqual(rig.api.getCipherCalls.sorted(), ["c1", "c2"])
+        for item in items {
+            let cached = try await rig.vault.itemDetail(id: item.id)
+            XCTAssertEqual(cached.folderId, "work", "The move stands")
+            try assertRevision(cached.revisionDate, is: Self.r1)
+            let stored = await rig.store.record(for: item.id)
+            XCTAssertEqual(stored?.revisionDate, Self.r1, "The stored record is unchanged")
+        }
+    }
+
+    func testBulkMoveRefreshFinishingAfterLock_writesNothing() async throws {
+        let rig = await StaleWriteRig.make()
+        let items = [StaleWriteRig.login("c1"), StaleWriteRig.login("c2")]
+        try await seed(items, in: rig)
+        for item in items {
+            rig.api.getCipherResponses[item.id] = try await record(item.id, in: rig, revision: Self.r2)
+        }
+        let vault = rig.vault
+        rig.api.whileGettingCipher = { await vault.clearVault() }
+
+        try await rig.vault.moveItemsToFolder(itemIds: ["c1", "c2"], folderId: "work")
+
+        let drained = await waitUntilQueueIsEmpty(rig.vault)
+        XCTAssertTrue(drained)
+        let storedCount = await rig.store.count
+        XCTAssertEqual(storedCount, 0, "The background refresh does not refill the store after the lock")
+        let cached = try await rig.vault.allItems()
+        XCTAssertTrue(cached.isEmpty)
     }
 
     // MARK: - Helpers
@@ -301,12 +653,90 @@ final class RevisionRefreshTests: XCTestCase {
         return try encoder.encode(try XCTUnwrap(stored))
     }
 
+    /// Lets queued work run: there is no event to wait for when the thing under test is "nothing
+    /// happens while the fetch is held".
+    private func settle() async {
+        try? await Task.sleep(for: .milliseconds(150))
+    }
+
+    /// True once no write is queued any more; gives up after about two seconds so a stuck queue
+    /// fails the test instead of hanging it.
+    private func waitUntilQueueIsEmpty(_ vault: VaultRepositoryImpl) async -> Bool {
+        for _ in 0..<400 {
+            if await vault.queuedWriteCount == 0 { return true }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return await vault.queuedWriteCount == 0
+    }
+
     private func assertRevision(
         _ date: Date, is revision: String, file: StaticString = #filePath, line: UInt = #line
     ) throws {
         let expected = try XCTUnwrap(CipherMapper.parseRevisionDate(revision), file: file, line: line)
         XCTAssertTrue(CipherMapper.sameRevision(date, expected),
                       "cached revision \(date) is not \(revision)", file: file, line: line)
+    }
+}
+
+/// Holds each mocked fetch until its own item is opened.
+private actor PerItemFetchGate {
+    private var entered: Set<String> = []
+    private var opened: Set<String> = []
+    private var waiters: [String: CheckedContinuation<Void, Never>] = [:]
+
+    func hold(_ id: String) async {
+        entered.insert(id)
+        if opened.contains(id) { return }
+        await withCheckedContinuation { waiters[id] = $0 }
+    }
+
+    func open(_ id: String) {
+        opened.insert(id)
+        waiters.removeValue(forKey: id)?.resume()
+    }
+
+    /// True once `count` different items have a fetch started; gives up after about two seconds.
+    func waitUntilEntered(_ count: Int) async -> Bool {
+        for _ in 0..<400 {
+            if entered.count >= count { return true }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return entered.count >= count
+    }
+}
+
+/// Holds mocked fetches until `open()` and counts how many were started and how many were in
+/// flight at once.
+private actor FetchGate {
+    private(set) var entered = 0
+    private(set) var peak = 0
+    private var inFlight = 0
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func hold() async {
+        entered += 1
+        inFlight += 1
+        peak = max(peak, inFlight)
+        if !isOpen {
+            await withCheckedContinuation { waiters.append($0) }
+        }
+        inFlight -= 1
+    }
+
+    func open() {
+        isOpen = true
+        for waiter in waiters { waiter.resume() }
+        waiters = []
+    }
+
+    /// True once `count` fetches have started; gives up after about two seconds.
+    func waitUntilEntered(_ count: Int) async -> Bool {
+        for _ in 0..<400 {
+            if entered >= count { return true }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return entered >= count
     }
 }
 
