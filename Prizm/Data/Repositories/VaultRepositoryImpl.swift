@@ -39,6 +39,16 @@ actor VaultRepositoryImpl: VaultRepository {
     /// Internal sync timestamp; not exposed on the protocol (use `GetLastSyncDateUseCase`).
     private(set) var lastSyncedAt: Date? = nil
 
+    // MARK: - Write queue
+
+    /// The last queued write of each item id; see `serialised(_:_:)`. An entry exists only while a
+    /// write to that item is queued or running.
+    private var writeTails: [String: Task<Void, Never>] = [:]
+
+    /// How many item ids have a write queued or running. For tests: it must be 0 once all writes
+    /// have finished.
+    var queuedWriteCount: Int { writeTails.count }
+
     // MARK: - Read indexes (rebuilt by buildIndexes() after every mutation)
 
     /// Pre-filtered, sorted item lists keyed by SidebarSelection.
@@ -314,6 +324,10 @@ actor VaultRepositoryImpl: VaultRepository {
     ///   stored as the item's new record and re-mapped to a `VaultItem`; the in-memory cache is
     ///   patched in place so the UI reflects the latest state without a full re-sync.
     ///
+    /// - Queue: saves of one item run one after another (see `serialised(_:_:)`), so a save waits
+    ///   for an earlier write to the same item and then runs every check above against the record
+    ///   that write stored.
+    ///
     /// - Throws: `VaultError.vaultLocked`, `itemNotEditable`, `itemRecordUnavailable`,
     ///   `itemRevisionUnavailable`, `organizationKeyUnavailable`, `profileIdUnavailable` or
     ///   `itemKeyUnavailable` as above.
@@ -325,14 +339,28 @@ actor VaultRepositoryImpl: VaultRepository {
     /// - Throws: `APIError` on any other network or HTTP failure.
     /// - Throws: `CipherMapperError` if the response mapper fails.
     func update(_ draft: DraftVaultItem) async throws -> VaultItem {
+        // First, before the save waits for its turn and before any await: `clearVault()` bumps this
+        // token, so a lock that lands while the save waits or while its request runs makes it
+        // refuse. A token read when the save finally runs would always be current. Synchronous, so
+        // no suspension sits between starting the save and holding the token.
+        let storeGeneration = recordStore.currentGeneration()
+        return try await serialised([draft.id]) { [self] in
+            try await performUpdate(draft, storeGeneration: storeGeneration)
+        }
+    }
+
+    /// The body of `update`, run by the item's write queue: never call a queued public method from
+    /// here (the queue would wait for itself).
+    private func performUpdate(_ draft: DraftVaultItem, storeGeneration: RawCipherStore.Generation) async throws -> VaultItem {
         // TODO: Require biometric re-auth before encrypting and sending — deferred pending
         // SecureEnclave entitlement approval.
 
-        // First, before any await on the network: `clearVault()` bumps this token, so a lock that
-        // lands while the request runs makes the store write and the cache write below refuse. A
-        // token read at the write would always be current. Synchronous, so no suspension sits
-        // between starting the save and holding the token.
-        let storeGeneration = recordStore.currentGeneration()
+        // A save that waited in the queue across a lock sends nothing: its keys and its draft belong
+        // to the session that ended.
+        guard recordStore.isCurrent(storeGeneration) else {
+            logger.info("Save dropped before sending, the vault was cleared while it waited: \(draft.id, privacy: .public)")
+            throw VaultError.vaultLocked
+        }
 
         let vaultKeys: CryptoKeys
         do {
@@ -877,6 +905,44 @@ actor VaultRepositoryImpl: VaultRepository {
             throw VaultError.profileIdUnavailable
         }
         return profileId
+    }
+
+    /// Runs `operation` after every earlier write to any of `ids` has finished, and before any later
+    /// one starts. Writes to other ids are not delayed. A bulk write passes all its ids and waits for
+    /// each of them.
+    ///
+    /// Why: this actor is reentrant, so two writes to one item interleave between their awaits. The
+    /// second would then read a stored record the first is about to replace and send, or cache, a
+    /// result built on the older one. In the queue the second write starts from the record the
+    /// first one stored, so its revision check sees the first write's revision.
+    ///
+    /// How: each call registers its own tail task for every id before anything is awaited (this
+    /// method runs synchronously up to its first suspension, so no other write can slip in between
+    /// reading the old tails and registering the new one), then waits for the tails it replaced.
+    /// A tail removes itself only while it is still the registered one, so a later write's tail is
+    /// never removed by an earlier one.
+    ///
+    /// - A write never fails because another one is running; it waits.
+    /// - `operation` must call private unqueued helpers only. A queued public method called from
+    ///   inside it would wait for its own tail and never return.
+    /// - The work runs in an unstructured task: cancelling the caller does not stop a write that has
+    ///   started (a sent request cannot be recalled), it only stops the caller waiting for it.
+    /// - Not covered: the attachment upload and delete requests run in `AttachmentRepositoryImpl`
+    ///   before `updateAttachments` and are outside this queue. One window's edit sheet is modal, so
+    ///   they cannot overlap an edit of the same item there.
+    private func serialised<T: Sendable>(
+        _ ids: [String], _ operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        let previous = ids.compactMap { writeTails[$0] }
+        let run = Task<Result<T, Error>, Never> {
+            for earlier in previous { await earlier.value }
+            do { return .success(try await operation()) } catch { return .failure(error) }
+        }
+        let tail = Task<Void, Never> { _ = await run.value }
+        for id in ids { writeTails[id] = tail }
+        let result = await run.value
+        for id in ids where writeTails[id] == tail { writeTails[id] = nil }
+        return try result.get()
     }
 
     private func sorted(_ input: [VaultItem]) -> [VaultItem] {

@@ -175,7 +175,146 @@ final class SaveRaceTests: XCTestCase {
                        "The sync hands populate the generation it read at its start")
     }
 
+    // MARK: - Writes to one item run one after another
+
+    func testTwoUpdatesOfOneItem_runOneAfterAnother() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1", name: "Original")
+        try await seed([item], in: rig)
+        // The server's answer carries a newer revision, as a real save does.
+        rig.api.updateCipherResponse = try await Self.storedRecord("c1", in: rig.store, revision: Self.laterRevision)
+        let gate = SaveGate()
+        rig.api.whileUpdatingCipher = { await gate.hold() }
+        let vault = rig.vault
+
+        let first = Task { try await vault.update(StaleWriteRig.renamed(item)) }
+        let firstInFlight = await gate.waitUntilEntered(1)
+        XCTAssertTrue(firstInFlight, "The first PUT is in flight")
+        // Same old draft revision: the second edit was made on the copy the first one is replacing.
+        let second = Task { try await vault.update(StaleWriteRig.renamed(item)) }
+        await settle()
+        XCTAssertEqual(rig.api.updateCipherCallCount, 1, "The second update waits for the first")
+
+        await gate.open()
+        _ = try await first.value
+        do {
+            _ = try await second.value
+            XCTFail("The queued save runs against the record the first one stored, so it conflicts")
+        } catch VaultError.conflict {
+            // expected: the pre-check ran against the newer stored revision
+        }
+        XCTAssertEqual(rig.api.updateCipherCallCount, 1, "The conflict is found without a request")
+    }
+
+    func testUpdatesOfTwoItems_runInParallel() async throws {
+        let rig = await StaleWriteRig.make()
+        let items = [StaleWriteRig.login("c1"), StaleWriteRig.login("c2")]
+        try await seed(items, in: rig)
+        let gate = SaveGate()
+        rig.api.whileUpdatingCipher = { await gate.hold() }
+        let vault = rig.vault
+
+        let first = Task { try await vault.update(StaleWriteRig.renamed(items[0])) }
+        let second = Task { try await vault.update(StaleWriteRig.renamed(items[1])) }
+
+        let bothInFlight = await gate.waitUntilEntered(2)
+        XCTAssertTrue(bothInFlight, "Writes to different items do not wait for each other")
+        await gate.open()
+        _ = try await first.value
+        _ = try await second.value
+        XCTAssertEqual(rig.api.updateCipherCallCount, 2)
+    }
+
+    func testWriteQueuedBeforeLock_sendsNothing() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1", name: "Original")
+        try await seed([item], in: rig)
+        let gate = SaveGate()
+        rig.api.whileUpdatingCipher = { await gate.hold() }
+        let vault = rig.vault
+
+        let first = Task { try await vault.update(StaleWriteRig.renamed(item)) }
+        let firstInFlight = await gate.waitUntilEntered(1)
+        XCTAssertTrue(firstInFlight)
+        let second = Task { try await vault.update(StaleWriteRig.renamed(item)) }
+        await settle()
+        await vault.clearVault()
+        await gate.open()
+
+        for save in [first, second] {
+            do {
+                _ = try await save.value
+                XCTFail("A save started before the lock must throw after it")
+            } catch VaultError.vaultLocked {
+                // expected
+            }
+        }
+        XCTAssertEqual(rig.api.updateCipherCallCount, 1, "The queued update sends nothing after the lock")
+        await assertNothingLeft(in: rig, id: "c1")
+    }
+
+    func testQueue_isEmptyAfterwards() async throws {
+        let rig = await StaleWriteRig.make()
+        let items = [StaleWriteRig.login("c1"), StaleWriteRig.login("c2")]
+        try await seed(items, in: rig)
+        let gate = SaveGate()
+        rig.api.whileUpdatingCipher = { await gate.hold() }
+        let vault = rig.vault
+
+        let saves = [
+            Task { try await vault.update(StaleWriteRig.renamed(items[0])) },
+            Task { try await vault.update(StaleWriteRig.renamed(items[0])) },
+            Task { try await vault.update(StaleWriteRig.renamed(items[1])) },
+        ]
+        let held = await gate.waitUntilEntered(2)
+        XCTAssertTrue(held)
+        let whileHeld = await vault.queuedWriteCount
+        XCTAssertEqual(whileHeld, 2, "One entry per item with a write in the queue")
+
+        await gate.open()
+        _ = try await saves[0].value
+        do {
+            _ = try await saves[1].value
+            XCTFail("The second save of c1 is refused")
+        } catch VaultError.itemRevisionUnavailable {
+            // The mock answers the first save with a bare echo of the request, which carries no
+            // revision, so the record that save stored has none and the queued one finds no revision
+            // to check against. A failed write must not keep the queue busy; any other error fails.
+        }
+        _ = try await saves[2].value
+
+        let afterwards = await vault.queuedWriteCount
+        XCTAssertEqual(afterwards, 0, "The queue keeps nothing once its writes have finished")
+    }
+
     // MARK: - Helpers
+
+    private static let laterRevision = RepositoryFixtures.serverRevisionString(
+        for: RepositoryFixtures.revisionDate.addingTimeInterval(60))
+
+    /// Stores and caches `items` as a sync would leave them.
+    private func seed(_ items: [VaultItem], in rig: StaleWriteRig) async throws {
+        for item in items {
+            try await rig.storeRecord(of: item, revision: RepositoryFixtures.serverRevisionString(for: item.revisionDate))
+        }
+        await rig.vault.populate(items: items, folders: [Folder(id: "work", name: "Work")],
+                                 organizations: [], collections: [], syncedAt: Date())
+    }
+
+    /// The stored record of `id` with another `revisionDate`, for stubbing a server answer.
+    private static func storedRecord(_ id: String, in store: RawCipherStore, revision: String) async throws -> RawCipher {
+        let stored = await store.record(for: id)
+        let data = try JSONEncoder().encode(try XCTUnwrap(stored))
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        json["revisionDate"] = revision
+        return try JSONDecoder().decode(RawCipher.self, from: JSONSerialization.data(withJSONObject: json))
+    }
+
+    /// Lets queued work run: there is no event to wait for when the thing under test is "nothing
+    /// happens while the first write is held".
+    private func settle() async {
+        try? await Task.sleep(for: .milliseconds(150))
+    }
 
     private static func record(_ id: String) -> RawCipher {
         RawCipher(
@@ -237,5 +376,34 @@ final class SaveRaceTests: XCTestCase {
         } catch {
             XCTFail("Expected itemNotFound, got \(error)", file: file, line: line)
         }
+    }
+}
+
+/// Holds a mocked request until `open()`, so a test can start more work while it is in flight.
+private actor SaveGate {
+    private var entered = 0
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func hold() async {
+        entered += 1
+        if isOpen { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        for waiter in waiters { waiter.resume() }
+        waiters = []
+    }
+
+    /// True once `count` requests are being held; gives up after about two seconds so a broken
+    /// queue fails the test instead of hanging it.
+    func waitUntilEntered(_ count: Int) async -> Bool {
+        for _ in 0..<400 {
+            if entered >= count { return true }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return entered >= count
     }
 }
