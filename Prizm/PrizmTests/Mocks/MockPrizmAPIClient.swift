@@ -153,9 +153,12 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     nonisolated(unsafe) var createCipherResponse: RawCipher?
     nonisolated(unsafe) var createCipherShouldThrow: Error?
     nonisolated(unsafe) var createCipherCallCount: Int = 0
+    /// The cipher the last `createCipher` was called with, recorded before any throw.
+    nonisolated(unsafe) var lastCreatedCipher: RawCipher?
 
     func createCipher(cipher: RawCipher) async throws -> RawCipher {
         createCipherCallCount += 1
+        lastCreatedCipher = cipher
         if let err = createCipherShouldThrow { throw err }
         return createCipherResponse ?? cipher
     }
@@ -164,9 +167,12 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
 
     nonisolated(unsafe) var createOrgCipherResponse: RawCipher?
     nonisolated(unsafe) var createOrgCipherCallCount: Int = 0
+    /// The cipher the last `createOrgCipher` was called with, recorded before any throw.
+    nonisolated(unsafe) var lastCreatedOrgCipher: RawCipher?
 
     func createOrgCipher(cipher: RawCipher) async throws -> RawCipher {
         createOrgCipherCallCount += 1
+        lastCreatedOrgCipher = cipher
         if let err = createCipherShouldThrow { throw err }
         return createOrgCipherResponse ?? cipher
     }

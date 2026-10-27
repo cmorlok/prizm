@@ -27,6 +27,7 @@ actor SyncRepositoryImpl: SyncRepository {
     private let vaultRepository: any VaultRepository
     private let vaultKeyCache:   VaultKeyCache
     private let orgKeyCache:     OrgKeyCache
+    private let profileIds:      ProfileIdCache
 
     private let logger = Logger(subsystem: "com.prizm", category: "SyncRepository")
 
@@ -41,13 +42,16 @@ actor SyncRepositoryImpl: SyncRepository {
         crypto:          any PrizmCryptoService,
         vaultRepository: any VaultRepository,
         vaultKeyCache:   VaultKeyCache,
-        orgKeyCache:     OrgKeyCache = OrgKeyCache()
+        orgKeyCache:     OrgKeyCache = OrgKeyCache(),
+        // No default: the same holder must reach `VaultRepositoryImpl`, which reads it on every save.
+        profileIds:      ProfileIdCache
     ) {
         self.apiClient       = apiClient
         self.crypto          = crypto
         self.vaultRepository = vaultRepository
         self.vaultKeyCache   = vaultKeyCache
         self.orgKeyCache     = orgKeyCache
+        self.profileIds      = profileIds
     }
 
     // MARK: - SyncRepository
@@ -248,6 +252,8 @@ actor SyncRepositoryImpl: SyncRepository {
         // Phase 3: Populate the in-memory vault store.
         let syncedAt = Date()
         try await ensureStillUnlocked()
+        // Before populate, so the vault is never shown without the id its saves need.
+        await profileIds.set(syncResponse.profile.id)
         await vaultRepository.populate(
             items:         items,
             folders:       folders,

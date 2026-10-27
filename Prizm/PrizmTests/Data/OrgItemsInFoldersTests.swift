@@ -32,7 +32,7 @@ final class OrgItemsInFoldersTests: XCTestCase {
         crypto.stubbedVaultKeys = vaultKeys  // unlockWith(keys:) does not set the returned keys
         let orgKeyCache = OrgKeyCache()
         await orgKeyCache.replaceAll(with: ["org-1": orgKeys])
-        sut = VaultRepositoryImpl(apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache)
+        sut = await RepositoryFixtures.vaultRepository(apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache)
         await sut.populate(items: [orgItem, personalItem],
                            folders: [Folder(id: "f1", name: "Work"), Folder(id: "f2", name: "Home")],
                            organizations: [], collections: [OrgCollection(id: "col-a", organizationId: "org-1", name: "A")],

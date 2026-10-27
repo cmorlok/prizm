@@ -136,6 +136,7 @@
 		BB1008000000000000000008 /* AttachmentDTO.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1008000000000000000008 /* AttachmentDTO.swift */; };
 		BB1009000000000000000009 /* AttachmentRepositoryImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1009000000000000000009 /* AttachmentRepositoryImpl.swift */; };
 		BB100A00000000000000000A /* VaultKeyCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100A00000000000000000A /* VaultKeyCache.swift */; };
+		BB100D1E00000000000000F1 /* ProfileIdCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100D1E00000000000000F1 /* ProfileIdCache.swift */; };
 		BB100B00000000000000000B /* VaultKeyServiceImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100B00000000000000000B /* VaultKeyServiceImpl.swift */; };
 		BB100C00000000000000000C /* AttachmentMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100C00000000000000000C /* AttachmentMapper.swift */; };
 		BB100D00000000000000000D /* UploadAttachmentUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100D00000000000000000D /* UploadAttachmentUseCaseImpl.swift */; };
@@ -322,6 +323,7 @@
 		AA1008000000000000000008 /* AttachmentDTO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentDTO.swift; sourceTree = "<group>"; };
 		AA1009000000000000000009 /* AttachmentRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentRepositoryImpl.swift; sourceTree = "<group>"; };
 		AA100A00000000000000000A /* VaultKeyCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultKeyCache.swift; sourceTree = "<group>"; };
+		AA100D1E00000000000000F1 /* ProfileIdCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileIdCache.swift; sourceTree = "<group>"; };
 		AA100B00000000000000000B /* VaultKeyServiceImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultKeyServiceImpl.swift; sourceTree = "<group>"; };
 		AA100C00000000000000000C /* AttachmentMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentMapper.swift; sourceTree = "<group>"; };
 		AA100D00000000000000000D /* UploadAttachmentUseCaseImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadAttachmentUseCaseImpl.swift; sourceTree = "<group>"; };
@@ -635,6 +637,7 @@
 				E4F5A6B7C8D94893E5F6A7B8 /* SyncTimestampRepositoryImpl.swift */,
 				AA1009000000000000000009 /* AttachmentRepositoryImpl.swift */,
 				AA100A00000000000000000A /* VaultKeyCache.swift */,
+				AA100D1E00000000000000F1 /* ProfileIdCache.swift */,
 				AA100B00000000000000000B /* VaultKeyServiceImpl.swift */,
 				CC1001000000000000000001 /* EmbeddedBiometricUnlock.swift */,
 				31D2B1A0986646E77444802B /* Legacy */,
@@ -1237,6 +1240,7 @@
 				BB1008000000000000000008 /* AttachmentDTO.swift in Sources */,
 				BB1009000000000000000009 /* AttachmentRepositoryImpl.swift in Sources */,
 				BB100A00000000000000000A /* VaultKeyCache.swift in Sources */,
+				BB100D1E00000000000000F1 /* ProfileIdCache.swift in Sources */,
 				BB100B00000000000000000B /* VaultKeyServiceImpl.swift in Sources */,
 				BB100C00000000000000000C /* AttachmentMapper.swift in Sources */,
 				BB100D00000000000000000D /* UploadAttachmentUseCaseImpl.swift in Sources */,

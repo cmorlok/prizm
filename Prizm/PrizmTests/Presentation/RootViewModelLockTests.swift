@@ -190,6 +190,18 @@ final class RootViewModelLockTests: XCTestCase {
                        "The next account must not start in the previous account's folder")
     }
 
+    /// Sign-out must reach `VaultRepository.clearVault()`, the hook that drops the profile id for
+    /// `encryptedFor` (and everything else the session held).
+    func testSignOut_clearsTheVaultRepository() async throws {
+        mockAuth.stubbedStoredAccount = stubAccount
+        sut.screen = .vault
+
+        sut.signOut()
+        try await waitUntil { if case .login = self.sut.screen { return true }; return false }
+
+        XCTAssertTrue(mockVault.clearVaultCalled)
+    }
+
     func testLockVault_clearsACopiedSecret() async throws {
         let deps = MockRootDependencies(auth: mockAuth, vault: mockVault)
         let root = RootViewModel(container: deps)

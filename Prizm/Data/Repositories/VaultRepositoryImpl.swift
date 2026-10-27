@@ -24,6 +24,8 @@ actor VaultRepositoryImpl: VaultRepository {
     // allows the actor init to be called from @MainActor without an actor hop.
     nonisolated private let mapper: CipherMapper
     private let orgKeyCache: OrgKeyCache
+    /// The profile id of the last sync, sent as `encryptedFor` on creates and full updates.
+    private let profileIds: ProfileIdCache
 
     // MARK: - Raw stores
 
@@ -55,12 +57,15 @@ actor VaultRepositoryImpl: VaultRepository {
         apiClient:   any PrizmAPIClientProtocol,
         crypto:      any PrizmCryptoService,
         mapper:      CipherMapper = CipherMapper(),
-        orgKeyCache: OrgKeyCache = OrgKeyCache()
+        orgKeyCache: OrgKeyCache = OrgKeyCache(),
+        // No default: one holder is shared with `SyncRepositoryImpl`, which fills it.
+        profileIds:  ProfileIdCache
     ) {
         self.apiClient         = apiClient
         self.crypto            = crypto
         self.mapper            = mapper
         self.orgKeyCache       = orgKeyCache
+        self.profileIds        = profileIds
 
         // Pre-populate static keys with zero counts so itemCounts() returns 0 (not nil)
         // before the first populate() / buildIndexes() call (e.g. empty-vault tests).
@@ -93,6 +98,9 @@ actor VaultRepositoryImpl: VaultRepository {
     }
 
     func clearVault() async {
+        // First: lock and sign-out both reach this hook (RootViewModel), so the id never outlives
+        // the session.
+        await profileIds.clear()
         items             = []
         folderStore       = []
         organizationStore = []
@@ -246,7 +254,10 @@ actor VaultRepositoryImpl: VaultRepository {
     ///   2. `CipherMapper.toRawCipher` encrypts every sensitive field with the vault key, or with
     ///      the organization key for an org item (`encryptionKeys(for:)`, which never falls back).
     ///      No plaintext value crosses this call boundary in the outbound direction.
-    ///   3. The encrypted `RawCipher` is sent via `PUT /api/ciphers/{id}`.
+    ///   3. The encrypted `RawCipher` is sent via `PUT /api/ciphers/{id}` with `encryptedFor` set to
+    ///      the profile id of the last sync (`ProfileIdCache`). Without one nothing is sent and
+    ///      `VaultError.profileIdUnavailable` is thrown. The folder/favorite-only `/partial` request
+    ///      carries no `encryptedFor` and needs no id.
     ///   4. The server response is decoded and re-mapped to a `VaultItem` — we use the
     ///      *response* (not the draft) so the server's revision date and any server-side
     ///      normalisation are captured correctly.
@@ -289,8 +300,9 @@ actor VaultRepositoryImpl: VaultRepository {
 
         let orgKeysSnapshot = await orgKeyCache.snapshot()
         let encryptionKeys = try encryptionKeys(for: draft, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot)
+        let profileId = try await requireProfileId()
 
-        let rawCipher = try mapper.toRawCipher(draft, encryptedWith: encryptionKeys)
+        let rawCipher = try mapper.toRawCipher(draft, encryptedWith: encryptionKeys, encryptedFor: profileId)
 
         // TODO: Queue encrypted rawCipher for offline persistence (deferred — requires WAL).
         let updatedRaw = try await apiClient.updateCipher(id: draft.id, cipher: rawCipher)
@@ -335,8 +347,11 @@ actor VaultRepositoryImpl: VaultRepository {
 
         let orgKeysSnapshot = await orgKeyCache.snapshot()
         let encryptionKeys = try encryptionKeys(for: draft, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot)
+        let profileId = try await requireProfileId()
 
-        let rawCipher = try mapper.toRawCipher(draft, encryptedWith: encryptionKeys)
+        // An org create carries `encryptedFor` inside `cipher` (OrgCipherCreateRequest encodes the
+        // RawCipher there); a personal create has it at the top level.
+        let rawCipher = try mapper.toRawCipher(draft, encryptedWith: encryptionKeys, encryptedFor: profileId)
 
         let createdRaw: RawCipher
         if draft.organizationId != nil {
@@ -659,6 +674,20 @@ actor VaultRepositoryImpl: VaultRepository {
             throw VaultError.organizationKeyUnavailable
         }
         return orgKey
+    }
+
+    /// The id for `encryptedFor`, or `VaultError.profileIdUnavailable` before the first sync of the
+    /// session and after lock or sign-out.
+    ///
+    /// Intentionally NOT done: sending the save without it. Vaultwarden 1.37.4 rejects such a body
+    /// (HTTP 422), and a body built for another account must never leave the device, so a missing
+    /// id fails the save before any request.
+    private func requireProfileId() async throws -> String {
+        guard let profileId = await profileIds.current() else {
+            logger.error("Save refused: no profile id from a sync in this session")
+            throw VaultError.profileIdUnavailable
+        }
+        return profileId
     }
 
     private func sorted(_ input: [VaultItem]) -> [VaultItem] {

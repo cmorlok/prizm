@@ -24,7 +24,7 @@ final class VaultRepositoryImplDeleteRestoreTests: XCTestCase {
         try await super.setUp()
         mockAPI    = MockPrizmAPIClient()
         mockCrypto = MockPrizmCryptoService()
-        sut        = VaultRepositoryImpl(apiClient: mockAPI, crypto: mockCrypto)
+        sut        = await RepositoryFixtures.vaultRepository(apiClient: mockAPI, crypto: mockCrypto)
     }
 
     // MARK: - Helpers

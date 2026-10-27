@@ -37,7 +37,7 @@ final class CollectionUseCaseTests: XCTestCase {
     func testCollectionFiltering_returnsOnlyItemsInThatCollection() async throws {
         let mockAPI    = MockPrizmAPIClient()
         let mockCrypto = MockPrizmCryptoService()
-        let sut        = VaultRepositoryImpl(apiClient: mockAPI, crypto: mockCrypto)
+        let sut        = await RepositoryFixtures.vaultRepository(apiClient: mockAPI, crypto: mockCrypto)
 
         let colA = "col-A"
         let colB = "col-B"
@@ -60,7 +60,7 @@ final class CollectionUseCaseTests: XCTestCase {
     }
 
     func testCollectionFiltering_unknownId_returnsEmpty() async throws {
-        let sut = VaultRepositoryImpl(apiClient: MockPrizmAPIClient(), crypto: MockPrizmCryptoService())
+        let sut = await RepositoryFixtures.vaultRepository(apiClient: MockPrizmAPIClient(), crypto: MockPrizmCryptoService())
         await sut.populate(items: [makeLogin(name: "X", collectionIds: ["col-1"])],
                            folders: [], organizations: [], collections: [], syncedAt: Date())
 
@@ -73,7 +73,7 @@ final class CollectionUseCaseTests: XCTestCase {
     func testOrganizationFiltering_returnsItemsFromAllOrgCollections() async throws {
         let mockAPI    = MockPrizmAPIClient()
         let mockCrypto = MockPrizmCryptoService()
-        let sut        = VaultRepositoryImpl(apiClient: mockAPI, crypto: mockCrypto)
+        let sut        = await RepositoryFixtures.vaultRepository(apiClient: mockAPI, crypto: mockCrypto)
 
         let orgId  = "org-1"
         let colA   = OrgCollection(id: "col-A", organizationId: orgId, name: "Col A")
@@ -100,7 +100,7 @@ final class CollectionUseCaseTests: XCTestCase {
     }
 
     func testOrganizationFiltering_noMatchingOrgCollections_returnsEmpty() async throws {
-        let sut = VaultRepositoryImpl(apiClient: MockPrizmAPIClient(), crypto: MockPrizmCryptoService())
+        let sut = await RepositoryFixtures.vaultRepository(apiClient: MockPrizmAPIClient(), crypto: MockPrizmCryptoService())
         await sut.populate(items: [makeLogin(name: "X", collectionIds: ["col-A"])],
                            folders: [], organizations: [], collections: [], syncedAt: Date())
 
@@ -113,7 +113,7 @@ final class CollectionUseCaseTests: XCTestCase {
     func testCreate_personalItem_routesToCreateCipher() async throws {
         let mockAPI    = MockPrizmAPIClient()
         let mockCrypto = MockPrizmCryptoService()
-        let sut        = VaultRepositoryImpl(apiClient: mockAPI, crypto: mockCrypto)
+        let sut        = await RepositoryFixtures.vaultRepository(apiClient: mockAPI, crypto: mockCrypto)
 
         await mockCrypto.unlockWith(keys: CryptoKeys(
             encryptionKey: Data(repeating: 0xAA, count: 32),
@@ -142,7 +142,7 @@ final class CollectionUseCaseTests: XCTestCase {
         let mockAPI    = MockPrizmAPIClient()
         let mockCrypto = MockPrizmCryptoService()
         let orgCache   = OrgKeyCache()
-        let sut        = VaultRepositoryImpl(apiClient: mockAPI, crypto: mockCrypto,
+        let sut        = await RepositoryFixtures.vaultRepository(apiClient: mockAPI, crypto: mockCrypto,
                                              orgKeyCache: orgCache)
 
         let orgKeys = CryptoKeys(encryptionKey: Data(repeating: 0xCC, count: 32),
@@ -178,7 +178,7 @@ final class CollectionUseCaseTests: XCTestCase {
         let mockAPI    = MockPrizmAPIClient()
         let mockCrypto = MockPrizmCryptoService()
         let orgCache   = OrgKeyCache()
-        let sut        = VaultRepositoryImpl(apiClient: mockAPI, crypto: mockCrypto,
+        let sut        = await RepositoryFixtures.vaultRepository(apiClient: mockAPI, crypto: mockCrypto,
                                              orgKeyCache: orgCache)
 
         let orgKeys = CryptoKeys(encryptionKey: Data(repeating: 0xAA, count: 32),
@@ -212,7 +212,7 @@ final class CollectionUseCaseTests: XCTestCase {
         let mockAPI    = MockPrizmAPIClient()
         let mockCrypto = MockPrizmCryptoService()
         let orgCache   = OrgKeyCache()
-        let sut        = VaultRepositoryImpl(apiClient: mockAPI, crypto: mockCrypto,
+        let sut        = await RepositoryFixtures.vaultRepository(apiClient: mockAPI, crypto: mockCrypto,
                                              orgKeyCache: orgCache)
 
         let orgKeys = CryptoKeys(encryptionKey: Data(repeating: 0xAA, count: 32),
@@ -236,7 +236,7 @@ final class CollectionUseCaseTests: XCTestCase {
     }
 
     func testCreateCollection_missingOrgKey_throws() async throws {
-        let sut = VaultRepositoryImpl(apiClient: MockPrizmAPIClient(), crypto: MockPrizmCryptoService())
+        let sut = await RepositoryFixtures.vaultRepository(apiClient: MockPrizmAPIClient(), crypto: MockPrizmCryptoService())
         // OrgKeyCache is empty — org key not present.
         await XCTAssertThrowsErrorAsync(
             try await sut.createCollection(name: "Test", organizationId: "org-99")
@@ -251,7 +251,7 @@ final class CollectionUseCaseTests: XCTestCase {
         let mockAPI    = MockPrizmAPIClient()
         let mockCrypto = MockPrizmCryptoService()
         let orgCache   = OrgKeyCache()
-        let sut        = VaultRepositoryImpl(apiClient: mockAPI, crypto: mockCrypto,
+        let sut        = await RepositoryFixtures.vaultRepository(apiClient: mockAPI, crypto: mockCrypto,
                                              orgKeyCache: orgCache)
 
         let orgKeys = CryptoKeys(encryptionKey: Data(repeating: 0xAA, count: 32),
@@ -287,7 +287,7 @@ final class CollectionUseCaseTests: XCTestCase {
     func testDeleteCollection_removesFromLocalCache() async throws {
         let mockAPI    = MockPrizmAPIClient()
         let mockCrypto = MockPrizmCryptoService()
-        let sut        = VaultRepositoryImpl(apiClient: mockAPI, crypto: mockCrypto)
+        let sut        = await RepositoryFixtures.vaultRepository(apiClient: mockAPI, crypto: mockCrypto)
 
         let col = OrgCollection(id: "col-delete-me", organizationId: "org-1", name: "Bye")
         await sut.populate(items: [], folders: [], organizations: [],

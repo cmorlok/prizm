@@ -17,7 +17,7 @@ final class SyncRepositoryImplTests: XCTestCase {
         mockAPI    = MockPrizmAPIClient()
         mockCrypto = MockPrizmCryptoService()
         mockVault  = MockVaultRepository()
-        sut = SyncRepositoryImpl(
+        sut = await RepositoryFixtures.syncRepository(
             apiClient:       mockAPI,
             crypto:          mockCrypto,
             vaultRepository: mockVault,

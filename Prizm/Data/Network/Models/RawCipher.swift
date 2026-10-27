@@ -45,6 +45,12 @@ nonisolated struct RawCipher: Codable {
     /// File attachments belonging to this cipher. Nil when the server returns no
     /// attachments or omits the field entirely; treated as `[]` by `CipherMapper`.
     let attachments:    [AttachmentDTO]?
+    /// Request-only: the user id this cipher was encrypted for (`RawProfile.id` of the last sync).
+    /// Vaultwarden 1.37.4 requires it in every cipher body (HTTP 422 without); the official server
+    /// accepts it when present. `encryptedByKeyId` is intentionally never modelled or sent
+    /// (fix-cipher-edit-data-loss, D5). Decoded leniently so a server that echoes it with another type
+    /// cannot abort a sync; nothing reads the decoded value.
+    let encryptedFor:   String?
 
     /// Custom decoder — all fields use standard decoding except `collectionIds`, which
     /// defaults to `[]` when the key is absent so that personal-item ciphers (which the
@@ -72,6 +78,8 @@ nonisolated struct RawCipher: Codable {
         // `collectionIds` is absent for personal items; default to [] rather than throwing.
         collectionIds  = (try? c.decode([String].self, forKey: .collectionIds)) ?? []
         attachments    = try c.decodeIfPresent([AttachmentDTO].self,  forKey: .attachments)
+        // Lenient: a wrong type here must never abort a sync.
+        encryptedFor   = try? c.decodeIfPresent(String.self,          forKey: .encryptedFor)
     }
 
     /// Memberwise init with `collectionIds` defaulted to `[]` so existing call sites
@@ -81,7 +89,8 @@ nonisolated struct RawCipher: Codable {
          creationDate: String?, revisionDate: String?, login: RawLoginData?,
          card: RawCardData?, identity: RawIdentityData?, secureNote: RawSecureNoteData?,
          sshKey: RawSSHKeyData?, fields: [RawField]?, key: String?,
-         collectionIds: [String] = [], attachments: [AttachmentDTO]?) {
+         collectionIds: [String] = [], attachments: [AttachmentDTO]?,
+         encryptedFor: String? = nil) {
         self.id             = id
         self.organizationId = organizationId
         self.folderId       = folderId
@@ -102,6 +111,7 @@ nonisolated struct RawCipher: Codable {
         self.key            = key
         self.collectionIds  = collectionIds
         self.attachments    = attachments
+        self.encryptedFor   = encryptedFor
     }
 }
 

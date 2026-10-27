@@ -32,7 +32,7 @@ final class OrgKeyWriteGuardTests: XCTestCase {
         mockAPI = MockPrizmAPIClient()
         mockCrypto = MockPrizmCryptoService()
         orgKeyCache = OrgKeyCache()
-        sut = VaultRepositoryImpl(apiClient: mockAPI, crypto: mockCrypto, orgKeyCache: orgKeyCache)
+        sut = await RepositoryFixtures.vaultRepository(apiClient: mockAPI, crypto: mockCrypto, orgKeyCache: orgKeyCache)
         await mockCrypto.unlockWith(keys: vaultKeys)
         mockCrypto.stubbedVaultKeys = vaultKeys  // unlockWith(keys:) does not set the returned keys
         await sut.populate(items: [personalItem, orgItem], folders: [], organizations: [], collections: [], syncedAt: Date())
@@ -153,7 +153,7 @@ final class SyncOrgKeySwapTests: XCTestCase {
         mockAPI = MockPrizmAPIClient()
         mockCrypto = MockPrizmCryptoService()
         orgKeyCache = OrgKeyCache()
-        sut = SyncRepositoryImpl(apiClient: mockAPI, crypto: mockCrypto, vaultRepository: MockVaultRepository(),
+        sut = await RepositoryFixtures.syncRepository(apiClient: mockAPI, crypto: mockCrypto, vaultRepository: MockVaultRepository(),
                                  vaultKeyCache: VaultKeyCache(), orgKeyCache: orgKeyCache)
         await mockCrypto.unlockWith(keys: CryptoKeys(encryptionKey: Data(count: 32), macKey: Data(count: 32)))
         mockCrypto.stubbedDecryptList = []
@@ -247,7 +247,7 @@ final class SyncOrgKeySwapTests: XCTestCase {
 
     func testSync_orgWhoseKeyFails_isNotListed() async throws {
         let repository = MockVaultRepository()
-        sut = SyncRepositoryImpl(apiClient: mockAPI, crypto: mockCrypto, vaultRepository: repository,
+        sut = await RepositoryFixtures.syncRepository(apiClient: mockAPI, crypto: mockCrypto, vaultRepository: repository,
                                  vaultKeyCache: VaultKeyCache(), orgKeyCache: orgKeyCache)
         mockAPI.syncResponse = syncResponse(organizations: [
             RawOrganization(id: "org-1", name: "One", key: "2.k1", type: 2),

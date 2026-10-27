@@ -120,6 +120,9 @@ nonisolated enum VaultError: Error, LocalizedError {
     /// The user's organization-user id in the sync profile is present but unreadable, so a new
     /// collection cannot be assigned to its creator.
     case organizationMembershipUnreadable
+    /// The user id from the last sync is not known, so a create or full update was not sent: the
+    /// server rejects a save without it (Vaultwarden 1.37.4, HTTP 422).
+    case profileIdUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -137,6 +140,8 @@ nonisolated enum VaultError: Error, LocalizedError {
             return "Couldn't create the collection. Your membership in this organization could not be read."
         case .organizationKeyUnavailable:
             return "This item's organization can't be accessed right now. Lock and unlock Prizm, then try again."
+        case .profileIdUnavailable:
+            return "Prizm couldn't confirm which account this item belongs to. Lock and unlock Prizm, then try again."
         }
     }
 }

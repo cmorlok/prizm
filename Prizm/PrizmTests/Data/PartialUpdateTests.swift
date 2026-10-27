@@ -33,7 +33,7 @@ final class PartialUpdateTests: XCTestCase {
         mockAPI = MockPrizmAPIClient()
         mockCrypto = MockPrizmCryptoService()
         orgKeyCache = OrgKeyCache()
-        sut = VaultRepositoryImpl(apiClient: mockAPI, crypto: mockCrypto, orgKeyCache: orgKeyCache)
+        sut = await RepositoryFixtures.vaultRepository(apiClient: mockAPI, crypto: mockCrypto, orgKeyCache: orgKeyCache)
         await sut.populate(items: [orgItem], folders: [Folder(id: "old-folder", name: "Old"), Folder(id: "work", name: "Work")],
                            organizations: [], collections: [], syncedAt: Date())
     }

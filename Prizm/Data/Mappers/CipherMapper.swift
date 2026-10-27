@@ -340,9 +340,12 @@ nonisolated final class CipherMapper: Sendable {
     ///
     /// - Parameter draft: The edited item to re-encrypt.
     /// - Parameter keys:  The symmetric key pair (AES-256 enc key + HMAC-SHA256 MAC key).
+    /// - Parameter encryptedFor: The user id sent as `encryptedFor`. The repository passes the
+    ///   profile id of the last sync; nil is for mapper unit tests only.
     /// - Returns: A `RawCipher` with all sensitive string fields encrypted as EncStrings.
     /// - Throws: `EncStringError` if IV generation or AES/HMAC computation fails.
-    func toRawCipher(_ draft: DraftVaultItem, encryptedWith keys: CryptoKeys) throws -> RawCipher {
+    func toRawCipher(_ draft: DraftVaultItem, encryptedWith keys: CryptoKeys,
+                     encryptedFor: String? = nil) throws -> RawCipher {
         let encName  = try encryptString(draft.name, keys: keys)
         let encNotes: String? = try {
             switch draft.content {
@@ -378,7 +381,8 @@ nonisolated final class CipherMapper: Sendable {
             fields:         encFields.isEmpty ? nil : encFields,
             key:            nil,
             collectionIds:  draft.collectionIds,
-            attachments:    nil
+            attachments:    nil,
+            encryptedFor:   encryptedFor
         )
     }
 

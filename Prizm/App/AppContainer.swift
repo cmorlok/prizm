@@ -95,7 +95,9 @@ final class AppContainer: ObservableObject {
         #endif
         let keyCache      = VaultKeyCache()
         let orgKeyCache   = OrgKeyCache()
-        let vault         = VaultRepositoryImpl(apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache)
+        // One holder for both repositories: sync fills it, saves read it.
+        let profileIds    = ProfileIdCache()
+        let vault         = VaultRepositoryImpl(apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache, profileIds: profileIds)
         let vaultKeyService = VaultKeyServiceImpl(cache: keyCache, crypto: crypto)
 
         let auth = AuthRepositoryImpl(
@@ -111,7 +113,8 @@ final class AppContainer: ObservableObject {
             crypto:          crypto,
             vaultRepository: vault,
             vaultKeyCache:   keyCache,
-            orgKeyCache:     orgKeyCache
+            orgKeyCache:     orgKeyCache,
+            profileIds: profileIds
         )
 
         let attachmentRepo = AttachmentRepositoryImpl(

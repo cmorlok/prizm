@@ -83,7 +83,7 @@ final class SearchVaultTests: XCTestCase {
 
     override func setUp() async throws {
         try await super.setUp()
-        vault = VaultRepositoryImpl(apiClient: MockPrizmAPIClient(), crypto: MockPrizmCryptoService())
+        vault = await RepositoryFixtures.vaultRepository(apiClient: MockPrizmAPIClient(), crypto: MockPrizmCryptoService())
         await vault.populate(items: Self.allFixtures, folders: [], organizations: [], collections: [], syncedAt: Self.now)
         sut = SearchVaultUseCaseImpl(vault: vault)
     }
