@@ -63,11 +63,13 @@ final class UriChecksumTests: XCTestCase {
 
     func testEditedLogin_putBodyCarriesACorrectChecksumPerWebsite() async throws {
         let client = await makeClient()
-        let vault = await RepositoryFixtures.vaultRepository(apiClient: client, crypto: await unlockedCrypto())
-        await vault.populate(
-            items: [loginItem(uris: ["https://example.com", "https://example.com/login"])],
-            folders: [], organizations: [], collections: [], syncedAt: Date()
-        )
+        let store = RawCipherStore()
+        let vault = await RepositoryFixtures.vaultRepository(
+            apiClient: client, crypto: await unlockedCrypto(), recordStore: store)
+        let item = loginItem(uris: ["https://example.com", "https://example.com/login"])
+        await vault.populate(items: [item], folders: [], organizations: [], collections: [], syncedAt: Date())
+        // The save is built over the server's stored record of the item.
+        try await RepositoryFixtures.seedRecords(for: [item], in: store, vaultKeys: vaultKeys)
         // The echo decrypts with the same keys, so update() can map it.
         StubURLProtocol.responder = { _ in
             .status(200, body: StubURLProtocol.requests.last?.body ?? Data())

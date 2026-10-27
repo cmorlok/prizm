@@ -86,9 +86,12 @@ final class RawCipherStoreTests: XCTestCase {
     }
 
     /// A stored record that holds what Prizm does not model: password history and a passkey.
-    private func richRecord(_ id: String) -> RawCipher {
-        RawCipher(
-            id: id, organizationId: nil, folderId: nil, type: 1, name: "2.x|y|z", notes: nil,
+    /// Its name is a real type-2 EncString under `vaultKeys`, as a server record is, so a save built
+    /// over it can check the key against it.
+    private func richRecord(_ id: String) throws -> RawCipher {
+        let name = try CipherMapper().toRawCipher(DraftVaultItem(vaultItem(id)), encryptedWith: vaultKeys).name
+        return RawCipher(
+            id: id, organizationId: nil, folderId: nil, type: 1, name: name, notes: nil,
             favorite: false, reprompt: nil, deletedDate: nil, creationDate: nil,
             revisionDate: "2026-01-01T00:00:00.000Z",
             login: RawLoginData(username: nil, password: nil, uris: nil, totp: nil,
@@ -246,11 +249,67 @@ final class RawCipherStoreTests: XCTestCase {
         XCTAssertEqual(countAfterRemove, 1)
     }
 
+    // MARK: - Seeding helper (the stored record a save is built over)
+
+    private let acmeKeys = CryptoKeys(
+        encryptionKey: Data(repeating: 0xAC, count: 32),
+        macKey:        Data(repeating: 0xCE, count: 32)
+    )
+
+    private func personalLogin(_ id: String, name: String) -> VaultItem {
+        VaultItem(id: id, name: name, isFavorite: false, isDeleted: false, creationDate: Date(),
+                  revisionDate: Date(),
+                  content: .login(LoginContent(username: "u", password: "p", uris: [], totp: nil, notes: nil, customFields: [])))
+    }
+
+    private func orgNote(_ id: String, name: String, organizationId: String) -> VaultItem {
+        VaultItem(id: id, name: name, isFavorite: false, isDeleted: false, creationDate: Date(),
+                  revisionDate: Date(), content: .secureNote(SecureNoteContent(notes: nil, customFields: [])),
+                  organizationId: organizationId)
+    }
+
+    func testSeedRecords_storesRecordsThatMapBackToTheirItems() async throws {
+        let store = RawCipherStore()
+        let items = [
+            personalLogin("p1", name: "Personal login"),
+            orgNote("o1", name: "Org note", organizationId: "org-acme")
+        ]
+
+        try await RepositoryFixtures.seedRecords(
+            for: items, in: store, vaultKeys: vaultKeys, orgKeys: ["org-acme": acmeKeys])
+
+        for item in items {
+            let record = await store.record(for: item.id)
+            let stored = try XCTUnwrap(record, "A record is stored for \(item.id)")
+            let mapped = try CipherMapper().map(raw: stored, vaultKeys: vaultKeys, orgKeys: ["org-acme": acmeKeys]).item
+            XCTAssertEqual(mapped.name, item.name)
+            XCTAssertEqual(mapped.organizationId, item.organizationId)
+        }
+    }
+
+    func testSeedRecords_orgItemWithoutItsKey_throws() async throws {
+        let store = RawCipherStore()
+
+        do {
+            try await RepositoryFixtures.seedRecords(
+                for: [orgNote("o1", name: "Org note", organizationId: "org-acme")],
+                in: store, vaultKeys: vaultKeys, orgKeys: [:])
+            XCTFail("Seeding an org item without its key must throw, never fall back to the vault key")
+        } catch is RepositoryFixtures.SeedError {
+            // expected
+        }
+        let stored = await store.record(for: "o1")
+        XCTAssertNil(stored, "Nothing is stored when the key is missing")
+    }
+
     // MARK: - Hooks: update, create, permanent delete
 
     func testUpdate_storesThePutResponse() async throws {
         let rig = await makeRig(seedProfileId: RepositoryFixtures.profileId)
-        // No cached item for "c1", so the full PUT path runs (an unchanged item would use /partial).
+        // The save is built over the stored record; no cached item for "c1", so the full PUT path runs
+        // (an unchanged item would use /partial).
+        try await RepositoryFixtures.seedRecords(
+            for: [personalLogin("c1", name: "Original")], in: rig.store, vaultKeys: vaultKeys)
         let draft = loginDraft(id: "c1", name: "Renamed")
         _ = try await rig.vault.update(draft)
         let firstStored = await rig.store.record(for: "c1")
@@ -266,7 +325,7 @@ final class RawCipherStoreTests: XCTestCase {
 
     func testUpdate_doesNotCopyTheStoredRecordIntoTheRequest() async throws {
         let rig = await makeRig(seedProfileId: RepositoryFixtures.profileId)
-        await seed(rig.store, [richRecord("c1")])
+        await seed(rig.store, [try richRecord("c1")])
 
         _ = try await rig.vault.update(loginDraft(id: "c1", name: "Renamed"))
 
@@ -341,6 +400,8 @@ final class RawCipherStoreTests: XCTestCase {
         let rig = await makeRig(seedProfileId: RepositoryFixtures.profileId)
         let vault = rig.vault
         rig.api.whileUpdatingCipher = { await vault.clearVault() }
+        try await RepositoryFixtures.seedRecords(
+            for: [personalLogin("c1", name: "Original")], in: rig.store, vaultKeys: vaultKeys)
 
         // The save itself still returns as before; only the store write is fenced.
         _ = try await rig.vault.update(loginDraft(id: "c1", name: "Renamed"))

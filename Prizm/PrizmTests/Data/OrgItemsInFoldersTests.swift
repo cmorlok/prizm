@@ -32,11 +32,16 @@ final class OrgItemsInFoldersTests: XCTestCase {
         crypto.stubbedVaultKeys = vaultKeys  // unlockWith(keys:) does not set the returned keys
         let orgKeyCache = OrgKeyCache()
         await orgKeyCache.replaceAll(with: ["org-1": orgKeys])
-        sut = await RepositoryFixtures.vaultRepository(apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache)
+        let store = RawCipherStore()
+        sut = await RepositoryFixtures.vaultRepository(
+            apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache, recordStore: store)
         await sut.populate(items: [orgItem, personalItem],
                            folders: [Folder(id: "f1", name: "Work"), Folder(id: "f2", name: "Home")],
                            organizations: [], collections: [OrgCollection(id: "col-a", organizationId: "org-1", name: "A")],
                            syncedAt: Date())
+        // A full save is built over the server's stored record, encrypted under these keys.
+        try await RepositoryFixtures.seedRecords(
+            for: [orgItem, personalItem], in: store, vaultKeys: vaultKeys, orgKeys: ["org-1": orgKeys])
     }
 
     // MARK: - 2.1 Folder list and count include org items

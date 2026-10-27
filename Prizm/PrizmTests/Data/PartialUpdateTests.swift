@@ -10,6 +10,7 @@ final class PartialUpdateTests: XCTestCase {
     private var mockAPI: MockPrizmAPIClient!
     private var mockCrypto: MockPrizmCryptoService!
     private var orgKeyCache: OrgKeyCache!
+    private var recordStore: RawCipherStore!
 
     private let vaultKeys = CryptoKeys(encryptionKey: Data(repeating: 0x11, count: 32), macKey: Data(repeating: 0x22, count: 32))
     private let orgKeys = CryptoKeys(encryptionKey: Data(repeating: 0x33, count: 32), macKey: Data(repeating: 0x44, count: 32))
@@ -33,7 +34,9 @@ final class PartialUpdateTests: XCTestCase {
         mockAPI = MockPrizmAPIClient()
         mockCrypto = MockPrizmCryptoService()
         orgKeyCache = OrgKeyCache()
-        sut = await RepositoryFixtures.vaultRepository(apiClient: mockAPI, crypto: mockCrypto, orgKeyCache: orgKeyCache)
+        recordStore = RawCipherStore()
+        sut = await RepositoryFixtures.vaultRepository(
+            apiClient: mockAPI, crypto: mockCrypto, orgKeyCache: orgKeyCache, recordStore: recordStore)
         await sut.populate(items: [orgItem], folders: [Folder(id: "old-folder", name: "Old"), Folder(id: "work", name: "Work")],
                            organizations: [], collections: [], syncedAt: Date())
     }
@@ -73,6 +76,9 @@ final class PartialUpdateTests: XCTestCase {
         await mockCrypto.unlockWith(keys: vaultKeys)
         mockCrypto.stubbedVaultKeys = vaultKeys  // unlockWith(keys:) does not set the returned keys
         await orgKeyCache.store(key: orgKeys, for: "org-1")
+        // The full save below is built over the server's stored record of the item.
+        try await RepositoryFixtures.seedRecords(
+            for: [orgItem], in: recordStore, vaultKeys: vaultKeys, orgKeys: ["org-1": orgKeys])
         try await sut.moveItemToFolder(itemId: orgItem.id, folderId: "work")
 
         var draft = DraftVaultItem(try await cached())

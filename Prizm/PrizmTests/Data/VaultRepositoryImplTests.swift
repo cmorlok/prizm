@@ -19,12 +19,15 @@ final class VaultRepositoryImplTests: XCTestCase {
     private var sut: VaultRepositoryImpl!
     private var mockAPI: MockPrizmAPIClient!
     private var mockCrypto: MockPrizmCryptoService!
+    private var recordStore: RawCipherStore!
 
     override func setUp() async throws {
         try await super.setUp()
         mockAPI    = MockPrizmAPIClient()
         mockCrypto = MockPrizmCryptoService()
-        sut        = await RepositoryFixtures.vaultRepository(apiClient: mockAPI, crypto: mockCrypto)
+        recordStore = RawCipherStore()
+        sut        = await RepositoryFixtures.vaultRepository(
+            apiClient: mockAPI, crypto: mockCrypto, recordStore: recordStore)
     }
 
     // MARK: - Helpers
@@ -335,6 +338,8 @@ final class VaultRepositoryImplTests: XCTestCase {
     func testUpdate_success_replacesItemInCacheAndReturnsUpdatedItem() async throws {
         let original = makeLogin(id: "item-1", name: "Original Name")
         await sut.populate(items: [original], folders: [], organizations: [], collections: [], syncedAt: Date())
+        // A save is built over the server's stored record, encrypted under the keys the crypto returns.
+        try await RepositoryFixtures.seedRecords(for: [original], in: recordStore, vaultKeys: mockCrypto.stubbedVaultKeys)
 
         // Vault must be unlocked to provide keys to the mapper.
         await mockCrypto.unlockWith(keys: CryptoKeys(
@@ -371,6 +376,7 @@ final class VaultRepositoryImplTests: XCTestCase {
     func testUpdate_apiError_throws() async throws {
         let original = makeLogin(id: "item-3", name: "Name")
         await sut.populate(items: [original], folders: [], organizations: [], collections: [], syncedAt: Date())
+        try await RepositoryFixtures.seedRecords(for: [original], in: recordStore, vaultKeys: mockCrypto.stubbedVaultKeys)
 
         await mockCrypto.unlockWith(keys: CryptoKeys(
             encryptionKey: Data(repeating: 0xDE, count: 32),

@@ -32,10 +32,16 @@ final class OrgKeyWriteGuardTests: XCTestCase {
         mockAPI = MockPrizmAPIClient()
         mockCrypto = MockPrizmCryptoService()
         orgKeyCache = OrgKeyCache()
-        sut = await RepositoryFixtures.vaultRepository(apiClient: mockAPI, crypto: mockCrypto, orgKeyCache: orgKeyCache)
+        let store = RawCipherStore()
+        sut = await RepositoryFixtures.vaultRepository(
+            apiClient: mockAPI, crypto: mockCrypto, orgKeyCache: orgKeyCache, recordStore: store)
         await mockCrypto.unlockWith(keys: vaultKeys)
         mockCrypto.stubbedVaultKeys = vaultKeys  // unlockWith(keys:) does not set the returned keys
         await sut.populate(items: [personalItem, orgItem], folders: [], organizations: [], collections: [], syncedAt: Date())
+        // A full save is built over the server's stored record. The org record is encrypted under the
+        // org key even in tests where the cache has no org key: that is the case they check.
+        try await RepositoryFixtures.seedRecords(
+            for: [personalItem, orgItem], in: store, vaultKeys: vaultKeys, orgKeys: ["org-1": orgKeys])
     }
 
     private func assertOrgKeyUnavailable(_ error: Error, file: StaticString = #filePath, line: UInt = #line) {

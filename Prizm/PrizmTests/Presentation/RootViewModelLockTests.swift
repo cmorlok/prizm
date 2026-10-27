@@ -594,6 +594,15 @@ final class MockRootDependencies: RootViewModelDependencies {
         let repo = MockSyncTimestampRepository(storedDate: nil)
         return (repo, GetLastSyncDateUseCaseImpl(repository: repo))
     }
+
+    #if DEBUG
+    /// The items the UI-test seam asked to store records for.
+    private(set) var seededUITestItems: [[VaultItem]] = []
+
+    func seedUITestRecords(for items: [VaultItem]) async {
+        seededUITestItems.append(items)
+    }
+    #endif
 }
 
 // Minimal stubs for VaultBrowserViewModel dependencies.

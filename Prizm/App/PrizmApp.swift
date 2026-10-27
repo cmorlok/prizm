@@ -231,6 +231,10 @@ protocol RootViewModelDependencies: AnyObject {
     /// Returns a fresh sync timestamp repository and use case scoped to the given email.
     /// Called after login/unlock to re-scope to the correct account before the first sync.
     func makeSyncTimestampDependencies(for email: String) -> (repository: any SyncTimestampRepository, useCase: any GetLastSyncDateUseCase)
+    #if DEBUG
+    /// XCUITest seam: stores a server record for each fixture item next to the populated vault.
+    func seedUITestRecords(for items: [VaultItem]) async
+    #endif
 }
 
 extension AppContainer: RootViewModelDependencies {
@@ -319,6 +323,11 @@ final class RootViewModel: ObservableObject {
                     organizations: UITestFixtures.organizations,
                     collections: UITestFixtures.collections, syncedAt: Date()
                 )
+                // Saves in the UI-test vault are built over a stored server record, so seed one per
+                // item. The seam does not unlock the crypto service and has no server, so saving
+                // journeys stay skipped until a UI test backend unlocks with
+                // `UITestFixtures.vaultKeys`.
+                await container.seedUITestRecords(for: UITestFixtures.items)
                 self.transitionToVault(caller: "UITestFixtures")
 
                 // Optional: open straight on the Codes list with an item selected (screenshots).

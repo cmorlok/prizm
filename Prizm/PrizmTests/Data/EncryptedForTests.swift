@@ -46,6 +46,18 @@ final class EncryptedForTests: XCTestCase {
         )
     }
 
+    /// The item a stored record is seeded for. A save is built over the server's stored record, so a
+    /// test that saves "c1" or the org draft first stores one. Seed after a sync or `clearVault()`:
+    /// both empty the store.
+    private func storedItem(id: String, organizationId: String? = nil) -> VaultItem {
+        VaultItem(
+            id: id, name: "Original", isFavorite: false, isDeleted: false,
+            creationDate: Date(), revisionDate: Date(),
+            content: .login(LoginContent(username: nil, password: nil, uris: [], totp: nil, notes: nil, customFields: [])),
+            organizationId: organizationId
+        )
+    }
+
     private func syncBody(profileId: String) -> Data {
         Data(#"{"profile":{"id":"\#(profileId)","email":"e@example.com","key":"2.k=="},"ciphers":[]}"#.utf8)
     }
@@ -56,10 +68,12 @@ final class EncryptedForTests: XCTestCase {
         let client = await makeClient()
         let crypto = await unlockedCrypto()
         let profileIds = await RepositoryFixtures.profileIds(seededWith: nil)
-        let vault = await RepositoryFixtures.vaultRepository(apiClient: client, crypto: crypto, profileIds: profileIds)
+        let store = RawCipherStore()
+        let vault = await RepositoryFixtures.vaultRepository(
+            apiClient: client, crypto: crypto, profileIds: profileIds, recordStore: store)
         let sync = await RepositoryFixtures.syncRepository(
             apiClient: client, crypto: crypto, vaultRepository: vault,
-            vaultKeyCache: VaultKeyCache(), profileIds: profileIds
+            vaultKeyCache: VaultKeyCache(), profileIds: profileIds, recordStore: store
         )
         let body = syncBody(profileId: syncedProfileId)
         StubURLProtocol.responder = { request in
@@ -69,6 +83,8 @@ final class EncryptedForTests: XCTestCase {
         }
 
         _ = try await sync.sync(progress: { _ in })
+        // The sync body has no ciphers and so emptied the store: seed the record the save is built on.
+        try await RepositoryFixtures.seedRecords(for: [storedItem(id: "c1")], in: store, vaultKeys: vaultKeys)
         // No cached item for "c1", so the full PUT path runs (an unchanged item would use /partial).
         _ = try await vault.update(loginDraft(id: "c1", name: "Renamed"))
 
@@ -209,9 +225,13 @@ final class EncryptedForTests: XCTestCase {
         let api = MockPrizmAPIClient()
         let orgKeyCache = OrgKeyCache()
         await orgKeyCache.replaceAll(with: ["org-1": orgKeys])
+        let store = RawCipherStore()
         let vault = await RepositoryFixtures.vaultRepository(
             apiClient: api, crypto: await unlockedCrypto(), orgKeyCache: orgKeyCache,
-            profileIds: await RepositoryFixtures.profileIds(seededWith: nil))
+            profileIds: await RepositoryFixtures.profileIds(seededWith: nil), recordStore: store)
+        try await RepositoryFixtures.seedRecords(
+            for: [storedItem(id: "c1"), storedItem(id: "c-org", organizationId: "org-1")],
+            in: store, vaultKeys: vaultKeys, orgKeys: ["org-1": orgKeys])
 
         // No cached item for either id, so both take the full PUT path; the org one has its key.
         await assertProfileIdUnavailable { _ = try await vault.update(self.loginDraft(id: "c1", name: "Renamed")) }
@@ -261,9 +281,15 @@ final class EncryptedForTests: XCTestCase {
 
     func testMissingOrgKeyAndProfileId_throwsOrganizationKeyUnavailableFirst() async throws {
         let api = MockPrizmAPIClient()
+        let store = RawCipherStore()
         let vault = await RepositoryFixtures.vaultRepository(
             apiClient: api, crypto: await unlockedCrypto(),
-            profileIds: await RepositoryFixtures.profileIds(seededWith: nil))
+            profileIds: await RepositoryFixtures.profileIds(seededWith: nil), recordStore: store)
+        // The record exists, encrypted under the organization key, but the vault's key cache has no
+        // organization key: the save must fail on that, not on the missing record.
+        try await RepositoryFixtures.seedRecords(
+            for: [storedItem(id: "c-org", organizationId: "org-1")],
+            in: store, vaultKeys: vaultKeys, orgKeys: ["org-1": orgKeys])
 
         do {
             _ = try await vault.update(orgDraft())
@@ -277,13 +303,14 @@ final class EncryptedForTests: XCTestCase {
 
     // MARK: - Lifecycle of the held id
 
-    private func syncedPair(api: MockPrizmAPIClient, profileIds: ProfileIdCache)
+    private func syncedPair(api: MockPrizmAPIClient, profileIds: ProfileIdCache, store: RawCipherStore)
         async -> (vault: VaultRepositoryImpl, sync: SyncRepositoryImpl) {
         let crypto = await unlockedCrypto()
-        let vault = await RepositoryFixtures.vaultRepository(apiClient: api, crypto: crypto, profileIds: profileIds)
+        let vault = await RepositoryFixtures.vaultRepository(
+            apiClient: api, crypto: crypto, profileIds: profileIds, recordStore: store)
         let sync = await RepositoryFixtures.syncRepository(
             apiClient: api, crypto: crypto, vaultRepository: vault,
-            vaultKeyCache: VaultKeyCache(), profileIds: profileIds)
+            vaultKeyCache: VaultKeyCache(), profileIds: profileIds, recordStore: store)
         return (vault, sync)
     }
 
@@ -298,7 +325,8 @@ final class EncryptedForTests: XCTestCase {
     func testClearVault_dropsTheProfileId() async throws {
         let api = MockPrizmAPIClient()
         let profileIds = await RepositoryFixtures.profileIds(seededWith: nil)
-        let (vault, sync) = await syncedPair(api: api, profileIds: profileIds)
+        let store = RawCipherStore()
+        let (vault, sync) = await syncedPair(api: api, profileIds: profileIds, store: store)
         _ = try await sync.sync(progress: { _ in })
         let heldAfterSync = await profileIds.current()
         XCTAssertEqual(heldAfterSync, "pid")
@@ -308,6 +336,9 @@ final class EncryptedForTests: XCTestCase {
 
         let heldAfterClear = await profileIds.current()
         XCTAssertNil(heldAfterClear)
+        // clearVault() emptied the store too; seed after it so the save fails on the missing id and
+        // this test keeps testing the id's lifecycle, not the missing record.
+        try await RepositoryFixtures.seedRecords(for: [storedItem(id: "c1")], in: store, vaultKeys: vaultKeys)
         await assertProfileIdUnavailable { _ = try await vault.update(self.loginDraft(id: "c1", name: "Renamed")) }
         XCTAssertEqual(api.updateCipherCallCount, 0)
     }
@@ -317,9 +348,11 @@ final class EncryptedForTests: XCTestCase {
         api.syncResponse = syncResponse(profileId: "")
         // A stale id from an earlier sync must not survive a sync that reports none.
         let profileIds = await RepositoryFixtures.profileIds(seededWith: "stale-id")
-        let (vault, sync) = await syncedPair(api: api, profileIds: profileIds)
+        let store = RawCipherStore()
+        let (vault, sync) = await syncedPair(api: api, profileIds: profileIds, store: store)
 
         _ = try await sync.sync(progress: { _ in })
+        try await RepositoryFixtures.seedRecords(for: [storedItem(id: "c1")], in: store, vaultKeys: vaultKeys)
 
         await assertProfileIdUnavailable { _ = try await vault.update(self.loginDraft(id: "c1", name: "Renamed")) }
         XCTAssertEqual(api.updateCipherCallCount, 0)
@@ -327,11 +360,14 @@ final class EncryptedForTests: XCTestCase {
 
     func testSecondSyncWithAnotherId_nextSaveCarriesTheNewId() async throws {
         let api = MockPrizmAPIClient()
-        let (vault, sync) = await syncedPair(api: api, profileIds: await RepositoryFixtures.profileIds(seededWith: nil))
+        let store = RawCipherStore()
+        let (vault, sync) = await syncedPair(
+            api: api, profileIds: await RepositoryFixtures.profileIds(seededWith: nil), store: store)
         api.syncResponse = syncResponse(profileId: "profile-A")
         _ = try await sync.sync(progress: { _ in })
         api.syncResponse = syncResponse(profileId: "profile-B")
         _ = try await sync.sync(progress: { _ in })
+        try await RepositoryFixtures.seedRecords(for: [storedItem(id: "c1")], in: store, vaultKeys: vaultKeys)
 
         _ = try await vault.update(loginDraft(id: "c1", name: "Renamed"))
 

@@ -65,4 +65,52 @@ enum RepositoryFixtures {
             recordStore: recordStore ?? RawCipherStore()
         )
     }
+
+    /// A test setup failure of `seedRecords`, kept apart from the production error types so a seeding
+    /// problem is never mistaken for behaviour under test.
+    struct SeedError: Error, CustomStringConvertible {
+        let description: String
+    }
+
+    /// Stores one server record per item, as a sync would have, so a later `update()` has a record to
+    /// save over.
+    ///
+    /// Why: from the effective-key write on, a save without a stored record fails closed, so every
+    /// test that saves an item must first store the record the save is built on. Each record is built
+    /// with the create-path mapper, so its fields are real type-2 EncStrings, under the vault key or,
+    /// for an organization item, under that organization's key from `orgKeys`.
+    ///
+    /// The keys must be the ones the test's crypto returns from `currentKeys()` (and the org keys the
+    /// test puts into its `OrgKeyCache`), otherwise the repository cannot read the record back.
+    ///
+    /// There is deliberately no fallback to the vault key for an organization item whose key is
+    /// missing: the helper throws, so a test can never hide the fail-closed behaviour it is meant to
+    /// exercise. Every record is mapped back and its name compared before it is stored, which catches
+    /// a seed under the wrong key in the helper and not as a confusing failure later.
+    static func seedRecords(
+        for items: [VaultItem],
+        in store: RawCipherStore,
+        vaultKeys: CryptoKeys,
+        orgKeys: [String: CryptoKeys] = [:]
+    ) async throws {
+        let mapper = CipherMapper()
+        for item in items {
+            let keys: CryptoKeys
+            if let organizationId = item.organizationId {
+                guard let orgKey = orgKeys[organizationId] else {
+                    throw SeedError(description: "No organization key for \(organizationId), needed to seed item \(item.id)")
+                }
+                keys = orgKey
+            } else {
+                keys = vaultKeys
+            }
+            let record = try mapper.toRawCipher(DraftVaultItem(item), encryptedWith: keys)
+            let mappedBack = try mapper.map(raw: record, vaultKeys: vaultKeys, orgKeys: orgKeys).item
+            guard mappedBack.name == item.name else {
+                throw SeedError(description: "Seeded record of item \(item.id) does not map back to its name")
+            }
+            let token = await store.currentGeneration()
+            await store.upsert(record, ifCurrent: token)
+        }
+    }
 }

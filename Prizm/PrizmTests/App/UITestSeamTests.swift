@@ -130,5 +130,26 @@ final class UITestSeamTests: XCTestCase {
         }
         XCTAssertEqual(Set(withSeeds.map(\.id)), ["alpha", "beta", "delta", "zeta"])
     }
+
+    // MARK: - Stored server records
+
+    func test_rawRecords_oneMappableRecordPerFixtureItem() throws {
+        let items = UITestFixtures.items + [UITestFixtures.orgItemInFolder]
+
+        let records = UITestFixtures.rawRecords(for: items)
+
+        XCTAssertEqual(records.map(\.id), items.map(\.id))
+        let mapper = CipherMapper()
+        for (item, record) in zip(items, records) {
+            let mapped = try mapper.map(
+                raw: record, vaultKeys: UITestFixtures.vaultKeys, orgKeys: UITestFixtures.orgKeys).item
+            XCTAssertEqual(mapped.name, item.name, "record of \(item.id)")
+            XCTAssertEqual(mapped.organizationId, item.organizationId)
+        }
+        XCTAssertEqual(records.first { $0.id == "omega" }?.organizationId, "org-acme")
+        // The org record is built under the organization key: without that key it is not readable.
+        let omega = try XCTUnwrap(records.first { $0.id == "omega" })
+        XCTAssertThrowsError(try mapper.map(raw: omega, vaultKeys: UITestFixtures.vaultKeys, orgKeys: [:]))
+    }
 }
 #endif

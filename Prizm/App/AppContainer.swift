@@ -27,6 +27,11 @@ final class AppContainer: ObservableObject {
     /// (Constitution §III).
     let orgKeyCache: OrgKeyCache
 
+    #if DEBUG
+    /// The one record store, also held here so the UI-test seam can fill it (`seedUITestRecords`).
+    private let uiTestRecordStore: RawCipherStore
+    #endif
+
     // MARK: - Domain repositories (Data implementations)
 
     let authRepository: AuthRepositoryImpl
@@ -137,6 +142,9 @@ final class AppContainer: ObservableObject {
         self.keychain        = keychain
         self.biometricKeychain = biometricKeychain
         self.vaultStore      = vault
+        #if DEBUG
+        self.uiTestRecordStore = recordStore
+        #endif
         self.faviconLoader   = FaviconLoader()
         self.vaultKeyCache   = keyCache
         self.orgKeyCache     = orgKeyCache
@@ -171,6 +179,16 @@ final class AppContainer: ObservableObject {
         self.deleteAttachmentUseCase   = DeleteAttachmentUseCaseImpl(repository: attachmentRepo)
         self.tempFileManager           = AttachmentTempFileManager()
     }
+
+    #if DEBUG
+    /// Stores one server record per fixture item in the record store, built under the DEBUG-only
+    /// fixture keys (`UITestFixtures.vaultKeys`, `orgKeys`). The seam calls this right after it
+    /// populates the vault, so saves in the UI-test vault have a record to save over.
+    func seedUITestRecords(for items: [VaultItem]) async {
+        let token = await uiTestRecordStore.currentGeneration()
+        await uiTestRecordStore.replaceAll(UITestFixtures.rawRecords(for: items), ifCurrent: token)
+    }
+    #endif
 
     // MARK: - Factories
 

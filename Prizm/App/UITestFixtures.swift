@@ -51,6 +51,43 @@ enum UITestFixtures {
         defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
     }
 
+    // MARK: - Stored server records
+
+    /// Keys the seeded records are encrypted under. DEBUG-only and obviously fake: they protect
+    /// nothing, exist so a saving journey in the seeded vault has a server record to save over, and
+    /// are never compiled into a Release build. Nothing unlocks the crypto service with them yet; see
+    /// the note at the seeding call in `RootViewModel`.
+    static let vaultKeys = CryptoKeys(
+        encryptionKey: Data(repeating: 0x5A, count: 32),
+        macKey:        Data(repeating: 0xA5, count: 32)
+    )
+    /// Organization keys by organization id; `org-acme` is the organization of `orgItemInFolder`.
+    static let orgKeys: [String: CryptoKeys] = [
+        "org-acme": CryptoKeys(
+            encryptionKey: Data(repeating: 0x3C, count: 32),
+            macKey:        Data(repeating: 0xC3, count: 32)
+        )
+    ]
+
+    /// One server record per item, built with the create-path mapper under `vaultKeys`, or under the
+    /// item's organization key for an organization item, so each maps back to the same item. Saves
+    /// in the seeded vault are built over these records.
+    static func rawRecords(for items: [VaultItem]) -> [RawCipher] {
+        let mapper = CipherMapper()
+        // Encrypting fixed values with fixed keys cannot fail, and an organization item without a
+        // key here would be a mistake in this fixture: both trap in this DEBUG seam (like
+        // `keychain(for:)`) instead of silently seeding a record under the wrong key.
+        return items.map { item in
+            let keys: CryptoKeys
+            if let organizationId = item.organizationId {
+                keys = orgKeys[organizationId]!
+            } else {
+                keys = vaultKeys
+            }
+            return try! mapper.toRawCipher(DraftVaultItem(item), encryptedWith: keys)
+        }
+    }
+
     // MARK: - Fixture account
 
     static let accountUserId = "uitest-user"
@@ -141,7 +178,9 @@ enum UITestFixtures {
         ]
     }
 
-    private static var orgItemInFolder: VaultItem {
+    /// The organization item `--ui-test-org-folders` adds. Internal so the seam tests can build the
+    /// records of a vault that has it.
+    static var orgItemInFolder: VaultItem {
         VaultItem(
             id: "omega", name: "Omega Shared", isFavorite: false, isDeleted: false,
             creationDate: Date(timeIntervalSince1970: 1_700_000_000),
