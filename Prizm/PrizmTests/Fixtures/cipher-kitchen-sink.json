@@ -1,0 +1,340 @@
+{
+  "_note": "Synthetic cipher fixture, written by hand for the wire model tests. Fake EncStrings, example.com URIs, no real data. Covers every nested level (login, uris[], card, identity, sshKey, fields[]), unknown and null extras, int/double/large-integer extras, response-only keys at every rebuilt level, and wrong-typed new fields. Not captured from a server.",
+  "ciphers": [
+    {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "organizationId": null,
+      "folderId": null,
+      "type": 1,
+      "name": "2.bG9naW4tZXZlcnl0aGluZw==|aXYtbG9naW4tZXZlcnl0aGluZw==|bWFjLWxvZ2luLWV2ZXJ5dGhpbmc=",
+      "notes": "2.bG9naW4tbm90ZXM=|aXYtbG9naW4tbm90ZXM=|bWFjLWxvZ2luLW5vdGVz",
+      "favorite": true,
+      "reprompt": 1,
+      "collectionIds": [
+        "00000000-0000-4000-8000-0000000001c1"
+      ],
+      "deletedDate": null,
+      "creationDate": "2026-10-20T08:00:00.000000Z",
+      "revisionDate": "2026-10-21T09:00:00.000000Z",
+      "archivedDate": "2026-10-22T10:00:00.000000Z",
+      "key": "2.Y2lwaGVyLWtleQ==|aXYtY2lwaGVyLWtleQ==|bWFjLWNpcGhlci1rZXk=",
+      "login": {
+        "username": "2.dXNlcg==|aXYtdXNlcg==|bWFjLXVzZXI=",
+        "password": "2.cGFzcw==|aXYtcGFzcw==|bWFjLXBhc3M=",
+        "totp": "2.dG90cC1zZWVk|aXYtdG90cC1zZWVk|bWFjLXRvdHAtc2VlZA==",
+        "passwordRevisionDate": "2026-10-21T08:59:00.000000Z",
+        "uri": "2.aHR0cHM6Ly9leGFtcGxlLmNvbS9sZWdhY3k=|aXYtaHR0cHM6Ly9leGFtcGxlLmNvbS9sZWdhY3k=|bWFjLWh0dHBzOi8vZXhhbXBsZS5jb20vbGVnYWN5",
+        "response": "server-only",
+        "autofillOnPageLoad": true,
+        "fido2Credentials": [
+          {
+            "credentialId": "2.Y3JlZC1pZA==|aXYtY3JlZC1pZA==|bWFjLWNyZWQtaWQ=",
+            "keyType": "2.cHVibGljLWtleQ==|aXYtcHVibGljLWtleQ==|bWFjLXB1YmxpYy1rZXk=",
+            "keyAlgorithm": "2.RUNEU0E=|aXYtRUNEU0E=|bWFjLUVDRFNB",
+            "keyCurve": "2.UC0yNTY=|aXYtUC0yNTY=|bWFjLVAtMjU2",
+            "keyValue": "2.a2V5LXZhbHVl|aXYta2V5LXZhbHVl|bWFjLWtleS12YWx1ZQ==",
+            "rpId": "2.ZXhhbXBsZS5jb20=|aXYtZXhhbXBsZS5jb20=|bWFjLWV4YW1wbGUuY29t",
+            "rpName": "2.RXhhbXBsZQ==|aXYtRXhhbXBsZQ==|bWFjLUV4YW1wbGU=",
+            "userHandle": "2.aGFuZGxl|aXYtaGFuZGxl|bWFjLWhhbmRsZQ==",
+            "userName": "2.dXNlcg==|aXYtdXNlcg==|bWFjLXVzZXI=",
+            "userDisplayName": "2.VXNlcg==|aXYtVXNlcg==|bWFjLVVzZXI=",
+            "counter": "2.MA==|aXYtMA==|bWFjLTA=",
+            "discoverable": "2.dHJ1ZQ==|aXYtdHJ1ZQ==|bWFjLXRydWU=",
+            "creationDate": "2026-10-20T08:00:00.000Z",
+            "response": null
+          }
+        ],
+        "futureLoginField": "future-string",
+        "futureLoginCount": 3,
+        "futureLoginRatio": 0.25,
+        "futureLoginNull": null,
+        "uris": [
+          {
+            "uri": "2.aHR0cHM6Ly9leGFtcGxlLmNvbQ==|aXYtaHR0cHM6Ly9leGFtcGxlLmNvbQ==|bWFjLWh0dHBzOi8vZXhhbXBsZS5jb20=",
+            "match": 3,
+            "uriChecksum": "2.Y2hlY2tzdW0tMQ==|aXYtY2hlY2tzdW0tMQ==|bWFjLWNoZWNrc3VtLTE=",
+            "futureUriFlag": true,
+            "futureUriBig": 9007199254740993,
+            "futureUriNull": null,
+            "response": "server-only"
+          },
+          {
+            "uri": "2.aHR0cHM6Ly9leGFtcGxlLm9yZw==|aXYtaHR0cHM6Ly9leGFtcGxlLm9yZw==|bWFjLWh0dHBzOi8vZXhhbXBsZS5vcmc=",
+            "match": null
+          }
+        ]
+      },
+      "card": null,
+      "identity": null,
+      "secureNote": null,
+      "sshKey": null,
+      "fields": [
+        {
+          "type": 0,
+          "name": "2.dGV4dC1maWVsZA==|aXYtdGV4dC1maWVsZA==|bWFjLXRleHQtZmllbGQ=",
+          "value": "2.dGV4dC12YWx1ZQ==|aXYtdGV4dC12YWx1ZQ==|bWFjLXRleHQtdmFsdWU=",
+          "futureFieldFlag": true,
+          "futureFieldRatio": 2.5,
+          "futureFieldNull": null,
+          "response": "server-only"
+        },
+        {
+          "type": 3,
+          "name": "2.bGlua2VkLWZpZWxk|aXYtbGlua2VkLWZpZWxk|bWFjLWxpbmtlZC1maWVsZA==",
+          "value": null,
+          "linkedId": 100
+        }
+      ],
+      "passwordHistory": [
+        {
+          "lastUsedDate": "2026-10-19T08:00:00.000000Z",
+          "password": "2.b2xkLXBhc3MtMQ==|aXYtb2xkLXBhc3MtMQ==|bWFjLW9sZC1wYXNzLTE="
+        },
+        {
+          "lastUsedDate": "2026-10-18T08:00:00.000000Z",
+          "password": "2.b2xkLXBhc3MtMg==|aXYtb2xkLXBhc3MtMg==|bWFjLW9sZC1wYXNzLTI="
+        }
+      ],
+      "attachments": [
+        {
+          "id": "a0000000000000000002",
+          "fileName": "2.ZmlsZS50eHQ=|aXYtZmlsZS50eHQ=|bWFjLWZpbGUudHh0",
+          "key": "2.ZmlsZS1rZXk=|aXYtZmlsZS1rZXk=|bWFjLWZpbGUta2V5",
+          "size": "81",
+          "sizeName": "81.00 bytes",
+          "url": "https://vault.example.com/attachments/x/a0000000000000000002?token=FAKE",
+          "object": "attachment"
+        }
+      ],
+      "object": "cipherDetails",
+      "edit": true,
+      "viewPassword": true,
+      "permissions": {
+        "delete": true,
+        "restore": true
+      },
+      "organizationUseTotp": true,
+      "bankAccount": {
+        "unused": true
+      },
+      "driversLicense": {
+        "unused": true
+      },
+      "passport": {
+        "unused": true
+      },
+      "data": "{\"name\": \"2.bGVnYWN5LWRhdGE=|aXYtbGVnYWN5LWRhdGE=|bWFjLWxlZ2FjeS1kYXRh\"}",
+      "partialData": {
+        "unused": true
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000102",
+      "organizationId": null,
+      "folderId": null,
+      "type": 3,
+      "name": "2.Y2FyZA==|aXYtY2FyZA==|bWFjLWNhcmQ=",
+      "notes": null,
+      "favorite": false,
+      "reprompt": 0,
+      "collectionIds": [],
+      "creationDate": "2026-10-20T08:00:00.000000Z",
+      "revisionDate": "2026-10-20T08:00:00.000000Z",
+      "card": {
+        "cardholderName": "2.aG9sZGVy|aXYtaG9sZGVy|bWFjLWhvbGRlcg==",
+        "brand": "2.dmlzYQ==|aXYtdmlzYQ==|bWFjLXZpc2E=",
+        "number": "2.NDExMTExMTExMTExMTExMQ==|aXYtNDExMTExMTExMTExMTExMQ==|bWFjLTQxMTExMTExMTExMTExMTE=",
+        "expMonth": "2.MTI=|aXYtMTI=|bWFjLTEy",
+        "expYear": "2.MjAzMA==|aXYtMjAzMA==|bWFjLTIwMzA=",
+        "code": "2.MTIz|aXYtMTIz|bWFjLTEyMw==",
+        "futureCardField": "future-card",
+        "nullExtra": null,
+        "response": "server-only"
+      },
+      "passwordHistory": null,
+      "object": "cipherDetails",
+      "edit": true,
+      "viewPassword": true,
+      "permissions": {
+        "delete": true,
+        "restore": true
+      },
+      "organizationUseTotp": true,
+      "bankAccount": {
+        "unused": true
+      },
+      "driversLicense": {
+        "unused": true
+      },
+      "passport": {
+        "unused": true
+      },
+      "data": "{\"name\": \"2.bGVnYWN5LWRhdGE=|aXYtbGVnYWN5LWRhdGE=|bWFjLWxlZ2FjeS1kYXRh\"}",
+      "partialData": {
+        "unused": true
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000103",
+      "organizationId": null,
+      "folderId": null,
+      "type": 4,
+      "name": "2.aWRlbnRpdHk=|aXYtaWRlbnRpdHk=|bWFjLWlkZW50aXR5",
+      "notes": null,
+      "favorite": false,
+      "reprompt": 0,
+      "collectionIds": [],
+      "creationDate": "2026-10-20T08:00:00.000000Z",
+      "revisionDate": "2026-10-20T08:00:00.000000Z",
+      "identity": {
+        "title": "2.dGl0bGU=|aXYtdGl0bGU=|bWFjLXRpdGxl",
+        "firstName": "2.Zmlyc3ROYW1l|aXYtZmlyc3ROYW1l|bWFjLWZpcnN0TmFtZQ==",
+        "middleName": "2.bWlkZGxlTmFtZQ==|aXYtbWlkZGxlTmFtZQ==|bWFjLW1pZGRsZU5hbWU=",
+        "lastName": "2.bGFzdE5hbWU=|aXYtbGFzdE5hbWU=|bWFjLWxhc3ROYW1l",
+        "address1": "2.YWRkcmVzczE=|aXYtYWRkcmVzczE=|bWFjLWFkZHJlc3Mx",
+        "address2": "2.YWRkcmVzczI=|aXYtYWRkcmVzczI=|bWFjLWFkZHJlc3My",
+        "address3": "2.YWRkcmVzczM=|aXYtYWRkcmVzczM=|bWFjLWFkZHJlc3Mz",
+        "city": "2.Y2l0eQ==|aXYtY2l0eQ==|bWFjLWNpdHk=",
+        "state": "2.c3RhdGU=|aXYtc3RhdGU=|bWFjLXN0YXRl",
+        "postalCode": "2.cG9zdGFsQ29kZQ==|aXYtcG9zdGFsQ29kZQ==|bWFjLXBvc3RhbENvZGU=",
+        "country": "2.Y291bnRyeQ==|aXYtY291bnRyeQ==|bWFjLWNvdW50cnk=",
+        "company": "2.Y29tcGFueQ==|aXYtY29tcGFueQ==|bWFjLWNvbXBhbnk=",
+        "email": "2.ZW1haWw=|aXYtZW1haWw=|bWFjLWVtYWls",
+        "phone": "2.cGhvbmU=|aXYtcGhvbmU=|bWFjLXBob25l",
+        "ssn": "2.c3Nu|aXYtc3Nu|bWFjLXNzbg==",
+        "username": "2.dXNlcm5hbWU=|aXYtdXNlcm5hbWU=|bWFjLXVzZXJuYW1l",
+        "passportNumber": "2.cGFzc3BvcnROdW1iZXI=|aXYtcGFzc3BvcnROdW1iZXI=|bWFjLXBhc3Nwb3J0TnVtYmVy",
+        "licenseNumber": "2.bGljZW5zZU51bWJlcg==|aXYtbGljZW5zZU51bWJlcg==|bWFjLWxpY2Vuc2VOdW1iZXI=",
+        "futureIdentityField": "future-identity",
+        "nullExtra": null,
+        "response": "server-only"
+      },
+      "object": "cipherDetails",
+      "edit": true,
+      "viewPassword": true,
+      "permissions": {
+        "delete": true,
+        "restore": true
+      },
+      "organizationUseTotp": true,
+      "bankAccount": {
+        "unused": true
+      },
+      "driversLicense": {
+        "unused": true
+      },
+      "passport": {
+        "unused": true
+      },
+      "data": "{\"name\": \"2.bGVnYWN5LWRhdGE=|aXYtbGVnYWN5LWRhdGE=|bWFjLWxlZ2FjeS1kYXRh\"}",
+      "partialData": {
+        "unused": true
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000104",
+      "organizationId": null,
+      "folderId": null,
+      "type": 5,
+      "name": "2.c3NoLWtleQ==|aXYtc3NoLWtleQ==|bWFjLXNzaC1rZXk=",
+      "notes": null,
+      "favorite": false,
+      "reprompt": 0,
+      "collectionIds": [],
+      "key": "2.c3NoLWNpcGhlci1rZXk=|aXYtc3NoLWNpcGhlci1rZXk=|bWFjLXNzaC1jaXBoZXIta2V5",
+      "creationDate": "2026-10-20T08:00:00.000000Z",
+      "revisionDate": "2026-10-20T08:00:00.000000Z",
+      "sshKey": {
+        "privateKey": "2.cHJpdmF0ZQ==|aXYtcHJpdmF0ZQ==|bWFjLXByaXZhdGU=",
+        "publicKey": "2.cHVibGlj|aXYtcHVibGlj|bWFjLXB1YmxpYw==",
+        "keyFingerprint": "2.U0hBMjU2OmZha2U=|aXYtU0hBMjU2OmZha2U=|bWFjLVNIQTI1NjpmYWtl",
+        "futureSshField": "future-ssh",
+        "futureSshNull": null,
+        "response": "server-only"
+      },
+      "object": "cipherDetails",
+      "edit": true,
+      "viewPassword": true,
+      "permissions": {
+        "delete": true,
+        "restore": true
+      },
+      "organizationUseTotp": true,
+      "bankAccount": {
+        "unused": true
+      },
+      "driversLicense": {
+        "unused": true
+      },
+      "passport": {
+        "unused": true
+      },
+      "data": "{\"name\": \"2.bGVnYWN5LWRhdGE=|aXYtbGVnYWN5LWRhdGE=|bWFjLWxlZ2FjeS1kYXRh\"}",
+      "partialData": {
+        "unused": true
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000105",
+      "organizationId": null,
+      "folderId": null,
+      "type": 2,
+      "name": "2.c2VjdXJlLW5vdGU=|aXYtc2VjdXJlLW5vdGU=|bWFjLXNlY3VyZS1ub3Rl",
+      "notes": "2.bm90ZS1ib2R5|aXYtbm90ZS1ib2R5|bWFjLW5vdGUtYm9keQ==",
+      "favorite": false,
+      "reprompt": 0,
+      "collectionIds": [],
+      "creationDate": "2026-10-20T08:00:00.000000Z",
+      "revisionDate": "2026-10-20T08:00:00.000000Z",
+      "secureNote": {
+        "type": 0
+      },
+      "object": "cipherDetails",
+      "edit": true,
+      "viewPassword": true,
+      "permissions": {
+        "delete": true,
+        "restore": true
+      },
+      "organizationUseTotp": true,
+      "bankAccount": {
+        "unused": true
+      },
+      "driversLicense": {
+        "unused": true
+      },
+      "passport": {
+        "unused": true
+      },
+      "data": "{\"name\": \"2.bGVnYWN5LWRhdGE=|aXYtbGVnYWN5LWRhdGE=|bWFjLWxlZ2FjeS1kYXRh\"}",
+      "partialData": {
+        "unused": true
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000106",
+      "organizationId": null,
+      "folderId": null,
+      "type": 1,
+      "name": "2.d3JvbmctdHlwZWQtbmV3LWZpZWxkcw==|aXYtd3JvbmctdHlwZWQtbmV3LWZpZWxkcw==|bWFjLXdyb25nLXR5cGVkLW5ldy1maWVsZHM=",
+      "notes": null,
+      "favorite": false,
+      "reprompt": 0,
+      "collectionIds": [],
+      "archivedDate": 5,
+      "login": {
+        "username": "2.dXNlcg==|aXYtdXNlcg==|bWFjLXVzZXI=",
+        "password": "2.cGFzcw==|aXYtcGFzcw==|bWFjLXBhc3M=",
+        "totp": null,
+        "passwordRevisionDate": 12345,
+        "uris": [
+          {
+            "uri": "2.aHR0cHM6Ly9leGFtcGxlLmNvbQ==|aXYtaHR0cHM6Ly9leGFtcGxlLmNvbQ==|bWFjLWh0dHBzOi8vZXhhbXBsZS5jb20=",
+            "match": null,
+            "uriChecksum": 7
+          }
+        ]
+      }
+    }
+  ]
+}

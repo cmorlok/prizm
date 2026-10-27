@@ -2,8 +2,9 @@
 
 **Security review: this directory is part of the security review (committed test credentials).**
 
-Everything in here comes from a throwaway account on a local Vaultwarden test server. All data in it
-is fake, and the master password below is deliberately public.
+Everything in here, except `cipher-kitchen-sink.json` (synthetic, see the table), comes from a
+throwaway account on a local Vaultwarden test server. All data in it is fake, and the master
+password below is deliberately public.
 
 ## Files
 
@@ -11,6 +12,7 @@ is fake, and the master password below is deliberately public.
 |---|---|
 | `sync-golden-1.37.4.json` | Scrubbed `GET /api/sync?excludeDomains=true` from Vaultwarden 1.37.4: six ciphers, no folders, one organization with its collections, the profile with its protected keys |
 | `stale-put-400-1.37.4.json` | The exact HTTP 400 body of an update whose `lastKnownRevisionDate` is older than the stored one (design.md "Server behavior", E5) |
+| `cipher-kitchen-sink.json` | Synthetic, hand-written, not captured from a server: six ciphers covering every nested level, unknown and null extras (int, double, a large integer, null), response-only keys at every rebuilt level, and wrong-typed new fields. Fake EncStrings only |
 
 ## The throwaway account
 
@@ -88,7 +90,7 @@ tooling that is not part of this change.
 
 ## Loading the fixtures in tests
 
-Xcode copies both files flat into the test bundle's resources, with no subdirectory
+Xcode copies the files flat into the test bundle's resources, with no subdirectory
 (`PrizmTests.xctest/Contents/Resources/`, observed in a build of the test target). Load them by
 file name with `Bundle(for:)` on a test-target class. Do not use `#filePath`: the test host is
 sandboxed and cannot read the source tree.

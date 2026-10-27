@@ -137,6 +137,7 @@
 		BB1009000000000000000009 /* AttachmentRepositoryImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1009000000000000000009 /* AttachmentRepositoryImpl.swift */; };
 		BB100A00000000000000000A /* VaultKeyCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100A00000000000000000A /* VaultKeyCache.swift */; };
 		BB100D1E00000000000000F1 /* ProfileIdCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100D1E00000000000000F1 /* ProfileIdCache.swift */; };
+		BB100D1E00000000000000F2 /* JSONValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100D1E00000000000000F2 /* JSONValue.swift */; };
 		BB100B00000000000000000B /* VaultKeyServiceImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100B00000000000000000B /* VaultKeyServiceImpl.swift */; };
 		BB100C00000000000000000C /* AttachmentMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100C00000000000000000C /* AttachmentMapper.swift */; };
 		BB100D00000000000000000D /* UploadAttachmentUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100D00000000000000000D /* UploadAttachmentUseCaseImpl.swift */; };
@@ -324,6 +325,7 @@
 		AA1009000000000000000009 /* AttachmentRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentRepositoryImpl.swift; sourceTree = "<group>"; };
 		AA100A00000000000000000A /* VaultKeyCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultKeyCache.swift; sourceTree = "<group>"; };
 		AA100D1E00000000000000F1 /* ProfileIdCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileIdCache.swift; sourceTree = "<group>"; };
+		AA100D1E00000000000000F2 /* JSONValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONValue.swift; sourceTree = "<group>"; };
 		AA100B00000000000000000B /* VaultKeyServiceImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultKeyServiceImpl.swift; sourceTree = "<group>"; };
 		AA100C00000000000000000C /* AttachmentMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentMapper.swift; sourceTree = "<group>"; };
 		AA100D00000000000000000D /* UploadAttachmentUseCaseImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadAttachmentUseCaseImpl.swift; sourceTree = "<group>"; };
@@ -603,6 +605,7 @@
 			isa = PBXGroup;
 			children = (
 				95E5FF4D219144A18C2BC5AA /* RawCipher.swift */,
+				AA100D1E00000000000000F2 /* JSONValue.swift */,
 				15F3A553820942CF9B3935FD /* SyncResponse.swift */,
 				D7C2BEABB748471395CEC2C6 /* RawFolder.swift */,
 				AA1008000000000000000008 /* AttachmentDTO.swift */,
@@ -1177,6 +1180,7 @@
 				B2C3D4E5F6A748B9C0D1E2F3 /* EncString.swift in Sources */,
 				C3D4E5F6A7B849C0D1E2F3A4 /* PrizmCryptoService.swift in Sources */,
 				D4E5F6A7B8C94AD1E2F3A4B5 /* RawCipher.swift in Sources */,
+				BB100D1E00000000000000F2 /* JSONValue.swift in Sources */,
 				E5F6A7B8C9D04BE2F3A4B5C6 /* SyncResponse.swift in Sources */,
 				F6A7B8C9D0E14CF3A4B5C6D7 /* CipherMapper.swift in Sources */,
 				A2B3C4D5E6F74718B9C0D1E2 /* KeychainService.swift in Sources */,

@@ -9,6 +9,15 @@ import Foundation
 /// (e.g. `"2.<iv_b64>|<ct_b64>|<mac_b64>"`).  Plain-text fields (ids, dates, type
 /// integers) are never encrypted.
 ///
+/// The model is lossless for what other Bitwarden clients store (design D1 of the OpenSpec change
+/// `fix-cipher-edit-data-loss`):
+/// - the top level is a typed allowlist (`CipherKeys.modelled` + `CipherKeys.preserved`);
+///   `passwordHistory` is opaque `JSONValue` ciphertext;
+/// - the six levels Prizm rebuilds (`login`, `uris[]`, `card`, `identity`, `sshKey`, `fields[]`)
+///   keep every unknown key in `extras`;
+/// - keys only a response carries (`CipherKeys.serverDerived`, `login.uri`, `response`) are dropped
+///   when decoding, so the model never holds them and the encoder needs no filter.
+///
 /// Reference: Bitwarden Server API `/api/sync` response body, `Ciphers[]` array.
 nonisolated struct RawCipher: Codable {
     let id:             String
@@ -44,13 +53,49 @@ nonisolated struct RawCipher: Codable {
     let collectionIds:  [String]
     /// File attachments belonging to this cipher. Nil when the server returns no
     /// attachments or omits the field entirely; treated as `[]` by `CipherMapper`.
+    /// Decoded for the vault UI but never encoded: a response carries an array of objects, a
+    /// request carries a different shape, and the official server answers 400 on the mismatch.
     let attachments:    [AttachmentDTO]?
     /// Request-only: the user id this cipher was encrypted for (`RawProfile.id` of the last sync).
     /// Vaultwarden 1.37.4 requires it in every cipher body (HTTP 422 without); the official server
     /// accepts it when present. `encryptedByKeyId` is intentionally never modelled or sent
-    /// (fix-cipher-edit-data-loss, D5). Decoded leniently so a server that echoes it with another type
-    /// cannot abort a sync; nothing reads the decoded value.
+    /// (fix-cipher-edit-data-loss, D5). Typed `String?` and not held as received: Vaultwarden
+    /// 1.37.4 sends it in no response (the golden fixture has none, tested; the official server is
+    /// source-reviewed, not tested), and a request must always carry the id of the current session,
+    /// never one from a stored record. Decoded leniently so a server that did send it with another
+    /// type cannot abort a sync; nothing reads the decoded value.
     let encryptedFor:   String?
+    /// ISO-8601 UTC, `null` if not archived. A server sends it, so it is held as received like
+    /// `passwordHistory` (a wrong type, `null` and an absent key are all written back unchanged):
+    /// saving an item that another client archived must not unarchive it, and a value of an
+    /// unexpected type must not be dropped without trace. The one value it cannot hold is a number
+    /// that fits no Swift number type (`1e999`): that fails the decode (see `JSONValue.swift`).
+    /// `nil` = key absent, `.null` = key present with `null`.
+    let archivedDate:   JSONValue?
+    /// Password history as the server stores it: an array of EncString entries, or JSON `null`
+    /// (the official server) where Vaultwarden sends `[]`. Opaque ciphertext, never decrypted here.
+    /// `nil` = key absent, `.null` = key present with `null`; both are written back as received.
+    let passwordHistory: JSONValue?
+    /// Request-only, encode-only: the revision date the client last saw, which the server uses to
+    /// refuse a stale update (HTTP 400). Prizm never sets it until stale-write protection ships, so
+    /// today it is always nil on a request. Never read when decoding, so a value in a server record
+    /// can never be sent back: a stale one would defeat the check it exists for. No server sends it
+    /// (the 1.37.4 golden fixture has none), so nothing is lost.
+    let lastKnownRevisionDate: String?
+
+    /// Every key this model reads or writes, by construction equal to
+    /// `CipherKeys.modelled ∪ CipherKeys.preserved` (a test pins that).
+    static var codingKeyNames: Set<String> { Set(CodingKeys.allCases.map(\.rawValue)) }
+
+    // Explicit (not synthesized) so that adding a stored property cannot silently add a key to a
+    // request, and so a test can compare the key list with `CipherKeys`.
+    private enum CodingKeys: String, CodingKey, CaseIterable {
+        case id, organizationId, folderId, type, name, notes, favorite, reprompt
+        case deletedDate, creationDate, revisionDate
+        case login, card, identity, secureNote, sshKey, fields
+        case key, collectionIds, attachments
+        case encryptedFor, archivedDate, passwordHistory, lastKnownRevisionDate
+    }
 
     /// Custom decoder — all fields use standard decoding except `collectionIds`, which
     /// defaults to `[]` when the key is absent so that personal-item ciphers (which the
@@ -78,19 +123,60 @@ nonisolated struct RawCipher: Codable {
         // `collectionIds` is absent for personal items; default to [] rather than throwing.
         collectionIds  = (try? c.decode([String].self, forKey: .collectionIds)) ?? []
         attachments    = try c.decodeIfPresent([AttachmentDTO].self,  forKey: .attachments)
-        // Lenient: a wrong type here must never abort a sync.
+        // Lenient: a wrong type must never abort a sync, which decodes all ciphers or none.
         encryptedFor   = try? c.decodeIfPresent(String.self,          forKey: .encryptedFor)
+        // Encode-only: a request value, never taken from a server record (see the property).
+        lastKnownRevisionDate = nil
+        // `contains` + `decode`, not `decodeIfPresent`: that turns JSON null into nil, which would
+        // erase the difference between `null` and an absent key.
+        archivedDate    = c.contains(.archivedDate)
+            ? try c.decode(JSONValue.self, forKey: .archivedDate)
+            : nil
+        passwordHistory = c.contains(.passwordHistory)
+            ? try c.decode(JSONValue.self, forKey: .passwordHistory)
+            : nil
     }
 
-    /// Memberwise init with `collectionIds` defaulted to `[]` so existing call sites
-    /// that pre-date this field continue to compile without changes.
+    /// Writes every field this model holds, except `attachments`. Keys only a response carries
+    /// are never decoded, so nothing needs filtering here.
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id,                       forKey: .id)
+        try c.encodeIfPresent(organizationId,  forKey: .organizationId)
+        try c.encodeIfPresent(folderId,        forKey: .folderId)
+        try c.encode(type,                     forKey: .type)
+        try c.encode(name,                     forKey: .name)
+        try c.encodeIfPresent(notes,           forKey: .notes)
+        try c.encode(favorite,                 forKey: .favorite)
+        try c.encodeIfPresent(reprompt,        forKey: .reprompt)
+        try c.encodeIfPresent(deletedDate,     forKey: .deletedDate)
+        try c.encodeIfPresent(creationDate,    forKey: .creationDate)
+        try c.encodeIfPresent(revisionDate,    forKey: .revisionDate)
+        try c.encodeIfPresent(login,           forKey: .login)
+        try c.encodeIfPresent(card,            forKey: .card)
+        try c.encodeIfPresent(identity,        forKey: .identity)
+        try c.encodeIfPresent(secureNote,      forKey: .secureNote)
+        try c.encodeIfPresent(sshKey,          forKey: .sshKey)
+        try c.encodeIfPresent(fields,          forKey: .fields)
+        try c.encodeIfPresent(key,             forKey: .key)
+        try c.encode(collectionIds,            forKey: .collectionIds)
+        // `attachments` is deliberately not written (see the property).
+        try c.encodeIfPresent(encryptedFor,    forKey: .encryptedFor)
+        try c.encodeIfPresent(archivedDate,    forKey: .archivedDate)
+        try c.encodeIfPresent(passwordHistory, forKey: .passwordHistory)
+        try c.encodeIfPresent(lastKnownRevisionDate, forKey: .lastKnownRevisionDate)
+    }
+
+    /// Memberwise init with `collectionIds` defaulted to `[]` and the later fields defaulted to nil
+    /// so existing call sites that pre-date those fields continue to compile without changes.
     init(id: String, organizationId: String?, folderId: String?, type: Int, name: String,
          notes: String?, favorite: Bool, reprompt: Int?, deletedDate: String?,
          creationDate: String?, revisionDate: String?, login: RawLoginData?,
          card: RawCardData?, identity: RawIdentityData?, secureNote: RawSecureNoteData?,
          sshKey: RawSSHKeyData?, fields: [RawField]?, key: String?,
          collectionIds: [String] = [], attachments: [AttachmentDTO]?,
-         encryptedFor: String? = nil) {
+         encryptedFor: String? = nil, archivedDate: JSONValue? = nil,
+         passwordHistory: JSONValue? = nil, lastKnownRevisionDate: String? = nil) {
         self.id             = id
         self.organizationId = organizationId
         self.folderId       = folderId
@@ -112,38 +198,144 @@ nonisolated struct RawCipher: Codable {
         self.collectionIds  = collectionIds
         self.attachments    = attachments
         self.encryptedFor   = encryptedFor
+        self.archivedDate   = archivedDate
+        self.passwordHistory = passwordHistory
+        self.lastKnownRevisionDate = lastKnownRevisionDate
     }
 }
 
+// MARK: - Nested levels
+//
+// Each level Prizm rebuilds from a draft keeps every key it does not model in `extras`, so what
+// another Bitwarden client stored there is written back unchanged. New fields are `var … = nil` and
+// Codable lives in a `nonisolated` extension: that keeps the memberwise initializer, so existing
+// call sites compile unchanged, and keeps the conformance nonisolated under the app's default
+// MainActor isolation.
+//
+// `excludedKeys` are dropped when decoding, so they never reach `extras` and are never sent back.
+
 // MARK: - Login
 
-nonisolated struct RawLoginData: Codable {
+nonisolated struct RawLoginData {
     let username: String?       // EncString
     let password: String?       // EncString
     let uris:     [RawURI]?
     let totp:     String?       // EncString
+    /// ISO-8601 UTC. Typed (decoded leniently) so the date other clients set is not lost.
+    var passwordRevisionDate: String? = nil
+    /// Unknown keys, for example `fido2Credentials` (passkeys, EncString members) and
+    /// `autofillOnPageLoad`. Opaque: never decrypted or filtered, even a `response` member inside a
+    /// passkey credential.
+    var extras: [String: JSONValue] = [:]
 }
 
-nonisolated struct RawURI: Codable {
+nonisolated extension RawLoginData: Codable {
+    static let knownKeys: Set<String> = ["username", "password", "uris", "totp", "passwordRevisionDate"]
+    /// - `uri`: the legacy first-URI echo. Vaultwarden 1.37.4 emits it (the golden fixture shows it,
+    ///   tested); the official server's setter appends a sent `uri` to `uris`, so sending it back
+    ///   would add a duplicate URI (source-reviewed, not tested).
+    /// - `response`: a response-only member; never part of a request.
+    static let excludedKeys: Set<String> = ["uri", "response"]
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: WireKey.self)
+        username = try c.decodeIfPresent(String.self,  forKey: WireKey("username"))
+        password = try c.decodeIfPresent(String.self,  forKey: WireKey("password"))
+        uris     = try c.decodeIfPresent([RawURI].self, forKey: WireKey("uris"))
+        totp     = try c.decodeIfPresent(String.self,  forKey: WireKey("totp"))
+        var extras = try WireExtras.capture(from: c, known: Self.knownKeys, excluded: Self.excludedKeys)
+        passwordRevisionDate = WireExtras.lenientString(c, "passwordRevisionDate", extras: &extras)
+        self.extras = extras
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var w = WireWriter(encoder)
+        try w.put(username, "username")
+        try w.put(password, "password")
+        try w.put(uris, "uris")
+        try w.put(totp, "totp")
+        try w.put(passwordRevisionDate, "passwordRevisionDate")
+        try w.putExtras(extras, excluded: Self.excludedKeys)
+    }
+}
+
+nonisolated struct RawURI {
     let uri:   String?          // EncString
-    /// 0=default, 1=baseDomain, 2=host, 3=startsWith, 4=exact, 5=regex, null=default
+    /// 0 Domain, 1 Host, 2 StartsWith, 3 Exact, 4 Regex, 5 Never, null default
+    /// (Bitwarden `UriMatchType`).
     let match: Int?
+    /// EncString of the URI's checksum, set by other clients. Typed (decoded leniently) so it is
+    /// not lost when the URI list is written back.
+    var uriChecksum: String? = nil
+    var extras: [String: JSONValue] = [:]
+}
+
+nonisolated extension RawURI: Codable {
+    static let knownKeys: Set<String> = ["uri", "match", "uriChecksum"]
+    /// `response`: a response-only member; never part of a request.
+    static let excludedKeys: Set<String> = ["response"]
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: WireKey.self)
+        uri   = try c.decodeIfPresent(String.self, forKey: WireKey("uri"))
+        match = try c.decodeIfPresent(Int.self,    forKey: WireKey("match"))
+        var extras = try WireExtras.capture(from: c, known: Self.knownKeys, excluded: Self.excludedKeys)
+        uriChecksum = WireExtras.lenientString(c, "uriChecksum", extras: &extras)
+        self.extras = extras
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var w = WireWriter(encoder)
+        try w.put(uri, "uri")
+        try w.put(match, "match")
+        try w.put(uriChecksum, "uriChecksum")
+        try w.putExtras(extras, excluded: Self.excludedKeys)
+    }
 }
 
 // MARK: - Card
 
-nonisolated struct RawCardData: Codable {
+nonisolated struct RawCardData {
     let cardholderName: String? // EncString
     let brand:          String? // EncString
     let number:         String? // EncString
     let expMonth:       String? // EncString
     let expYear:        String? // EncString
     let code:           String? // EncString
+    var extras: [String: JSONValue] = [:]
+}
+
+nonisolated extension RawCardData: Codable {
+    static let knownKeys: Set<String> = ["cardholderName", "brand", "number", "expMonth", "expYear", "code"]
+    /// `response`: a response-only member; never part of a request.
+    static let excludedKeys: Set<String> = ["response"]
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: WireKey.self)
+        cardholderName = try c.decodeIfPresent(String.self, forKey: WireKey("cardholderName"))
+        brand          = try c.decodeIfPresent(String.self, forKey: WireKey("brand"))
+        number         = try c.decodeIfPresent(String.self, forKey: WireKey("number"))
+        expMonth       = try c.decodeIfPresent(String.self, forKey: WireKey("expMonth"))
+        expYear        = try c.decodeIfPresent(String.self, forKey: WireKey("expYear"))
+        code           = try c.decodeIfPresent(String.self, forKey: WireKey("code"))
+        extras = try WireExtras.capture(from: c, known: Self.knownKeys, excluded: Self.excludedKeys)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var w = WireWriter(encoder)
+        try w.put(cardholderName, "cardholderName")
+        try w.put(brand, "brand")
+        try w.put(number, "number")
+        try w.put(expMonth, "expMonth")
+        try w.put(expYear, "expYear")
+        try w.put(code, "code")
+        try w.putExtras(extras, excluded: Self.excludedKeys)
+    }
 }
 
 // MARK: - Identity
 
-nonisolated struct RawIdentityData: Codable {
+nonisolated struct RawIdentityData {
     let title:          String? // EncString
     let firstName:      String? // EncString
     let middleName:     String? // EncString
@@ -162,32 +354,164 @@ nonisolated struct RawIdentityData: Codable {
     let username:       String? // EncString
     let passportNumber: String? // EncString
     let licenseNumber:  String? // EncString
+    var extras: [String: JSONValue] = [:]
+}
+
+nonisolated extension RawIdentityData: Codable {
+    static let knownKeys: Set<String> = [
+        "title", "firstName", "middleName", "lastName", "address1", "address2", "address3", "city",
+        "state", "postalCode", "country", "company", "email", "phone", "ssn", "username",
+        "passportNumber", "licenseNumber",
+    ]
+    /// `response`: a response-only member; never part of a request.
+    static let excludedKeys: Set<String> = ["response"]
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: WireKey.self)
+        title          = try c.decodeIfPresent(String.self, forKey: WireKey("title"))
+        firstName      = try c.decodeIfPresent(String.self, forKey: WireKey("firstName"))
+        middleName     = try c.decodeIfPresent(String.self, forKey: WireKey("middleName"))
+        lastName       = try c.decodeIfPresent(String.self, forKey: WireKey("lastName"))
+        address1       = try c.decodeIfPresent(String.self, forKey: WireKey("address1"))
+        address2       = try c.decodeIfPresent(String.self, forKey: WireKey("address2"))
+        address3       = try c.decodeIfPresent(String.self, forKey: WireKey("address3"))
+        city           = try c.decodeIfPresent(String.self, forKey: WireKey("city"))
+        state          = try c.decodeIfPresent(String.self, forKey: WireKey("state"))
+        postalCode     = try c.decodeIfPresent(String.self, forKey: WireKey("postalCode"))
+        country        = try c.decodeIfPresent(String.self, forKey: WireKey("country"))
+        company        = try c.decodeIfPresent(String.self, forKey: WireKey("company"))
+        email          = try c.decodeIfPresent(String.self, forKey: WireKey("email"))
+        phone          = try c.decodeIfPresent(String.self, forKey: WireKey("phone"))
+        ssn            = try c.decodeIfPresent(String.self, forKey: WireKey("ssn"))
+        username       = try c.decodeIfPresent(String.self, forKey: WireKey("username"))
+        passportNumber = try c.decodeIfPresent(String.self, forKey: WireKey("passportNumber"))
+        licenseNumber  = try c.decodeIfPresent(String.self, forKey: WireKey("licenseNumber"))
+        extras = try WireExtras.capture(from: c, known: Self.knownKeys, excluded: Self.excludedKeys)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var w = WireWriter(encoder)
+        try w.put(title, "title")
+        try w.put(firstName, "firstName")
+        try w.put(middleName, "middleName")
+        try w.put(lastName, "lastName")
+        try w.put(address1, "address1")
+        try w.put(address2, "address2")
+        try w.put(address3, "address3")
+        try w.put(city, "city")
+        try w.put(state, "state")
+        try w.put(postalCode, "postalCode")
+        try w.put(country, "country")
+        try w.put(company, "company")
+        try w.put(email, "email")
+        try w.put(phone, "phone")
+        try w.put(ssn, "ssn")
+        try w.put(username, "username")
+        try w.put(passportNumber, "passportNumber")
+        try w.put(licenseNumber, "licenseNumber")
+        try w.putExtras(extras, excluded: Self.excludedKeys)
+    }
 }
 
 // MARK: - Secure Note
 
+/// No `extras`: Prizm writes a secure note's `type` only, and the nested inventory test lists its
+/// keys so a new server key still forces a decision.
 nonisolated struct RawSecureNoteData: Codable {
     let type: Int   // 0 = Generic
 }
 
 // MARK: - SSH Key
 
-nonisolated struct RawSSHKeyData: Codable {
+nonisolated struct RawSSHKeyData {
     let privateKey:     String?    // EncString
     let publicKey:      String?    // EncString
     let keyFingerprint: String?    // EncString
+    var extras: [String: JSONValue] = [:]
+}
 
-    private enum CodingKeys: String, CodingKey {
-        case privateKey, publicKey, keyFingerprint
+nonisolated extension RawSSHKeyData: Codable {
+    static let knownKeys: Set<String> = ["privateKey", "publicKey", "keyFingerprint"]
+    /// `response`: a response-only member; never part of a request.
+    static let excludedKeys: Set<String> = ["response"]
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: WireKey.self)
+        privateKey     = try c.decodeIfPresent(String.self, forKey: WireKey("privateKey"))
+        publicKey      = try c.decodeIfPresent(String.self, forKey: WireKey("publicKey"))
+        keyFingerprint = try c.decodeIfPresent(String.self, forKey: WireKey("keyFingerprint"))
+        extras = try WireExtras.capture(from: c, known: Self.knownKeys, excluded: Self.excludedKeys)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var w = WireWriter(encoder)
+        try w.put(privateKey, "privateKey")
+        try w.put(publicKey, "publicKey")
+        try w.put(keyFingerprint, "keyFingerprint")
+        try w.putExtras(extras, excluded: Self.excludedKeys)
     }
 }
 
 // MARK: - Custom Field
 
-nonisolated struct RawField: Codable {
+nonisolated struct RawField {
     /// 0 = text, 1 = hidden, 2 = boolean, 3 = linked
     let type:     Int
     let name:     String?   // EncString
     let value:    String?   // EncString
     let linkedId: Int?
+    var extras: [String: JSONValue] = [:]
+}
+
+nonisolated extension RawField: Codable {
+    static let knownKeys: Set<String> = ["type", "name", "value", "linkedId"]
+    /// `response`: a response-only member; never part of a request.
+    static let excludedKeys: Set<String> = ["response"]
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: WireKey.self)
+        type     = try c.decode(Int.self,                forKey: WireKey("type"))
+        name     = try c.decodeIfPresent(String.self,    forKey: WireKey("name"))
+        value    = try c.decodeIfPresent(String.self,    forKey: WireKey("value"))
+        linkedId = try c.decodeIfPresent(Int.self,       forKey: WireKey("linkedId"))
+        extras = try WireExtras.capture(from: c, known: Self.knownKeys, excluded: Self.excludedKeys)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var w = WireWriter(encoder)
+        try w.put(type, "type")
+        try w.put(name, "name")
+        try w.put(value, "value")
+        try w.put(linkedId, "linkedId")
+        try w.putExtras(extras, excluded: Self.excludedKeys)
+    }
+}
+
+// MARK: - Cipher key classification
+
+/// Every top-level key a server cipher can carry, in one place. Literals on purpose: this list is
+/// the reference the tests compare the model against, so it must never be derived from a payload or
+/// from the model itself.
+///
+/// - `modelled`: typed fields of `RawCipher` that Prizm reads, and writes except `attachments`
+///   (decode-only: a response carries objects there and a request a different shape).
+/// - `preserved`: typed fields that exist so other clients' data survives (`archivedDate` and
+///   `passwordHistory` as opaque JSON) or that only a request carries (`encryptedFor`,
+///   `lastKnownRevisionDate`).
+/// - `serverDerived`: keys only a response carries. They are dropped when decoding, so the model
+///   never holds them and a request can never echo them. `data` (the official server stores a
+///   non-blank request `data` verbatim and ignores the typed fields) and `partialData` come from
+///   the official server only; Vaultwarden 1.37.4 sends the others.
+nonisolated enum CipherKeys {
+    static let modelled: Set<String> = [
+        "id", "organizationId", "folderId", "type", "name", "notes", "favorite", "reprompt",
+        "deletedDate", "creationDate", "revisionDate", "login", "card", "identity", "secureNote",
+        "sshKey", "fields", "key", "collectionIds", "attachments",
+    ]
+    static let preserved: Set<String> = ["archivedDate", "passwordHistory", "encryptedFor", "lastKnownRevisionDate"]
+    static let serverDerived: Set<String> = [
+        "object", "edit", "viewPassword", "permissions", "organizationUseTotp",
+        "bankAccount", "driversLicense", "passport", "data", "partialData",
+    ]
+    static var classified: Set<String> { modelled.union(preserved).union(serverDerived) }
 }
