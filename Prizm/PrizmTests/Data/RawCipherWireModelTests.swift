@@ -373,6 +373,7 @@ final class RawCipherWireModelTests: XCTestCase {
 
         XCTAssertNil(raw.lastKnownRevisionDate)
         XCTAssertNil(try encodedJSON(raw)["lastKnownRevisionDate"])
+        XCTAssertTrue(raw.unclassifiedKeys.isEmpty, "the key is still classified, so it is not reported as new")
     }
 
     func testWrongTypedNewFields_doNotAbortDecodeAndNestedOnesAreWrittenBack() throws {

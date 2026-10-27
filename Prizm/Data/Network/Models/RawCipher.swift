@@ -82,6 +82,10 @@ nonisolated struct RawCipher: Codable {
     /// can never be sent back: a stale one would defeat the check it exists for. No server sends it
     /// (the 1.37.4 golden fixture has none), so nothing is lost.
     let lastKnownRevisionDate: String?
+    /// Decode-time diagnostic: the top-level key names of the payload that `CipherKeys` does not
+    /// classify, sorted. Names only, never values. Not a `CodingKey` and never encoded, so a request
+    /// can never carry it.
+    let unclassifiedKeys: [String]
 
     /// Every key this model reads or writes, by construction equal to
     /// `CipherKeys.modelled ∪ CipherKeys.preserved` (a test pins that).
@@ -135,6 +139,11 @@ nonisolated struct RawCipher: Codable {
         passwordHistory = c.contains(.passwordHistory)
             ? try c.decode(JSONValue.self, forKey: .passwordHistory)
             : nil
+        // Names only, from a second, dynamic-key view of the same object: `CodingKeys` cannot list
+        // keys it does not know. Values are never read, so nothing secret can reach a log or a test
+        // message through this property.
+        let allKeys = try decoder.container(keyedBy: WireKey.self).allKeys.map(\.stringValue)
+        unclassifiedKeys = allKeys.filter { !CipherKeys.classified.contains($0) }.sorted()
     }
 
     /// Writes every field this model holds, except `attachments`. Keys only a response carries
@@ -176,7 +185,8 @@ nonisolated struct RawCipher: Codable {
          sshKey: RawSSHKeyData?, fields: [RawField]?, key: String?,
          collectionIds: [String] = [], attachments: [AttachmentDTO]?,
          encryptedFor: String? = nil, archivedDate: JSONValue? = nil,
-         passwordHistory: JSONValue? = nil, lastKnownRevisionDate: String? = nil) {
+         passwordHistory: JSONValue? = nil, lastKnownRevisionDate: String? = nil,
+         unclassifiedKeys: [String] = []) {
         self.id             = id
         self.organizationId = organizationId
         self.folderId       = folderId
@@ -201,6 +211,7 @@ nonisolated struct RawCipher: Codable {
         self.archivedDate   = archivedDate
         self.passwordHistory = passwordHistory
         self.lastKnownRevisionDate = lastKnownRevisionDate
+        self.unclassifiedKeys = unclassifiedKeys
     }
 }
 
@@ -514,6 +525,41 @@ nonisolated enum CipherKeys {
         "bankAccount", "driversLicense", "passport", "data", "partialData",
     ]
     static var classified: Set<String> { modelled.union(preserved).union(serverDerived) }
+
+    /// Text for the sync log line that names top-level cipher keys Prizm does not classify; `nil`
+    /// when there are none.
+    ///
+    /// The names come from the user's own server and end up in a log marked public, so they are
+    /// restricted and capped: log injection (a newline or a format directive inside a key name) and
+    /// log flooding (thousands of keys) must not be possible through a server response
+    /// (Constitution V and III). Rule: each name keeps only `A-Z a-z 0-9 _` and is cut to 64
+    /// characters, names left empty are dropped, distinct names are sorted, at most 20 are listed,
+    /// and ` (+N more)` counts the distinct input names that are not listed.
+    static func unclassifiedKeyLogText(_ names: some Collection<String>) -> String? {
+        let distinctInput = Set(names)
+        guard !distinctInput.isEmpty else { return nil }
+
+        let maxNames = 20
+        let maxLength = 64
+        let cleaned = Set(distinctInput.compactMap { name -> String? in
+            var kept = String.UnicodeScalarView()
+            kept.append(contentsOf: name.unicodeScalars.filter(isLogSafe).prefix(maxLength))
+            return kept.isEmpty ? nil : String(kept)
+        })
+
+        let listed = cleaned.sorted().prefix(maxNames)
+        let omitted = distinctInput.count - listed.count
+        let list = listed.joined(separator: ", ")
+        guard omitted > 0 else { return list }
+        return list.isEmpty ? "(+\(omitted) more)" : "\(list) (+\(omitted) more)"
+    }
+
+    private static func isLogSafe(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x30...0x39, 0x41...0x5A, 0x61...0x7A, 0x5F: return true  // 0-9 A-Z a-z _
+        default: return false
+        }
+    }
 }
 
 // MARK: - Redaction

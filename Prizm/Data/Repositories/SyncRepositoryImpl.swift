@@ -105,6 +105,15 @@ actor SyncRepositoryImpl: SyncRepository {
         let totalCiphers = syncResponse.ciphers.count
         logger.info("Fetched \(totalCiphers) cipher(s)")
 
+        // Observability for new server fields (Constitution V): name, once per sync, the top-level
+        // cipher keys Prizm neither models nor knows as response-only. Nothing is blocked and editing
+        // stays available; the canary test catches the same keys in captured payloads. Names only,
+        // sanitised and capped by `CipherKeys` because a server controls them.
+        let unclassified = syncResponse.ciphers.reduce(into: Set<String>()) { $0.formUnion($1.unclassifiedKeys) }
+        if let text = CipherKeys.unclassifiedKeyLogText(unclassified) {
+            logger.info("Sync: top-level cipher keys Prizm does not know: \(text, privacy: .public)")
+        }
+
         if DebugConfig.isEnabled {
             // Log counts by cipher type to help diagnose sync issues (e.g. unexpected
             // type integers from a non-standard server). Values are type ints only —
