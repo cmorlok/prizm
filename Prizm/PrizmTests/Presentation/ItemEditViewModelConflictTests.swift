@@ -12,18 +12,18 @@ final class ItemEditViewModelConflictTests: XCTestCase {
 
     /// Lets a test hold a suspended call until it decides to continue.
     private final class Gate {
-        private var continuation: CheckedContinuation<Void, Never>?
+        private var continuations: [CheckedContinuation<Void, Never>] = []
         private var isOpen = false
 
         func wait() async {
             if isOpen { return }
-            await withCheckedContinuation { continuation = $0 }
+            await withCheckedContinuation { continuations.append($0) }
         }
 
         func open() {
             isOpen = true
-            continuation?.resume()
-            continuation = nil
+            continuations.forEach { $0.resume() }
+            continuations = []
         }
     }
 
@@ -47,6 +47,8 @@ final class ItemEditViewModelConflictTests: XCTestCase {
         /// One answer per resync call; the last one repeats.
         var resyncs: [ConflictResync] = [.synced]
         var resyncGate: Gate?
+        /// Holds every lookup of the synced item until the test opens it.
+        var latestGate: Gate?
         var latest: LatestItem = .gone
         private(set) var resyncCallCount = 0
         private(set) var latestCallCount = 0
@@ -60,6 +62,7 @@ final class ItemEditViewModelConflictTests: XCTestCase {
 
         func latestItem(_ id: String) async -> LatestItem {
             latestCallCount += 1
+            if let latestGate { await latestGate.wait() }
             return latest
         }
 
@@ -105,6 +108,12 @@ final class ItemEditViewModelConflictTests: XCTestCase {
             try? await Task.sleep(for: .milliseconds(5))
         }
         return condition()
+    }
+
+    /// Lets main-actor work that is already scheduled run: a fixed number of turns, not wall-clock
+    /// time, so "nothing else happened" is checked after the work a regression would have started.
+    private func yieldMainActor(turns: Int = 25) async {
+        for _ in 0..<turns { await Task.yield() }
     }
 
     /// Saves once with a conflict and waits until the sheet has left `.syncing`.
@@ -305,5 +314,264 @@ final class ItemEditViewModelConflictTests: XCTestCase {
         XCTAssertTrue(rig.sut.canSave, "Save stays available for a retry")
         XCTAssertFalse(rig.sut.isDismissed)
         XCTAssertEqual(rig.sut.draft.name, "Edited name", "the user's input stays")
+    }
+
+    // MARK: - Reload in place
+
+    func testReload_refillsDraftAndOriginal() async {
+        let synced = item(name: "Changed elsewhere", revision: Date(timeIntervalSince1970: 2_000))
+        let rig = await conflicted(resyncs: [.synced], latest: .available(synced))
+        XCTAssertEqual(rig.sut.conflict, .synced)
+
+        rig.sut.performConflictAction()
+        let reloaded = await eventually { rig.sut.conflict == .none }
+
+        XCTAssertTrue(reloaded)
+        XCTAssertEqual(rig.sut.draft, DraftVaultItem(synced))
+        XCTAssertFalse(rig.sut.hasChanges, "original was replaced too")
+        XCTAssertNil(rig.sut.saveError)
+        XCTAssertTrue(rig.sut.canSave)
+        XCTAssertEqual(rig.sut.reloadCount, 1)
+        XCTAssertFalse(rig.sut.isDismissed, "the sheet stays open")
+    }
+
+    /// The sheet may stay open for a while after the sync, so the item can go before the press.
+    func testReload_whenTheItemWentMeanwhile_endsInItemGoneAndKeepsTheDraft() async {
+        let rig = await conflicted(resyncs: [.synced],
+                                   latest: .available(item(name: "Changed elsewhere")))
+        XCTAssertEqual(rig.sut.conflict, .synced)
+        rig.browser.latest = .gone
+
+        rig.sut.performConflictAction()
+        let gone = await eventually { rig.sut.conflict == .itemGone }
+
+        XCTAssertTrue(gone)
+        XCTAssertEqual(rig.sut.draft.name, "Edited name", "nothing is refilled")
+        XCTAssertEqual(rig.sut.reloadCount, 0)
+        XCTAssertFalse(rig.sut.isDismissed, "the user closes the sheet")
+    }
+
+    func testReloadAfterFailedSync_syncsAgainFirst() async {
+        let synced = item(name: "Changed elsewhere", revision: Date(timeIntervalSince1970: 2_000))
+        let rig = await conflicted(resyncs: [.failed("Sync failed."), .synced], latest: .available(synced))
+        XCTAssertEqual(rig.sut.conflict, .syncFailed("Sync failed."))
+        let gate = Gate()
+        rig.browser.resyncGate = gate
+
+        rig.sut.performConflictAction()
+
+        XCTAssertEqual(rig.sut.conflict, .syncing, "a press starts the new sync at once")
+        let called = await eventually { rig.browser.resyncCallCount == 2 }
+        XCTAssertTrue(called)
+        XCTAssertFalse(rig.sut.isSaving, "a resync is not a save")
+        XCTAssertEqual(rig.sut.draft.name, "Edited name", "nothing is refilled from a failed sync")
+
+        gate.open()
+        let synced2 = await eventually { rig.sut.conflict == .synced }
+        XCTAssertTrue(synced2)
+        XCTAssertEqual(rig.sut.draft.name, "Edited name", "the draft changes only on a further press")
+        XCTAssertEqual(rig.sut.reloadCount, 0)
+    }
+
+    func testReloadTwice_actsOnce() async {
+        let synced = item(name: "Changed elsewhere", revision: Date(timeIntervalSince1970: 2_000))
+        let rig = await conflicted(resyncs: [.synced], latest: .available(synced))
+        let lookupsBefore = rig.browser.latestCallCount
+        let gate = Gate()
+        rig.browser.latestGate = gate
+
+        rig.sut.performConflictAction()
+        rig.sut.performConflictAction()  // while the first lookup is held: must not start another
+        let entered = await eventually { rig.browser.latestCallCount > lookupsBefore }
+        XCTAssertTrue(entered, "the first press looks the item up")
+        await yieldMainActor()  // a second lookup, if a press started one, has reached the gate by now
+        XCTAssertEqual(rig.browser.latestCallCount, lookupsBefore + 1, "one lookup for two presses")
+
+        gate.open()
+        let reloaded = await eventually { rig.sut.conflict == .none }
+        XCTAssertTrue(reloaded)
+        rig.sut.performConflictAction()  // no conflict any more: nothing to do
+        await yieldMainActor()
+
+        XCTAssertEqual(rig.browser.latestCallCount, lookupsBefore + 1, "one lookup for one refill")
+        XCTAssertEqual(rig.sut.reloadCount, 1)
+        XCTAssertEqual(rig.browser.resyncCallCount, 1)
+    }
+
+    func testPressWhileSyncing_doesNothing() async {
+        let browser = Browser()
+        let gate = Gate()
+        browser.resyncGate = gate
+        browser.latest = .available(item(name: "Changed elsewhere"))
+        let rig = makeRig(results: [.failure(VaultError.conflict)], browser: browser)
+        rig.sut.save()
+        let syncing = await eventually { rig.sut.conflict == .syncing }
+        XCTAssertTrue(syncing)
+
+        rig.sut.performConflictAction()
+        await yieldMainActor()  // a second resync, if the press started one, has started by now
+
+        XCTAssertEqual(rig.browser.resyncCallCount, 1)
+        XCTAssertEqual(rig.sut.conflict, .syncing)
+        gate.open()
+        _ = await eventually { rig.sut.conflict == .synced }
+    }
+
+    func testClose_inItemGone_dismissesAndClears() async {
+        let rig = await conflicted(resyncs: [.synced], latest: .gone)
+        XCTAssertEqual(rig.sut.conflict, .itemGone)
+
+        rig.sut.performConflictAction()
+
+        XCTAssertTrue(rig.sut.isDismissed)
+        XCTAssertEqual(rig.sut.draft.name, "", "the draft's plaintext is dropped")
+        XCTAssertEqual(rig.sut.reloadCount, 0)
+    }
+
+    func testReloadedBlockedItem_saveShowsTheEditBlock() async {
+        let blocked = item(name: "Blocked", editBlock: .unsupportedFormat)
+        let rig = await conflicted(resyncs: [.synced], latest: .available(blocked))
+        rig.sut.performConflictAction()
+        let reloaded = await eventually { rig.sut.conflict == .none }
+        XCTAssertTrue(reloaded)
+        rig.edit.results = [.failure(VaultError.itemNotEditable(.unsupportedFormat))]
+
+        rig.sut.save()
+        let failed = await eventually { rig.sut.saveError == EditBlockReason.unsupportedFormat.userMessage && !rig.sut.isSaving }
+
+        XCTAssertTrue(failed)
+        XCTAssertEqual(rig.sut.conflict, .none)
+        XCTAssertEqual(rig.browser.resyncCallCount, 1, "the edit block starts no sync")
+    }
+
+    // MARK: - Partly saved organization edit
+
+    func testCollectionChangeNotSaved_movesTheBaseAndKeepsTheSheet() async {
+        let savedItem = item(name: "Edited name", revision: Date(timeIntervalSince1970: 2_000))
+        let browser = Browser()
+        browser.latest = .available(savedItem)
+        let rig = makeRig(results: [.failure(VaultError.collectionChangeNotSaved)], browser: browser)
+        rig.sut.draft.collectionIds = ["col-1"]
+
+        rig.sut.save()
+        let finished = await eventually { rig.sut.saveError != nil && !rig.sut.isSaving }
+
+        XCTAssertTrue(finished)
+        XCTAssertEqual(rig.sut.saveError, VaultError.collectionChangeNotSaved.errorDescription)
+        XCTAssertFalse(rig.sut.isDismissed, "the sheet stays open")
+        XCTAssertEqual(rig.sut.conflict, .none)
+        XCTAssertTrue(rig.sut.canSave, "Save stays enabled for the retry")
+        XCTAssertEqual(rig.sut.draft.revisionDate, savedItem.revisionDate, "the retry is based on the saved revision")
+        XCTAssertEqual(rig.browser.saved, [savedItem], "the list and detail show the saved content once")
+        XCTAssertEqual(rig.browser.resyncCallCount, 0)
+        XCTAssertTrue(rig.sut.hasChanges, "the unsaved collection change still counts")
+        rig.sut.draft.collectionIds = []
+        XCTAssertFalse(rig.sut.hasChanges, "only the collections differ from the saved item")
+    }
+
+    // MARK: - Texts and flags
+
+    func testPresentationTexts_perState() async {
+        let message = VaultError.conflict.errorDescription
+        let title = "Discard my changes and reload"
+        let reloadFirst = "Reload the item first."
+
+        // Literal copy, character for character.
+        XCTAssertEqual(
+            ItemEditViewModel.itemGoneNote,
+            "This item is no longer available. It was deleted or moved on another device, or your access was removed.")
+        XCTAssertEqual(ItemEditViewModel.reloadAnnouncement, "Reloaded the latest version.")
+
+        // none
+        let none = makeRig()
+        assertTexts(none.sut, state: "none", banner: nil, status: nil, announcement: nil, title: nil,
+                    enabled: true, hint: nil, saveHint: nil, gone: false)
+
+        // syncing
+        let browser = Browser()
+        let gate = Gate()
+        browser.resyncGate = gate
+        browser.latest = .available(item(name: "Changed elsewhere"))
+        let syncing = makeRig(results: [.failure(VaultError.conflict)], browser: browser)
+        syncing.sut.save()
+        _ = await eventually { syncing.sut.conflict == .syncing }
+        assertTexts(syncing.sut, state: "syncing", banner: message, status: "Syncing\u{2026}", announcement: nil,
+                    title: title, enabled: false, hint: "Available when the sync finishes.", saveHint: reloadFirst, gone: false)
+
+        // synced (the same sheet, once released)
+        gate.open()
+        _ = await eventually { syncing.sut.conflict == .synced }
+        assertTexts(syncing.sut, state: "synced", banner: message, status: "Synced", announcement: "Synced",
+                    title: title, enabled: true, hint: nil, saveHint: reloadFirst, gone: false)
+
+        // syncFailed
+        let failed = await conflicted(resyncs: [.failed("No internet connection.")], latest: .gone)
+        assertTexts(failed.sut, state: "syncFailed", banner: message, status: "No internet connection.",
+                    announcement: "No internet connection.", title: title, enabled: true, hint: nil,
+                    saveHint: reloadFirst, gone: false)
+
+        // syncFailed without a message shows no status line
+        let silent = await conflicted(resyncs: [.failed("")], latest: .gone)
+        assertTexts(silent.sut, state: "syncFailed, empty", banner: message, status: nil, announcement: nil,
+                    title: title, enabled: true, hint: nil, saveHint: reloadFirst, gone: false)
+
+        // itemGone
+        let gone = await conflicted(resyncs: [.synced], latest: .gone)
+        assertTexts(gone.sut, state: "itemGone", banner: ItemEditViewModel.itemGoneNote, status: nil,
+                    announcement: nil, title: "Close", enabled: true, hint: nil,
+                    saveHint: "This item no longer exists.", gone: true)
+    }
+
+    private func assertTexts(
+        _ sut: ItemEditViewModel, state: String, banner: String?, status: String?, announcement: String?,
+        title: String?, enabled: Bool, hint: String?, saveHint: String?, gone: Bool,
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        XCTAssertEqual(sut.bannerMessage, banner, "bannerMessage in \(state)", file: file, line: line)
+        XCTAssertEqual(sut.conflictStatusText, status, "conflictStatusText in \(state)", file: file, line: line)
+        XCTAssertEqual(sut.conflictStatusAnnouncement, announcement, "conflictStatusAnnouncement in \(state)", file: file, line: line)
+        XCTAssertEqual(sut.conflictActionTitle, title, "conflictActionTitle in \(state)", file: file, line: line)
+        XCTAssertEqual(sut.isConflictActionEnabled, enabled, "isConflictActionEnabled in \(state)", file: file, line: line)
+        XCTAssertEqual(sut.conflictActionHint, hint, "conflictActionHint in \(state)", file: file, line: line)
+        XCTAssertEqual(sut.saveBlockedHint, saveHint, "saveBlockedHint in \(state)", file: file, line: line)
+        XCTAssertEqual(sut.isItemGone, gone, "isItemGone in \(state)", file: file, line: line)
+    }
+
+    func testEmptySaveError_showsNoBanner() async {
+        struct Silent: LocalizedError { var errorDescription: String? { "" } }
+        let rig = makeRig(results: [.failure(Silent())])
+
+        rig.sut.save()
+        let finished = await eventually { rig.sut.saveError != nil && !rig.sut.isSaving }
+
+        XCTAssertTrue(finished)
+        XCTAssertEqual(rig.sut.saveError, "")
+        XCTAssertNil(rig.sut.bannerMessage, "an empty message is never an empty red bar")
+        XCTAssertNil(makeRig().sut.bannerMessage)
+    }
+
+    /// Every fail-closed error ends a save the same way: its message in the banner, no conflict
+    /// action, the sheet open and the user's input untouched. The success path clears the draft, so
+    /// a catch that did the same would destroy the edit.
+    func testFailClosedSaveErrors_showTheMessageWithoutActionsAndKeepTheDraft() async {
+        let errors: [VaultError] = [
+            .organizationKeyUnavailable, .itemRecordUnavailable, .itemKeyUnavailable,
+            .itemNotEditable(.unsupportedFormat), .itemRevisionUnavailable,
+        ]
+        for error in errors {
+            let rig = makeRig(results: [.failure(error)])
+
+            rig.sut.save()
+            let finished = await eventually { rig.sut.saveError != nil && !rig.sut.isSaving }
+
+            XCTAssertTrue(finished, "\(error)")
+            XCTAssertEqual(rig.sut.bannerMessage, error.errorDescription, "\(error)")
+            XCTAssertNil(rig.sut.conflictActionTitle, "\(error)")
+            XCTAssertNil(rig.sut.conflictStatusText, "\(error)")
+            XCTAssertNil(rig.sut.saveBlockedHint, "\(error)")
+            XCTAssertFalse(rig.sut.isDismissed, "the sheet stays open: \(error)")
+            XCTAssertEqual(rig.sut.draft.name, "Edited name", "the user's input stays: \(error)")
+            XCTAssertTrue(rig.sut.canSave, "Save stays available for a retry: \(error)")
+        }
     }
 }

@@ -226,9 +226,12 @@ nonisolated struct DraftVaultItem: Equatable {
     var isFavorite: Bool
     /// Deletion state is not editable in v1.
     let isDeleted: Bool
-    /// Dates are server-managed; not editable.
+    /// Dates are server-managed; not editable by the user.
     let creationDate: Date
-    let revisionDate: Date
+    /// The server revision this draft is based on. It moves to the saved revision after an
+    /// organization edit whose collection change failed, so the retry is based on what the server
+    /// now holds. Nothing else changes it.
+    var revisionDate: Date
     var content: DraftItemContent
     /// Re-prompt setting from `VaultItem.reprompt` — carried through unchanged so PUT
     /// round-trips it correctly. Not user-editable in v1.

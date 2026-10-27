@@ -69,6 +69,74 @@ final class ItemEditViewModel: ObservableObject {
         draft.name.trimmingCharacters(in: .whitespaces).isEmpty ? "Name is required" : nil
     }
 
+    // MARK: - Banner texts and flags
+    //
+    // The view only binds these, so every state of the conflict banner is unit-tested here. The
+    // strings are the product copy for the edit sheet.
+
+    /// Replaces the conflict message when the synced vault no longer has the item. One text for
+    /// deleted, trashed and revoked access, because Prizm cannot tell them apart.
+    static let itemGoneNote =
+        "This item is no longer available. It was deleted or moved on another device, or your access was removed."
+
+    /// Announced after a reload refills the sheet, because the fields change silently.
+    static let reloadAnnouncement = "Reloaded the latest version."
+
+    /// Counts completed reloads; the view announces `reloadAnnouncement` when it increases.
+    @Published private(set) var reloadCount = 0
+
+    /// The message the banner shows, or nil for no banner (never an empty banner).
+    var bannerMessage: String? {
+        if conflict == .itemGone { return Self.itemGoneNote }
+        guard let saveError, !saveError.isEmpty else { return nil }
+        return saveError
+    }
+
+    /// The status line next to the conflict action: progress, success or the sync error.
+    var conflictStatusText: String? {
+        switch conflict {
+        case .none, .itemGone:       return nil
+        case .syncing:               return "Syncing…"
+        case .synced:                return "Synced"
+        case .syncFailed(let text):  return text.isEmpty ? nil : text
+        }
+    }
+
+    /// What VoiceOver announces when the status line changes. "Syncing…" is not announced: it
+    /// would cut off the conflict message that was just read.
+    var conflictStatusAnnouncement: String? {
+        conflict == .syncing ? nil : conflictStatusText
+    }
+
+    /// The label of the banner button, or nil when the banner has none.
+    var conflictActionTitle: String? {
+        switch conflict {
+        case .none:                          return nil
+        case .syncing, .synced, .syncFailed: return "Discard my changes and reload"
+        case .itemGone:                      return "Close"
+        }
+    }
+
+    /// `false` only while the sync runs; the button enables itself when the result arrives.
+    var isConflictActionEnabled: Bool { conflict != .syncing }
+
+    /// Why the button is disabled; only while syncing.
+    var conflictActionHint: String? {
+        conflict == .syncing ? "Available when the sync finishes." : nil
+    }
+
+    /// Why Save is disabled, for its accessibility hint and tooltip; nil when no conflict blocks it.
+    var saveBlockedHint: String? {
+        switch conflict {
+        case .none:                          return nil
+        case .syncing, .synced, .syncFailed: return "Reload the item first."
+        case .itemGone:                      return "This item no longer exists."
+        }
+    }
+
+    /// `true` when the synced vault no longer has the item; the view hides Delete Item.
+    var isItemGone: Bool { conflict == .itemGone }
+
     /// `true` when any field differs from the original item captured at open time.
     /// Used to decide whether the discard confirmation prompt is needed.
     var hasChanges: Bool {
@@ -108,6 +176,9 @@ final class ItemEditViewModel: ObservableObject {
 
     /// Collections available for the collection picker (all orgs).
     let collections: [OrgCollection]
+
+    /// `true` while a reload looks up the synced item, so a second press cannot refill twice.
+    private var isReloading = false
 
     /// Retain token for the vault-lock observer.
     private nonisolated(unsafe) var lockObserver: NSObjectProtocol?
@@ -186,6 +257,14 @@ final class ItemEditViewModel: ObservableObject {
                 logger.info("Save rejected, item changed elsewhere: \(self.draft.id, privacy: .public)")
                 await runConflictResync()
                 return
+            } catch VaultError.collectionChangeNotSaved {
+                if isDismissed {
+                    logger.info("Save error ignored: the sheet was dismissed meanwhile")
+                } else {
+                    saveError = VaultError.collectionChangeNotSaved.localizedDescription
+                    logger.error("Save partly failed: the collection change was not saved")
+                    await moveBaseToSavedItem()
+                }
             } catch {
                 if isDismissed {
                     logger.info("Save error ignored: the sheet was dismissed meanwhile")
@@ -222,6 +301,73 @@ final class ItemEditViewModel: ObservableObject {
             case .gone:      conflict = .itemGone
             case .available: conflict = .synced
             }
+        }
+    }
+
+    /// After an organization edit whose collection change failed: the item itself is saved, so the
+    /// retry must be based on the saved revision, or it would be refused as a conflict with the
+    /// user's own save. The draft keeps the user's input; `original` becomes the saved item, so the
+    /// unsaved collection change still counts as a change. The list and detail show the saved item.
+    private func moveBaseToSavedItem() async {
+        guard let latestItem else {
+            logger.error("Saved item lookup unavailable: closures not set")
+            return
+        }
+        let latest = await latestItem(draft.id)
+        guard !isDismissed else { return }
+        guard case .available(let savedItem) = latest else {
+            logger.error("Saved item not found after a partly failed save")
+            return
+        }
+        draft.revisionDate = savedItem.revisionDate
+        original = DraftVaultItem(savedItem)
+        onSaveSuccess?(savedItem)
+    }
+
+    // MARK: - Conflict action
+
+    /// The banner button: "Discard my changes and reload" or "Close".
+    ///
+    /// - `.synced`: refills draft and original from the synced item.
+    /// - `.syncFailed`: starts a new sync; the sheet is never refilled from the copy the server
+    ///   rejected or from a failed sync.
+    /// - `.itemGone`: closes the sheet like Discard, without the alert (the user was told).
+    /// - `.syncing`, `.none`: nothing.
+    func performConflictAction() {
+        switch conflict {
+        case .none, .syncing:
+            return
+        case .syncFailed:
+            // Set before the task starts, so a second press in the same turn finds `.syncing`.
+            conflict = .syncing
+            Task { @MainActor [weak self] in
+                await self?.runConflictResync()
+            }
+        case .synced:
+            guard !isReloading, let latestItem else { return }
+            isReloading = true
+            let id = draft.id
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                defer { isReloading = false }
+                let latest = await latestItem(id)
+                guard !isDismissed else { return }
+                switch latest {
+                case .available(let item):
+                    // The same overwrite `clearDraft()` uses, so the rejected draft's plaintext
+                    // is dropped.
+                    draft     = DraftVaultItem(item)
+                    original  = DraftVaultItem(item)
+                    saveError = nil
+                    conflict = .none
+                    reloadCount += 1
+                    logger.info("Item reloaded after a conflict: \(item.id, privacy: .public)")
+                case .gone:
+                    conflict = .itemGone
+                }
+            }
+        case .itemGone:
+            discard()
         }
     }
 
