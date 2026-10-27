@@ -28,7 +28,8 @@ final class RawCipherWireModelTests: XCTestCase {
     // MARK: - Characterization: the request bodies Prizm builds today
 
     /// Guards that a preserved field never reaches a request Prizm builds from a draft. The key
-    /// sets were measured on the unchanged model before the wire model was rewritten.
+    /// sets were measured on the unchanged model before the wire model was rewritten; the website
+    /// entries now also carry `uriChecksum`, which Prizm writes fresh on every save and create.
     func testMapperBody_keySetsAreUnchanged() throws {
         let draft = DraftVaultItem(
             id: "c1", name: "Example", isFavorite: false, isDeleted: false,
@@ -51,7 +52,7 @@ final class RawCipherWireModelTests: XCTestCase {
                        ["collectionIds", "encryptedFor", "favorite", "id", "login", "name", "reprompt", "type"])
         XCTAssertEqual(Set(login.keys), ["password", "uris", "username"])
         XCTAssertEqual(uris.count, 1)
-        XCTAssertEqual(Set(uris[0].keys), ["uri"])
+        XCTAssertEqual(Set(uris[0].keys), ["uri", "uriChecksum"])
     }
 
     // MARK: - Tracer: a passkey login through the real client

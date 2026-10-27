@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import os.log
 
@@ -492,9 +493,15 @@ nonisolated final class CipherMapper: Sendable {
     // MARK: - Private: Login reverse map
 
     private func toRawLogin(_ c: DraftLoginContent, keys: CryptoKeys) throws -> RawLoginData {
-        let rawURIs: [RawURI] = try c.uris.map { uri in
-            let encURI = try encryptString(uri.uri, keys: keys)
-            return RawURI(uri: encURI, match: uri.matchType?.rawValue)
+        // An empty address is not sent (the edit sheet drops blank rows already; this is the
+        // backstop). Every other address gets a checksum computed from the exact string that is
+        // encrypted as `uri`, under the same keys, so official clients accept it.
+        let rawURIs: [RawURI] = try c.uris.filter { !$0.uri.isEmpty }.map { uri in
+            RawURI(
+                uri: try encryptString(uri.uri, keys: keys),
+                match: uri.matchType?.rawValue,
+                uriChecksum: try encryptString(Self.uriChecksumPlaintext(uri.uri), keys: keys)
+            )
         }
         return RawLoginData(
             username: try c.username.map { try encryptString($0, keys: keys) },
@@ -577,6 +584,28 @@ nonisolated final class CipherMapper: Sendable {
         case .identity(let c):   return c.customFields
         case .sshKey(let c):     return c.customFields
         }
+    }
+
+    // MARK: - URI checksum
+
+    /// The plaintext of a website's `uriChecksum`: base64 of the SHA-256 of the address's UTF-8 bytes.
+    /// The caller encrypts it as an EncString under the key the item's fields use.
+    ///
+    /// - Security goal: official Bitwarden clients verify the checksum of every website of an item
+    ///   that has its own key. A website whose checksum is missing or does not match is hidden, and
+    ///   dropped when that client next saves the item. The checksum also binds an address to its
+    ///   ciphertext, so an address swapped in by someone who cannot compute the checksum is noticed.
+    /// - Algorithm: SHA-256 (FIPS 180-4), base64 (RFC 4648 section 4), as `generate_checksum` in the
+    ///   Bitwarden SDK (`bitwarden-vault`, `login.rs`). CryptoKit's `SHA256`, no own implementation.
+    /// - Intentionally NOT done: no trimming, lowercasing or other normalisation. The hash covers
+    ///   exactly the string that is encrypted as `uri`; a checksum of a normalised form would not
+    ///   match what other clients compute from the decrypted address. A stored checksum is never
+    ///   reused: every save and create computes a fresh one for every website, as the SDK does, so
+    ///   an edited address can never keep the checksum of its old value.
+    /// - Not a secret and not authentication: the checksum is a hash of data that is encrypted next
+    ///   to it, and it is itself sent encrypted.
+    static func uriChecksumPlaintext(_ uri: String) -> String {
+        Data(SHA256.hash(data: Data(uri.utf8))).base64EncodedString()
     }
 
     // MARK: - Encrypt helper
