@@ -12,13 +12,13 @@ final class OrgItemsInFoldersTests: XCTestCase {
 
     private let orgItem = VaultItem(
         id: "org-item", name: "Shared", isFavorite: false, isDeleted: false,
-        creationDate: Date(), revisionDate: Date(),
+        creationDate: Date(), revisionDate: RepositoryFixtures.revisionDate,
         content: .secureNote(SecureNoteContent(notes: nil, customFields: [])),
         folderId: "f1", organizationId: "org-1", collectionIds: ["col-a"]
     )
     private let personalItem = VaultItem(
         id: "personal", name: "Mine", isFavorite: false, isDeleted: false,
-        creationDate: Date(), revisionDate: Date(),
+        creationDate: Date(), revisionDate: RepositoryFixtures.revisionDate,
         content: .secureNote(SecureNoteContent(notes: nil, customFields: [])),
         folderId: "f1"
     )

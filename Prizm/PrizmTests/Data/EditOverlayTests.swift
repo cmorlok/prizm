@@ -208,7 +208,7 @@ final class EditOverlayTests: XCTestCase {
         }
         return VaultItem(
             id: id, name: "Sample \(type)", isFavorite: false, isDeleted: false,
-            creationDate: Date(), revisionDate: Date(), content: content)
+            creationDate: Date(), revisionDate: RepositoryFixtures.revisionDate, content: content)
     }
 
     /// The server's record of `item`: real EncStrings under `keys`, with `edit` applied to its JSON
@@ -219,6 +219,8 @@ final class EditOverlayTests: XCTestCase {
     ) throws -> RawCipher {
         let created = try mapper.toNewRawCipher(DraftVaultItem(item), encryptedWith: keys, encryptedFor: RepositoryFixtures.profileId)
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(created)) as? [String: Any])
+        // The create path writes no revision; a server record always has one, and a save needs it.
+        json["revisionDate"] = RepositoryFixtures.serverRevisionString(for: item.revisionDate)
         edit(&json)
         return try JSONDecoder().decode(RawCipher.self, from: JSONSerialization.data(withJSONObject: json))
     }
@@ -568,7 +570,7 @@ final class EditOverlayTests: XCTestCase {
         ]
         let item = VaultItem(
             id: "item-1", name: "Twins", isFavorite: false, isDeleted: false,
-            creationDate: Date(), revisionDate: Date(),
+            creationDate: Date(), revisionDate: RepositoryFixtures.revisionDate,
             content: .login(LoginContent(username: nil, password: nil, uris: [], totp: nil, notes: nil, customFields: twins)))
         let record = try storedRecord(for: item, keys: vaultKeys) { json in
             var fields = (json["fields"] as? [[String: Any]]) ?? []

@@ -38,7 +38,7 @@ final class EncryptedForTests: XCTestCase {
     private func loginDraft(id: String, name: String) -> DraftVaultItem {
         DraftVaultItem(
             id: id, name: name, isFavorite: false, isDeleted: false,
-            creationDate: Date(), revisionDate: Date(),
+            creationDate: Date(), revisionDate: RepositoryFixtures.revisionDate,
             content: .login(DraftLoginContent(LoginContent(
                 username: nil, password: nil, uris: [], totp: nil, notes: nil, customFields: []
             ))),
@@ -52,7 +52,7 @@ final class EncryptedForTests: XCTestCase {
     private func storedItem(id: String, organizationId: String? = nil) -> VaultItem {
         VaultItem(
             id: id, name: "Original", isFavorite: false, isDeleted: false,
-            creationDate: Date(), revisionDate: Date(),
+            creationDate: Date(), revisionDate: RepositoryFixtures.revisionDate,
             content: .login(LoginContent(username: nil, password: nil, uris: [], totp: nil, notes: nil, customFields: [])),
             organizationId: organizationId
         )

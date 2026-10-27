@@ -169,7 +169,7 @@ final class FailClosedSaveTests: XCTestCase {
             String(data: try EncString(string: type0Name).decrypt(keys: vaultKeys), encoding: .utf8), "Old format")
         let stored = RawCipher(
             id: readable.id, organizationId: nil, folderId: nil, type: 1, name: type0Name, notes: nil,
-            favorite: false, reprompt: 0, deletedDate: nil, creationDate: nil, revisionDate: nil,
+            favorite: false, reprompt: 0, deletedDate: nil, creationDate: nil, revisionDate: readable.revisionDate,
             login: readable.login, card: nil, identity: nil, secureNote: nil, sshKey: nil, fields: nil,
             key: nil, attachments: nil)
         await seed(stored)
@@ -273,7 +273,7 @@ final class FailClosedSaveTests: XCTestCase {
         let foreign = KeyedCipherBuilder.encrypt("https://a.example.com", keys: KeyedCipherBuilder.randomKeys())
         let stored = RawCipher(
             id: "w", organizationId: nil, folderId: nil, type: 1, name: damaged.name, notes: nil,
-            favorite: false, reprompt: 0, deletedDate: nil, creationDate: nil, revisionDate: nil,
+            favorite: false, reprompt: 0, deletedDate: nil, creationDate: nil, revisionDate: readable.revisionDate,
             login: RawLoginData(username: nil, password: nil, uris: [RawURI(uri: foreign, match: nil)], totp: nil),
             card: nil, identity: nil, secureNote: nil, sshKey: nil, fields: nil, key: nil, attachments: nil)
         await seed(stored)
@@ -288,7 +288,7 @@ final class FailClosedSaveTests: XCTestCase {
         let foreign = KeyedCipherBuilder.encrypt("Field A", keys: KeyedCipherBuilder.randomKeys())
         let stored = RawCipher(
             id: "f", organizationId: nil, folderId: nil, type: 1, name: readable.name, notes: nil,
-            favorite: false, reprompt: 0, deletedDate: nil, creationDate: nil, revisionDate: nil,
+            favorite: false, reprompt: 0, deletedDate: nil, creationDate: nil, revisionDate: readable.revisionDate,
             login: readable.login, card: nil, identity: nil, secureNote: nil, sshKey: nil,
             fields: [RawField(type: 0, name: foreign, value: nil, linkedId: nil, extras: ["tag": .string("x")])],
             key: nil, attachments: nil)

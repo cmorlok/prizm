@@ -63,7 +63,7 @@ final class RawCipherStoreTests: XCTestCase {
     private func loginDraft(id: String, name: String) -> DraftVaultItem {
         DraftVaultItem(
             id: id, name: name, isFavorite: false, isDeleted: false,
-            creationDate: Date(), revisionDate: Date(),
+            creationDate: Date(), revisionDate: RepositoryFixtures.revisionDate,
             content: .login(DraftLoginContent(LoginContent(
                 username: nil, password: nil, uris: [], totp: nil, notes: nil, customFields: []
             ))),
@@ -93,7 +93,7 @@ final class RawCipherStoreTests: XCTestCase {
         return RawCipher(
             id: id, organizationId: nil, folderId: nil, type: 1, name: name, notes: nil,
             favorite: false, reprompt: nil, deletedDate: nil, creationDate: nil,
-            revisionDate: "2026-01-01T00:00:00.000Z",
+            revisionDate: RepositoryFixtures.serverRevisionString(for: RepositoryFixtures.revisionDate),
             login: RawLoginData(username: nil, password: nil, uris: nil, totp: nil,
                                 extras: ["fido2Credentials": .array([.object(["credentialId": .string("2.cred")])])]),
             card: nil, identity: nil, secureNote: nil, sshKey: nil, fields: nil, key: nil, attachments: nil,
@@ -258,13 +258,13 @@ final class RawCipherStoreTests: XCTestCase {
 
     private func personalLogin(_ id: String, name: String) -> VaultItem {
         VaultItem(id: id, name: name, isFavorite: false, isDeleted: false, creationDate: Date(),
-                  revisionDate: Date(),
+                  revisionDate: RepositoryFixtures.revisionDate,
                   content: .login(LoginContent(username: "u", password: "p", uris: [], totp: nil, notes: nil, customFields: [])))
     }
 
     private func orgNote(_ id: String, name: String, organizationId: String) -> VaultItem {
         VaultItem(id: id, name: name, isFavorite: false, isDeleted: false, creationDate: Date(),
-                  revisionDate: Date(), content: .secureNote(SecureNoteContent(notes: nil, customFields: [])),
+                  revisionDate: RepositoryFixtures.revisionDate, content: .secureNote(SecureNoteContent(notes: nil, customFields: [])),
                   organizationId: organizationId)
     }
 
@@ -285,6 +285,70 @@ final class RawCipherStoreTests: XCTestCase {
             XCTAssertEqual(mapped.name, item.name)
             XCTAssertEqual(mapped.organizationId, item.organizationId)
         }
+    }
+
+    func testSeedRecords_stampsTheItemsRevisionInTheServerFormat() async throws {
+        let store = RawCipherStore()
+        let personal = personalLogin("p1", name: "Personal login")
+        let org = orgNote("o1", name: "Org note", organizationId: "org-acme")
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        try await RepositoryFixtures.seedRecords(
+            for: [personal, org], in: store, vaultKeys: vaultKeys, orgKeys: ["org-acme": acmeKeys])
+
+        for item in [personal, org] {
+            let record = await store.record(for: item.id)
+            let stored = try XCTUnwrap(record, "A record is stored for \(item.id)")
+            let revision = try XCTUnwrap(stored.revisionDate, "The record of \(item.id) carries a revision")
+            XCTAssertNotNil(
+                revision.range(of: #"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$"#, options: .regularExpression),
+                "The revision is in the server's shape: \(revision)")
+            XCTAssertTrue(revision.hasSuffix(".123000Z"), "The fixed millisecond is written as .123000Z: \(revision)")
+            let parsed = try XCTUnwrap(formatter.date(from: revision), "The revision parses back: \(revision)")
+            XCTAssertEqual(
+                (parsed.timeIntervalSince1970 * 1000).rounded(),
+                (item.revisionDate.timeIntervalSince1970 * 1000).rounded(),
+                "The revision parses back to the item's revision at millisecond resolution")
+            let mapped = try CipherMapper().map(raw: stored, vaultKeys: vaultKeys, orgKeys: ["org-acme": acmeKeys]).item
+            XCTAssertEqual(mapped.name, item.name)
+            XCTAssertEqual(mapped.organizationId, item.organizationId)
+        }
+    }
+
+    func testSeedRecords_subMillisecondRevision_throws() async throws {
+        let store = RawCipherStore()
+        let item = VaultItem(
+            id: "p-sub-ms", name: "Sub millisecond", isFavorite: false, isDeleted: false, creationDate: Date(),
+            revisionDate: Date(timeIntervalSince1970: 1_793_008_800.1234),
+            content: .secureNote(SecureNoteContent(notes: nil, customFields: [])))
+
+        do {
+            try await RepositoryFixtures.seedRecords(for: [item], in: store, vaultKeys: vaultKeys)
+            XCTFail("A revision that is not a whole millisecond must be refused")
+        } catch let error as RepositoryFixtures.SeedError {
+            XCTAssertTrue(error.description.contains("p-sub-ms"), "The error names the item: \(error.description)")
+        }
+        let stored = await store.record(for: "p-sub-ms")
+        XCTAssertNil(stored, "Nothing is stored for a refused item")
+    }
+
+    func testSeedRecords_wholeMillisecondWithFloatingPointError_isAccepted() async throws {
+        let store = RawCipherStore()
+        // A date built from the reference date, as a parsed revision is: 814_701_600.002 + 978_307_200
+        // is 1_793_008_800.0019999 in a Double, so its millisecond count is not an exact integer.
+        let date = Date(timeIntervalSinceReferenceDate: 814_701_600.002)
+        let milliseconds = date.timeIntervalSince1970 * 1000
+        XCTAssertNotEqual(milliseconds, milliseconds.rounded(), "The date is the floating-point case this test is about")
+        let item = VaultItem(
+            id: "p-fp", name: "Floating point", isFavorite: false, isDeleted: false, creationDate: Date(),
+            revisionDate: date, content: .secureNote(SecureNoteContent(notes: nil, customFields: [])))
+
+        try await RepositoryFixtures.seedRecords(for: [item], in: store, vaultKeys: vaultKeys)
+
+        let stored = await store.record(for: "p-fp")
+        let revision = try XCTUnwrap(stored?.revisionDate)
+        XCTAssertTrue(revision.hasSuffix(".002000Z"), "The nearest millisecond is written, not the one below: \(revision)")
     }
 
     func testSeedRecords_orgItemWithoutItsKey_throws() async throws {
@@ -311,10 +375,14 @@ final class RawCipherStoreTests: XCTestCase {
         try await RepositoryFixtures.seedRecords(
             for: [personalLogin("c1", name: "Original")], in: rig.store, vaultKeys: vaultKeys)
         let draft = loginDraft(id: "c1", name: "Renamed")
+        // The server's answer to a save carries a revision, so the second save below has one to
+        // check; the mock alone would echo the request, which has none.
+        RepositoryFixtures.answerUpdatesWithRevision(of: rig.api)
         _ = try await rig.vault.update(draft)
         let firstStored = await rig.store.record(for: "c1")
         XCTAssertNotNil(firstStored, "The server's answer is stored")
 
+        rig.api.whileUpdatingCipher = nil
         let answer = try withRevisionDate(try XCTUnwrap(rig.api.lastUpdatedCipher), "2026-10-27T10:00:00.000Z")
         rig.api.updateCipherResponse = answer
         _ = try await rig.vault.update(draft)

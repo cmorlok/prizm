@@ -167,6 +167,8 @@ final class KeyMatrixTests: XCTestCase {
         let stored = golden.cipher(id: GoldenVault.passkeyId)
         await makeRepository(vaultKeys: golden.vaultKeys, orgKeys: golden.orgKeys, records: [stored])
         var draft = try renamedDraft(of: stored, vaultKeys: golden.vaultKeys, orgKeys: golden.orgKeys, to: "First")
+        // The server's answer carries a revision; the mock would echo the request, which has none.
+        RepositoryFixtures.answerUpdates(of: api, withRevisionString: try XCTUnwrap(stored.revisionDate))
 
         _ = try await sut.update(draft)
         let firstKey = try XCTUnwrap(api.lastUpdatedCipher?.key)
@@ -186,6 +188,8 @@ final class KeyMatrixTests: XCTestCase {
         let stored = KeyedCipherBuilder.login(id: "plain", name: "Plain", activeKeys: vaultKeys)
         await makeRepository(vaultKeys: vaultKeys, orgKeys: [:], records: [stored])
         var draft = try renamedDraft(of: stored, vaultKeys: vaultKeys, orgKeys: [:], to: "Plain, renamed")
+        // The server's answer carries a revision; the mock would echo the request, which has none.
+        RepositoryFixtures.answerUpdates(of: api, withRevisionString: try XCTUnwrap(stored.revisionDate))
 
         _ = try await sut.update(draft)
         draft.name = "Plain, again"  // an unchanged draft would go through /partial

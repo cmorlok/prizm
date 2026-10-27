@@ -17,12 +17,12 @@ final class OrgKeyWriteGuardTests: XCTestCase {
 
     private let personalItem = VaultItem(
         id: "personal", name: "Mine", isFavorite: false, isDeleted: false,
-        creationDate: Date(), revisionDate: Date(),
+        creationDate: Date(), revisionDate: RepositoryFixtures.revisionDate,
         content: .secureNote(SecureNoteContent(notes: nil, customFields: []))
     )
     private let orgItem = VaultItem(
         id: "shared", name: "Shared", isFavorite: false, isDeleted: false,
-        creationDate: Date(), revisionDate: Date(),
+        creationDate: Date(), revisionDate: RepositoryFixtures.revisionDate,
         content: .secureNote(SecureNoteContent(notes: nil, customFields: [])),
         organizationId: "org-1", collectionIds: ["col-a"]
     )

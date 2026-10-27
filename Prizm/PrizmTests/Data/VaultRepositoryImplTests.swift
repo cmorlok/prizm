@@ -44,7 +44,7 @@ final class VaultRepositoryImplTests: XCTestCase {
             isFavorite: isFavorite,
             isDeleted: isDeleted,
             creationDate: Date(),
-            revisionDate: Date(),
+            revisionDate: RepositoryFixtures.revisionDate,
             content: .login(LoginContent(
                 username: nil, password: nil, uris: [], totp: nil,
                 notes: nil, customFields: []
@@ -63,7 +63,7 @@ final class VaultRepositoryImplTests: XCTestCase {
             isFavorite: isFavorite,
             isDeleted: false,
             creationDate: Date(),
-            revisionDate: Date(),
+            revisionDate: RepositoryFixtures.revisionDate,
             content: .card(CardContent(
                 cardholderName: nil, brand: nil, number: nil,
                 expMonth: nil, expYear: nil, code: nil,
@@ -79,7 +79,7 @@ final class VaultRepositoryImplTests: XCTestCase {
             isFavorite: false,
             isDeleted: false,
             creationDate: Date(),
-            revisionDate: Date(),
+            revisionDate: RepositoryFixtures.revisionDate,
             content: .secureNote(SecureNoteContent(notes: nil, customFields: []))
         )
     }
@@ -289,7 +289,7 @@ final class VaultRepositoryImplTests: XCTestCase {
         let col    = OrgCollection(id: colId, organizationId: orgId, name: "Dev")
         let item   = VaultItem(
             id: "i1", name: "Org Item", isFavorite: false, isDeleted: false,
-            creationDate: Date(), revisionDate: Date(),
+            creationDate: Date(), revisionDate: RepositoryFixtures.revisionDate,
             content: .login(LoginContent(username: nil, password: nil, uris: [], totp: nil, notes: nil, customFields: [])),
             organizationId: orgId, collectionIds: [colId]
         )
@@ -402,7 +402,7 @@ final class VaultRepositoryImplTests: XCTestCase {
     private func makeLogin(id: String, name: String, totp: String?, isDeleted: Bool = false) -> VaultItem {
         VaultItem(
             id: id, name: name, isFavorite: false, isDeleted: isDeleted,
-            creationDate: Date(), revisionDate: Date(),
+            creationDate: Date(), revisionDate: RepositoryFixtures.revisionDate,
             content: .login(LoginContent(
                 username: "user-\(id)", password: nil, uris: [LoginURI(uri: "https://\(id).example.com", matchType: nil)],
                 totp: totp, notes: nil, customFields: []

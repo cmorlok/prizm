@@ -31,7 +31,7 @@ final class PasswordRevisionDateTests: XCTestCase {
     private func loginItem(password: String?, id: String = "item-1") -> VaultItem {
         VaultItem(
             id: id, name: "Login", isFavorite: false, isDeleted: false,
-            creationDate: Date(), revisionDate: Date(),
+            creationDate: Date(), revisionDate: RepositoryFixtures.revisionDate,
             content: .login(LoginContent(
                 username: "user", password: password,
                 uris: [LoginURI(uri: "https://a.example.com", matchType: nil)],
@@ -45,6 +45,8 @@ final class PasswordRevisionDateTests: XCTestCase {
     ) throws -> RawCipher {
         let created = try CipherMapper().toNewRawCipher(DraftVaultItem(item), encryptedWith: keys ?? vaultKeys, encryptedFor: RepositoryFixtures.profileId)
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(created)) as? [String: Any])
+        // The create path writes no revision; a server record always has one, and a save needs it.
+        json["revisionDate"] = RepositoryFixtures.serverRevisionString(for: item.revisionDate)
         edit(&json)
         return try JSONDecoder().decode(RawCipher.self, from: JSONSerialization.data(withJSONObject: json))
     }
@@ -256,11 +258,11 @@ final class PasswordRevisionDateTests: XCTestCase {
     func testNonLoginItems_unaffected() async throws {
         let note = VaultItem(
             id: "note", name: "Note", isFavorite: false, isDeleted: false,
-            creationDate: Date(), revisionDate: Date(),
+            creationDate: Date(), revisionDate: RepositoryFixtures.revisionDate,
             content: .secureNote(SecureNoteContent(notes: "n", customFields: [])))
         let card = VaultItem(
             id: "card", name: "Card", isFavorite: false, isDeleted: false,
-            creationDate: Date(), revisionDate: Date(),
+            creationDate: Date(), revisionDate: RepositoryFixtures.revisionDate,
             content: .card(CardContent(
                 cardholderName: "H", brand: nil, number: "4111111111111111", expMonth: nil, expYear: nil,
                 code: nil, notes: nil, customFields: [])))

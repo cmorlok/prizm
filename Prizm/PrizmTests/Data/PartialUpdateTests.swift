@@ -104,6 +104,8 @@ final class PartialUpdateTests: XCTestCase {
         await orgKeyCache.store(key: orgKeys, for: "org-1")
         try await RepositoryFixtures.seedRecords(
             for: [orgItem], in: recordStore, vaultKeys: vaultKeys, orgKeys: ["org-1": orgKeys])
+        // A save that follows another one is built over the first one's answer, which has a revision.
+        RepositoryFixtures.answerUpdatesWithRevision(of: mockAPI, revision)
         let stored = await recordStore.record(for: orgItem.id)
         XCTAssertEqual(stored?.folderId, "old-folder", "the stored record holds the folder from before the move")
     }
