@@ -2,8 +2,8 @@
 
 **Security review: this directory is part of the security review (committed test credentials).**
 
-Everything in here, except `cipher-kitchen-sink.json` and `cipher-official-shaped.json` (both
-hand-written, see the table), comes from a throwaway account on a local Vaultwarden test server. All data in it is fake, and the master
+Everything in here, except `cipher-kitchen-sink.json`, `cipher-official-shaped.json` and
+`official-out-of-date-400.json` (all hand-written, see the table), comes from a throwaway account on a local Vaultwarden test server. All data in it is fake, and the master
 password below is deliberately public.
 
 ## Files
@@ -12,6 +12,7 @@ password below is deliberately public.
 |---|---|
 | `sync-golden-1.37.4.json` | Scrubbed `GET /api/sync?excludeDomains=true` from Vaultwarden 1.37.4: six ciphers, no folders, one organization with its collections, the profile with its protected keys |
 | `stale-put-400-1.37.4.json` | The exact HTTP 400 body of an update whose `lastKnownRevisionDate` is older than the stored one (design.md "Server behavior", E5) |
+| `official-out-of-date-400.json` | Hand-written from the official server's error shape and the out-of-date text in its cipher service (`The item cannot be saved because it is out of date. ...`); source-reviewed, not tested, never captured from an official server. A 400 with the text under `validationErrors[""]`, the way the official server reports a model-state error |
 | `cipher-official-shaped.json` | Hand-written from the official server's response key list (`CipherDetailsResponseModel`); source-reviewed, not tested, never captured from an official server. Two ciphers (login, secure note) with the keys of a Vaultwarden 1.37.4 cipher plus the official-only top-level `data` and `partialData`, and `passwordHistory: null`. Fake EncStrings only |
 | `cipher-kitchen-sink.json` | Synthetic, hand-written, not captured from a server: six ciphers covering every nested level, unknown and null extras (int, double, a large integer, null), response-only keys at every rebuilt level, and wrong-typed new fields. Fake EncStrings only |
 

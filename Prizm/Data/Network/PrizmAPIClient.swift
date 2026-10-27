@@ -367,6 +367,24 @@ nonisolated extension APIError {
         return message.map { String($0.prefix(maxMessageLength)) }
     }
 
+    /// True for the answer Vaultwarden and the official server give to an update based on an
+    /// outdated copy: HTTP 400 whose message says the item is "out of date", in any letter case.
+    ///
+    /// - Vaultwarden 1.37.4 (tested, `stale-put-400-1.37.4.json`): "The client copy of this cipher is
+    ///   out of date. Resync the client and try again."
+    /// - Official server (source-reviewed, not tested, `official-out-of-date-400.json`): "The item
+    ///   cannot be saved because it is out of date. To edit this item, first sync your vault, or
+    ///   log out and back in."
+    ///
+    /// Matched on `serverMessage`, so camelCase and PascalCase keys and the three message places are
+    /// covered, and on 400 only: a 409 or 500 that happens to contain the phrase is not a stale write.
+    /// The phrase is the only signal the servers give; neither sends a distinct error code.
+    var isOutOfDateRejection: Bool {
+        guard case .httpError(let statusCode, let body) = self, statusCode == 400,
+              let message = Self.serverMessage(statusCode: statusCode, body: body) else { return false }
+        return message.localizedCaseInsensitiveContains("out of date")
+    }
+
     private static func value(_ object: [String: Any], _ camelCaseKey: String) -> Any? {
         object[camelCaseKey] ?? object[camelCaseKey.prefix(1).uppercased() + camelCaseKey.dropFirst()]
     }

@@ -268,14 +268,17 @@ actor VaultRepositoryImpl: VaultRepository {
     ///      cannot move an item between organizations, and its collections are never sent on a guess).
     ///   7. The stored record has no readable revision (missing, empty, not a date, or the epoch)
     ///      → `itemRevisionUnavailable`: without one no revision check can protect the edit.
-    ///   8. The active key follows the stored record's organization: that organization's key, or the
+    ///   8. The pre-check: the draft's revision must equal the stored record's (whole milliseconds,
+    ///      `CipherMapper.sameRevision`), else `conflict`. Equality, not order: a draft that is newer
+    ///      than the record is just as stale. No request is made.
+    ///   9. The active key follows the stored record's organization: that organization's key, or the
     ///      vault key for a personal item. A missing organization key → `organizationKeyUnavailable`.
-    ///   9. The profile id for `encryptedFor` → `profileIdUnavailable`.
-    ///   10. The effective key: the item's own key unwrapped with the active key, or the active key
+    ///   10. The profile id for `encryptedFor` → `profileIdUnavailable`.
+    ///   11. The effective key: the item's own key unwrapped with the active key, or the active key
     ///       for an item without one. A key that does not unwrap → `itemKeyUnavailable`.
-    ///   11. The key check: the stored name must verify and decrypt under that key
+    ///   12. The key check: the stored name must verify and decrypt under that key
     ///       (`CipherMapper.verifyKey`) → `itemKeyUnavailable`.
-    ///   12. The overlay: the draft's edits over the stored record.
+    ///   13. The overlay: the draft's edits over the stored record.
     ///
     /// - What is NOT done:
     ///   • No fallback to another key at any step. In particular the vault key is never tried for an
@@ -293,7 +296,10 @@ actor VaultRepositoryImpl: VaultRepository {
     /// - Throws: `VaultError.vaultLocked`, `itemNotEditable`, `itemRecordUnavailable`,
     ///   `itemRevisionUnavailable`, `organizationKeyUnavailable`, `profileIdUnavailable` or
     ///   `itemKeyUnavailable` as above.
-    /// - Throws: `APIError` on network or HTTP failure.
+    /// - Throws: `VaultError.conflict` from the pre-check, and when the server rejects the PUT as out
+    ///   of date (HTTP 400, `APIError.isOutOfDateRejection`). The server copy is untouched and
+    ///   nothing is retried.
+    /// - Throws: `APIError` on any other network or HTTP failure.
     /// - Throws: `CipherMapperError` if the response mapper fails.
     func update(_ draft: DraftVaultItem) async throws -> VaultItem {
         // TODO: Require biometric re-auth before encrypting and sending — deferred pending
@@ -367,6 +373,16 @@ actor VaultRepositoryImpl: VaultRepository {
             throw VaultError.itemRevisionUnavailable
         }
 
+        // The edit must be based on the server copy Prizm holds now. A sync that replaced the stored
+        // record while the sheet was open leaves the draft on an older one: saving it would overwrite
+        // what the sync brought in. Equality, not order, so the check never depends on whose clock is
+        // ahead. This is not the servers' check (whole seconds, a 1 or 2 second slack); edits made
+        // within that slack of each other are not promised to be caught.
+        guard CipherMapper.sameRevision(draft.revisionDate, baseRevision) else {
+            logger.info("Save refused: item \(draft.id, privacy: .public) changed since it was loaded")
+            throw VaultError.conflict
+        }
+
         // Read once: a lock or a sync during the save cannot change the keys used for this request.
         let orgKeysSnapshot = await orgKeyCache.snapshot()
         let activeKeys = try encryptionKeys(organizationId: base.organizationId, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot)
@@ -393,7 +409,16 @@ actor VaultRepositoryImpl: VaultRepository {
         }
 
         // TODO: Queue encrypted rawCipher for offline persistence (deferred — requires WAL).
-        let updatedRaw = try await apiClient.updateCipher(id: draft.id, cipher: rawCipher)
+        // Only this call is mapped: /partial, the collections call and create carry no last-known
+        // revision, so the same words in their answer are not a stale write. Nothing is retried and
+        // the stored record keeps what it holds; the sheet's reload is the way forward.
+        let updatedRaw: RawCipher
+        do {
+            updatedRaw = try await apiClient.updateCipher(id: draft.id, cipher: rawCipher)
+        } catch let error as APIError where error.isOutOfDateRejection {
+            logger.info("Save rejected: item \(draft.id, privacy: .public) is out of date")
+            throw VaultError.conflict
+        }
         // Keep what the server answered, not what was sent. Refused after a lock: the save itself
         // still returns, only the store stays empty (its item-cache update is stale-write
         // protection's, OpenSpec task 4.5).

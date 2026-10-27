@@ -137,6 +137,14 @@ nonisolated enum VaultError: Error, LocalizedError {
     /// local check nor the server's can protect the edit, and Vaultwarden skips its check on a
     /// revision it cannot parse.
     case itemRevisionUnavailable
+    /// The server rejected the update because Prizm's copy is out of date, or the local check found
+    /// that the stored record changed since the edit sheet opened. Nothing was saved and nothing is
+    /// retried: the user reloads the item and makes the change again. The message names neither the
+    /// server's wording nor "revision" or "conflict".
+    case conflict
+    /// An organization item's update was saved, but its collection change was not. The edit sheet
+    /// keeps the draft, so the user can try again.
+    case collectionChangeNotSaved
 
     var errorDescription: String? {
         switch self {
@@ -164,6 +172,10 @@ nonisolated enum VaultError: Error, LocalizedError {
             return "Prizm couldn't load the encryption key for this item. Lock and unlock the vault, then try again."
         case .itemRevisionUnavailable:
             return "Prizm couldn't confirm which version of this item you are editing. Lock and unlock the vault, then try again."
+        case .conflict:
+            return "This item was changed on another device. Your changes were not saved. Reload to see the latest version, then make your changes again."
+        case .collectionChangeNotSaved:
+            return "Your changes were saved, but the collection change failed. Try again."
         }
     }
 }

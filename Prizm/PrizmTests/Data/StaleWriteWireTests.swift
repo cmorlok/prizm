@@ -1,59 +1,63 @@
 import XCTest
 @testable import Prizm
 
-/// What `VaultRepositoryImpl.update()` does with the revision of the stored server record: refuses
-/// an edit when it has no readable revision, compares it with the draft's, and leaves Prizm's own
-/// operations alone (openspec change fix-cipher-edit-data-loss, tasks 4.1 to 4.3).
+/// An unlocked vault repository over a fresh record store, with the helpers the stale-write tests
+/// share (`StaleWriteWireTests`, `ConflictDetectionTests`).
 @MainActor
-final class StaleWriteWireTests: XCTestCase {
+struct StaleWriteRig {
+    let api: MockPrizmAPIClient
+    let store: RawCipherStore
+    let vault: VaultRepositoryImpl
 
-    private let vaultKeys = CryptoKeys(
+    static let vaultKeys = CryptoKeys(
         encryptionKey: Data(repeating: 0xDE, count: 32),
         macKey:        Data(repeating: 0xAD, count: 32)
     )
 
-    // MARK: - Helpers
-
-    private struct Rig {
-        let api: MockPrizmAPIClient
-        let store: RawCipherStore
-        let vault: VaultRepositoryImpl
-    }
-
-    /// An unlocked vault repository over a fresh record store; the profile id is seeded, so a save
-    /// gets past `encryptedFor`.
-    private func makeRig() async -> Rig {
+    /// The profile id is seeded, so a save gets past `encryptedFor`.
+    static func make() async -> StaleWriteRig {
         let api = MockPrizmAPIClient()
         let crypto = MockPrizmCryptoService()
         await crypto.unlockWith(keys: vaultKeys)
         crypto.stubbedVaultKeys = vaultKeys  // unlockWith(keys:) does not set the returned keys
         let store = RawCipherStore()
         let vault = await RepositoryFixtures.vaultRepository(apiClient: api, crypto: crypto, recordStore: store)
-        return Rig(api: api, store: store, vault: vault)
+        return StaleWriteRig(api: api, store: store, vault: vault)
     }
 
-    private func login(_ id: String, name: String = "Login", revisionDate: Date = RepositoryFixtures.revisionDate) -> VaultItem {
+    static func login(_ id: String, name: String = "Login", revisionDate: Date = RepositoryFixtures.revisionDate) -> VaultItem {
         VaultItem(id: id, name: name, isFavorite: false, isDeleted: false, creationDate: Date(),
                   revisionDate: revisionDate,
                   content: .login(LoginContent(username: "u", password: "p", uris: [], totp: nil, notes: nil, customFields: [])))
     }
 
-    /// The stored record of `item` with `revision` as its `revisionDate` (nil removes the key), as a
+    /// Stores the record of `item` with `revision` as its `revisionDate` (nil removes the key), as a
     /// sync of a server that sent that string would leave it.
-    private func store(_ item: VaultItem, in rig: Rig, revision: String?) async throws {
-        try await RepositoryFixtures.seedRecords(for: [item], in: rig.store, vaultKeys: vaultKeys)
-        let seededRecord = await rig.store.record(for: item.id)
+    ///
+    /// `vaultKeys` and `orgKeys` are the keys the stored record is encrypted with; the default is
+    /// what the rig's vault holds.
+    func storeRecord(of item: VaultItem, revision: String?, vaultKeys: CryptoKeys = StaleWriteRig.vaultKeys,
+                     orgKeys: [String: CryptoKeys] = [:]) async throws {
+        try await RepositoryFixtures.seedRecords(for: [item], in: store, vaultKeys: vaultKeys, orgKeys: orgKeys)
+        let seededRecord = await store.record(for: item.id)
         let seeded = try XCTUnwrap(seededRecord)
         let data = try JSONEncoder().encode(seeded)
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         if let revision { json["revisionDate"] = revision } else { json.removeValue(forKey: "revisionDate") }
         let replaced = try JSONDecoder().decode(RawCipher.self, from: JSONSerialization.data(withJSONObject: json))
-        let token = await rig.store.currentGeneration()
-        await rig.store.upsert(replaced, ifCurrent: token)
+        let token = await store.currentGeneration()
+        await store.upsert(replaced, ifCurrent: token)
+    }
+
+    /// Puts `item` into the cache, as a sync would.
+    func cache(_ item: VaultItem) async {
+        await vault.populate(items: [item], folders: [Folder(id: "work", name: "Work")],
+                             organizations: [], collections: [], syncedAt: Date())
     }
 
     /// A draft of `item` with another name, so it takes the full PUT path and not /partial.
-    private func renamed(_ item: VaultItem, revisionDate: Date? = nil) -> DraftVaultItem {
+    /// `revisionDate` replaces the draft's revision when given.
+    static func renamed(_ item: VaultItem, revisionDate: Date? = nil) -> DraftVaultItem {
         var draft = DraftVaultItem(item)
         draft.name = "Renamed"
         guard let revisionDate else { return draft }
@@ -63,6 +67,13 @@ final class StaleWriteWireTests: XCTestCase {
             content: draft.content, reprompt: draft.reprompt,
             organizationId: draft.organizationId, collectionIds: draft.collectionIds)
     }
+}
+
+/// What `VaultRepositoryImpl.update()` does with the revision of the stored server record: refuses
+/// an edit when it has no readable revision, compares it with the draft's, and leaves Prizm's own
+/// operations alone (openspec change fix-cipher-edit-data-loss, tasks 4.1 to 4.3).
+@MainActor
+final class StaleWriteWireTests: XCTestCase {
 
     // MARK: - Tracer: a readable stored revision is required, in any server shape
 
@@ -73,11 +84,11 @@ final class StaleWriteWireTests: XCTestCase {
             ("2026-10-26T10:00:00Z", Date(timeIntervalSince1970: 1_793_008_800)),
         ]
         for shape in shapes {
-            let rig = await makeRig()
-            let item = login("c1", revisionDate: shape.draft)
-            try await store(item, in: rig, revision: shape.stored)
+            let rig = await StaleWriteRig.make()
+            let item = StaleWriteRig.login("c1", revisionDate: shape.draft)
+            try await rig.storeRecord(of: item, revision: shape.stored)
 
-            _ = try await rig.vault.update(renamed(item))
+            _ = try await rig.vault.update(StaleWriteRig.renamed(item))
 
             XCTAssertEqual(rig.api.updateCipherCallCount, 1, "revision \(shape.stored) reaches the PUT")
         }
@@ -86,12 +97,12 @@ final class StaleWriteWireTests: XCTestCase {
     func testUpdate_missingEmptyUnparsableOrEpochRevision_throwsAndSendsNothing() async throws {
         let revisions: [String?] = [nil, "", "not-a-date", "1970-01-01T00:00:00.000Z"]
         for revision in revisions {
-            let rig = await makeRig()
-            let item = login("c1")
-            try await store(item, in: rig, revision: revision)
+            let rig = await StaleWriteRig.make()
+            let item = StaleWriteRig.login("c1")
+            try await rig.storeRecord(of: item, revision: revision)
 
             do {
-                _ = try await rig.vault.update(renamed(item))
+                _ = try await rig.vault.update(StaleWriteRig.renamed(item))
                 XCTFail("revision \(String(describing: revision)) must refuse the save")
             } catch VaultError.itemRevisionUnavailable {
                 // expected
@@ -102,11 +113,10 @@ final class StaleWriteWireTests: XCTestCase {
     }
 
     func testFolderOnlyChange_withoutStoredRevision_stillUsesPartial() async throws {
-        let rig = await makeRig()
-        let item = login("c1")
-        try await store(item, in: rig, revision: nil)
-        await rig.vault.populate(items: [item], folders: [Folder(id: "work", name: "Work")],
-                                 organizations: [], collections: [], syncedAt: Date())
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1")
+        try await rig.storeRecord(of: item, revision: nil)
+        await rig.cache(item)
         var draft = DraftVaultItem(item)
         draft.folderId = "work"
 
@@ -121,5 +131,226 @@ final class StaleWriteWireTests: XCTestCase {
         XCTAssertEqual(
             VaultError.itemRevisionUnavailable.errorDescription,
             "Prizm couldn't confirm which version of this item you are editing. Lock and unlock the vault, then try again.")
+    }
+
+    // MARK: - Local pre-check: the draft must be based on the stored record
+
+    func testPreCheck_draftOlderThanStoredRecord_throwsConflictWithoutRequest() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1")
+        try await rig.storeRecord(of: item, revision: RepositoryFixtures.serverRevisionString(for: item.revisionDate))
+        let draft = StaleWriteRig.renamed(item)
+        // A sync replaced the stored record after the edit sheet opened.
+        try await rig.storeRecord(of: item, revision: "2026-10-26T10:00:05.000000Z")
+
+        do {
+            _ = try await rig.vault.update(draft)
+            XCTFail("A draft older than the stored record must be refused")
+        } catch VaultError.conflict {
+            // expected
+        }
+
+        XCTAssertEqual(rig.api.updateCipherCallCount, 0, "No request is made")
+        let stored = await rig.store.record(for: "c1")
+        XCTAssertEqual(stored?.revisionDate, "2026-10-26T10:00:05.000000Z", "The stored record is not replaced by the draft")
+    }
+
+    /// The check is equality, not order: it never depends on which clock is ahead.
+    func testPreCheck_draftNewerThanStoredRecord_throwsConflict() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1")
+        try await rig.storeRecord(of: item, revision: RepositoryFixtures.serverRevisionString(for: item.revisionDate))
+        let draft = StaleWriteRig.renamed(item, revisionDate: item.revisionDate.addingTimeInterval(10))
+
+        do {
+            _ = try await rig.vault.update(draft)
+            XCTFail("A draft newer than the stored record must be refused too")
+        } catch VaultError.conflict {
+            // expected
+        }
+
+        XCTAssertEqual(rig.api.updateCipherCallCount, 0)
+    }
+
+    /// Equal after rounding to whole milliseconds, so the six digits the server sends match the
+    /// millisecond a date carries. No server-style tolerance is applied.
+    func testPreCheck_sameMillisecond_passes() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1")
+        try await rig.storeRecord(of: item, revision: "2026-10-26T10:00:00.123456Z")
+
+        _ = try await rig.vault.update(StaleWriteRig.renamed(item))
+
+        XCTAssertEqual(rig.api.updateCipherCallCount, 1)
+    }
+
+    func testPreCheck_oneMillisecondApart_throwsConflict() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1")
+        try await rig.storeRecord(of: item, revision: "2026-10-26T10:00:00.124000Z")
+
+        do {
+            _ = try await rig.vault.update(StaleWriteRig.renamed(item))
+            XCTFail("1 ms apart is another revision")
+        } catch VaultError.conflict {
+            // expected
+        }
+
+        XCTAssertEqual(rig.api.updateCipherCallCount, 0)
+    }
+
+    func testPreCheck_runsAfterTheOrganizationCheck() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1")
+        try await rig.storeRecord(of: item, revision: RepositoryFixtures.serverRevisionString(for: item.revisionDate))
+        var draft = StaleWriteRig.renamed(item, revisionDate: item.revisionDate.addingTimeInterval(10))
+        draft.organizationId = "org-other"
+
+        do {
+            _ = try await rig.vault.update(draft)
+            XCTFail("A draft in another organization must be refused")
+        } catch VaultError.itemRecordUnavailable {
+            // expected: the organization check comes first
+        }
+
+        XCTAssertEqual(rig.api.updateCipherCallCount, 0)
+    }
+
+    // MARK: - Order of the refusals: the missing revision comes before the key work
+
+    /// An unlocked vault with no organization key in its cache; the profile id is seeded unless nil.
+    private func makeRig(profileId: String? = RepositoryFixtures.profileId) async -> StaleWriteRig {
+        let api = MockPrizmAPIClient()
+        let crypto = MockPrizmCryptoService()
+        await crypto.unlockWith(keys: StaleWriteRig.vaultKeys)
+        crypto.stubbedVaultKeys = StaleWriteRig.vaultKeys
+        let store = RawCipherStore()
+        let vault = await RepositoryFixtures.vaultRepository(
+            apiClient: api, crypto: crypto,
+            profileIds: await RepositoryFixtures.profileIds(seededWith: profileId), recordStore: store)
+        return StaleWriteRig(api: api, store: store, vault: vault)
+    }
+
+    private func updateError(_ rig: StaleWriteRig, _ draft: DraftVaultItem) async -> VaultError? {
+        do {
+            _ = try await rig.vault.update(draft)
+            return nil
+        } catch {
+            return error as? VaultError
+        }
+    }
+
+    /// Design D6 orders the checks: edit block, record, organization, revision refusal, pre-check,
+    /// then key work. Each test below makes the revision unreadable AND a later step fail, expects
+    /// the revision refusal, then restores the revision and expects the later failure, so the
+    /// order is what is tested and not the setup.
+    func testMissingRevision_isReportedBeforeAMissingOrganizationKey() async throws {
+        let rig = await makeRig()   // no organization key in the vault's cache
+        let orgId = "org-acme"
+        let item = VaultItem(
+            id: "o1", name: "Shared", isFavorite: false, isDeleted: false, creationDate: Date(),
+            revisionDate: RepositoryFixtures.revisionDate,
+            content: .login(LoginContent(username: "u", password: "p", uris: [], totp: nil, notes: nil, customFields: [])),
+            organizationId: orgId)
+        let orgKeys = [orgId: CryptoKeys(encryptionKey: Data(repeating: 0xAC, count: 32),
+                                         macKey: Data(repeating: 0xCE, count: 32))]
+        let draft = StaleWriteRig.renamed(item)
+
+        try await rig.storeRecord(of: item, revision: nil, orgKeys: orgKeys)
+        let withoutRevision = await updateError(rig, draft)
+        guard case .itemRevisionUnavailable? = withoutRevision else {
+            return XCTFail("Expected itemRevisionUnavailable, got \(String(describing: withoutRevision))")
+        }
+
+        try await rig.storeRecord(of: item, revision: RepositoryFixtures.serverRevisionString(for: item.revisionDate), orgKeys: orgKeys)
+        let withRevision = await updateError(rig, draft)
+        guard case .organizationKeyUnavailable? = withRevision else {
+            return XCTFail("Expected organizationKeyUnavailable, got \(String(describing: withRevision))")
+        }
+        XCTAssertEqual(rig.api.updateCipherCallCount, 0)
+    }
+
+    func testMissingRevision_isReportedBeforeAMissingProfileId() async throws {
+        let rig = await makeRig(profileId: nil)
+        let item = StaleWriteRig.login("c1")
+        let draft = StaleWriteRig.renamed(item)
+
+        try await rig.storeRecord(of: item, revision: nil)
+        let withoutRevision = await updateError(rig, draft)
+        guard case .itemRevisionUnavailable? = withoutRevision else {
+            return XCTFail("Expected itemRevisionUnavailable, got \(String(describing: withoutRevision))")
+        }
+
+        try await rig.storeRecord(of: item, revision: RepositoryFixtures.serverRevisionString(for: item.revisionDate))
+        let withRevision = await updateError(rig, draft)
+        guard case .profileIdUnavailable? = withRevision else {
+            return XCTFail("Expected profileIdUnavailable, got \(String(describing: withRevision))")
+        }
+        XCTAssertEqual(rig.api.updateCipherCallCount, 0)
+    }
+
+    func testMissingRevision_isReportedBeforeAnUnusableItemKey() async throws {
+        let rig = await makeRig()
+        let item = StaleWriteRig.login("c1")
+        let draft = StaleWriteRig.renamed(item)
+        // The record is encrypted under keys the vault does not hold, so the key check fails.
+        let otherKeys = CryptoKeys(encryptionKey: Data(repeating: 0x11, count: 32), macKey: Data(repeating: 0x22, count: 32))
+
+        try await rig.storeRecord(of: item, revision: nil, vaultKeys: otherKeys)
+        let withoutRevision = await updateError(rig, draft)
+        guard case .itemRevisionUnavailable? = withoutRevision else {
+            return XCTFail("Expected itemRevisionUnavailable, got \(String(describing: withoutRevision))")
+        }
+
+        try await rig.storeRecord(of: item, revision: RepositoryFixtures.serverRevisionString(for: item.revisionDate), vaultKeys: otherKeys)
+        let withRevision = await updateError(rig, draft)
+        guard case .itemKeyUnavailable? = withRevision else {
+            return XCTFail("Expected itemKeyUnavailable, got \(String(describing: withRevision))")
+        }
+        XCTAssertEqual(rig.api.updateCipherCallCount, 0)
+    }
+
+    func testTwoEditsInARow_secondPassesThePreCheck() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1")
+        try await rig.storeRecord(of: item, revision: RepositoryFixtures.serverRevisionString(for: item.revisionDate))
+        await rig.cache(item)
+        // The server's answer carries the new revision; the mock alone would echo a request without one.
+        RepositoryFixtures.answerUpdates(of: rig.api, withRevisionString: "2026-10-26T10:00:05.654321Z")
+
+        let saved = try await rig.vault.update(StaleWriteRig.renamed(item))
+        var second = DraftVaultItem(saved)
+        second.name = "Renamed again"
+        _ = try await rig.vault.update(second)
+
+        XCTAssertEqual(rig.api.updateCipherCallCount, 2, "The first answer's revision is stored and cached, so the second draft matches")
+    }
+
+    /// When the refresh after Prizm's own operations fails, none of them may make the next edit look
+    /// stale: they change cache fields other than the revision and never the stored record. The mock
+    /// has no answer for the refresh's GET, so every refresh here fails and the stored record and
+    /// the cached revision stay as they were; the refresh that succeeds is `RevisionRefreshTests`.
+    func testOwnOperationsWhoseRefreshFails_doNotTripThePreCheck() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1")
+        try await rig.storeRecord(of: item, revision: RepositoryFixtures.serverRevisionString(for: item.revisionDate))
+        await rig.cache(item)
+
+        try await rig.vault.deleteItem(id: "c1")
+        try await rig.vault.restoreItem(id: "c1")
+        _ = try await rig.vault.setFavorite(itemId: "c1", isFavorite: true)
+        await rig.vault.updateAttachments(
+            [Attachment(id: "att-1", fileName: "a.txt", encryptedKey: "2.k|k|k", size: 10,
+                        sizeName: "10 B", url: nil, isUploadIncomplete: false)],
+            for: "c1")
+        let latest = try await rig.vault.itemDetail(id: "c1")
+        var draft = DraftVaultItem(latest)
+        draft.name = "Renamed after own operations"
+
+        _ = try await rig.vault.update(draft)
+
+        XCTAssertEqual(rig.api.updateCipherCallCount, 1, "The edit reaches the server, no false conflict")
+        XCTAssertEqual(rig.api.softDeleteCallCount, 1)
+        XCTAssertEqual(rig.api.restoreCallCount, 1)
     }
 }
