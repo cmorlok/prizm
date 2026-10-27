@@ -86,6 +86,17 @@ nonisolated struct RawCipher: Codable {
     /// classify, sorted. Names only, never values. Not a `CodingKey` and never encoded, so a request
     /// can never carry it.
     let unclassifiedKeys: [String]
+    /// Decode-time diagnostic: the payload's `data` is an encrypted-blob record that Prizm cannot
+    /// rebuild, meaning a string holding a JSON object with a top-level `format_version` key (or
+    /// such an object itself). `data` alone is not a blob: the official server sends a legacy `data`
+    /// string on every cipher. Only the presence of the key is read, never its value, and the
+    /// `data` value is not kept (a Bool is all this model holds of it). Not a `CodingKey`, never
+    /// encoded.
+    let hasBlobData: Bool
+    /// Decode-time diagnostic: the payload carries a `partialData` that is not JSON `null`, so the
+    /// server sent this item in part. The official server sends `"partialData": null` on every
+    /// cipher, which does not count. Not a `CodingKey`, never encoded, and the value is not kept.
+    let hasPartialData: Bool
 
     /// Every key this model reads or writes, by construction equal to
     /// `CipherKeys.modelled ∪ CipherKeys.preserved` (a test pins that).
@@ -142,8 +153,31 @@ nonisolated struct RawCipher: Codable {
         // Names only, from a second, dynamic-key view of the same object: `CodingKeys` cannot list
         // keys it does not know. Values are never read, so nothing secret can reach a log or a test
         // message through this property.
-        let allKeys = try decoder.container(keyedBy: WireKey.self).allKeys.map(\.stringValue)
-        unclassifiedKeys = allKeys.filter { !CipherKeys.classified.contains($0) }.sorted()
+        let wire = try decoder.container(keyedBy: WireKey.self)
+        unclassifiedKeys = wire.allKeys.map(\.stringValue)
+            .filter { !CipherKeys.classified.contains($0) }.sorted()
+        // Both flags are read leniently (`try?`): a `data` or `partialData` of any shape must never
+        // abort a sync, which decodes all ciphers or none. The values are parsed into locals and
+        // dropped; only the two Bools below survive, so a request can never carry them.
+        hasBlobData = Self.isBlob(try? wire.decodeIfPresent(JSONValue.self, forKey: WireKey("data")))
+        hasPartialData = wire.contains(WireKey("partialData"))
+            && (try? wire.decode(JSONValue.self, forKey: WireKey("partialData"))) != .null
+    }
+
+    /// Whether a payload's `data` is a blob record: an object with a top-level `format_version` key,
+    /// either as the value itself or as the JSON text of a string. Anything else (not JSON, an array,
+    /// an object without the key, a missing `data`) is not a blob. The key's value is not looked at.
+    private static func isBlob(_ data: JSONValue?) -> Bool {
+        switch data {
+        case .object(let members):
+            return members["format_version"] != nil
+        case .string(let text):
+            guard let parsed = try? JSONDecoder().decode(JSONValue.self, from: Data(text.utf8)),
+                  case .object(let members) = parsed else { return false }
+            return members["format_version"] != nil
+        default:
+            return false
+        }
     }
 
     /// Writes every field this model holds, except `attachments`. Keys only a response carries
@@ -186,7 +220,7 @@ nonisolated struct RawCipher: Codable {
          collectionIds: [String] = [], attachments: [AttachmentDTO]?,
          encryptedFor: String? = nil, archivedDate: JSONValue? = nil,
          passwordHistory: JSONValue? = nil, lastKnownRevisionDate: String? = nil,
-         unclassifiedKeys: [String] = []) {
+         unclassifiedKeys: [String] = [], hasBlobData: Bool = false, hasPartialData: Bool = false) {
         self.id             = id
         self.organizationId = organizationId
         self.folderId       = folderId
@@ -212,6 +246,8 @@ nonisolated struct RawCipher: Codable {
         self.passwordHistory = passwordHistory
         self.lastKnownRevisionDate = lastKnownRevisionDate
         self.unclassifiedKeys = unclassifiedKeys
+        self.hasBlobData = hasBlobData
+        self.hasPartialData = hasPartialData
     }
 }
 

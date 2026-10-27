@@ -17,7 +17,7 @@ final class VaultItemCopyTests: XCTestCase {
         folderId: "folder-1",
         organizationId: "org-1",
         collectionIds: ["col-1", "col-2"],
-        editBlock: .hasOwnKey
+        editBlock: .unsupportedFormat
     )
 
     func testWithFolderId_changesOnlyTheFolder() {
@@ -46,7 +46,7 @@ final class VaultItemCopyTests: XCTestCase {
 
         XCTAssertFalse(restored.isDeleted)
         XCTAssertEqual(restored, expected(isDeleted: false))
-        XCTAssertEqual(restored.editBlock, .hasOwnKey)
+        XCTAssertEqual(restored.editBlock, .unsupportedFormat)
     }
 
     func testWithAttachments_changesOnlyTheAttachments() {
@@ -54,7 +54,7 @@ final class VaultItemCopyTests: XCTestCase {
 
         XCTAssertTrue(replaced.attachments.isEmpty)
         XCTAssertEqual(replaced, expected(attachments: []))
-        XCTAssertEqual(replaced.editBlock, .hasOwnKey)
+        XCTAssertEqual(replaced.editBlock, .unsupportedFormat)
     }
 
     func testWithCollectionIds_changesOnlyTheCollections() {
@@ -62,12 +62,12 @@ final class VaultItemCopyTests: XCTestCase {
 
         XCTAssertEqual(patched.collectionIds, ["col-9"])
         XCTAssertEqual(patched, expected(collectionIds: ["col-9"]))
-        XCTAssertEqual(patched.editBlock, .hasOwnKey)
+        XCTAssertEqual(patched.editBlock, .unsupportedFormat)
     }
 
     func testFolderAndFavoriteCopies_keepTheEditBlock() {
-        XCTAssertEqual(item.with(folderId: "x").editBlock, .hasOwnKey)
-        XCTAssertEqual(item.with(isFavorite: true).editBlock, .hasOwnKey)
+        XCTAssertEqual(item.with(folderId: "x").editBlock, .unsupportedFormat)
+        XCTAssertEqual(item.with(isFavorite: true).editBlock, .unsupportedFormat)
     }
 
     func testInitializer_editBlockDefaultsToNil() {

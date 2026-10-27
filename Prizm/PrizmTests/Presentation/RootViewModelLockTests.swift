@@ -165,11 +165,11 @@ final class RootViewModelLockTests: XCTestCase {
     func testItemMenuEdit_isDisabledForAnItemThatCannotBeEdited() async throws {
         let browser = try await openVaultBrowser()
         let blocked = VaultItem(
-            id: "keyed-1", name: "Keyed", isFavorite: false, isDeleted: false,
+            id: "blocked-1", name: "Blocked", isFavorite: false, isDeleted: false,
             creationDate: .now, revisionDate: .now,
             content: .login(LoginContent(username: "bob", password: "pw", uris: [], totp: nil,
                                          notes: nil, customFields: [])),
-            editBlock: .hasOwnKey
+            editBlock: .unsupportedFormat
         )
 
         browser.itemSelection = blocked

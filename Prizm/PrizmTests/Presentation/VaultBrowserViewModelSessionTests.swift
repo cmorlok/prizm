@@ -40,11 +40,11 @@ final class VaultBrowserViewModelSessionTests: XCTestCase {
 
     func testTriggerEdit_ignoresAnItemThatCannotBeEdited() {
         let blocked = VaultItem(
-            id: "keyed-1", name: "Keyed", isFavorite: false, isDeleted: false,
+            id: "blocked-1", name: "Blocked", isFavorite: false, isDeleted: false,
             creationDate: .now, revisionDate: .now,
             content: .login(LoginContent(username: "bob", password: "pw", uris: [], totp: nil,
                                          notes: nil, customFields: [])),
-            editBlock: .hasOwnKey
+            editBlock: .unsupportedFormat
         )
         let before = sut.editTrigger
 

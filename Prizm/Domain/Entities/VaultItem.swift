@@ -8,12 +8,32 @@ nonisolated enum EditBlockReason: Equatable, Hashable, Sendable {
     /// goes when saves are written with the item's own key.
     case hasOwnKey
 
+    /// The server stores this item as an encrypted blob in a format Prizm does not understand
+    /// (its legacy `data` field holds a record with a `format_version`). Saving the typed fields
+    /// would make the official server ignore them or overwrite the blob.
+    case unsupportedFormat
+
+    /// The server sent only part of this item (a non-null `partialData`), so Prizm does not hold
+    /// the whole record and a save would write back less than the server has.
+    case partiallyAvailable
+
+    /// The item's type says it has a login, card, identity or SSH key section, but the server sent
+    /// none, so there is nothing for Prizm to rebuild the item from. Saving would write an empty
+    /// section over whatever the server holds.
+    case unmappable
+
     /// Plain language plus a next step, no jargon. Shown in the detail pane, read by VoiceOver as
     /// the Edit button's hint, and used as the error text when a save is refused.
     var userMessage: String {
         switch self {
         case .hasOwnKey:
             return "Prizm can't edit items with their own encryption key yet. Edit it in the Bitwarden web vault or browser extension."
+        case .unsupportedFormat:
+            return "This item uses a format Prizm can't edit yet. Edit it in the Bitwarden web vault or browser extension."
+        case .partiallyAvailable:
+            return "Prizm received only part of this item, so it can't be edited here. Edit it in the Bitwarden web vault or browser extension."
+        case .unmappable:
+            return "Some of this item's details are missing, so Prizm can't edit it without losing data. Edit it in the Bitwarden web vault or browser extension."
         }
     }
 }

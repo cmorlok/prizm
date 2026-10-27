@@ -193,14 +193,45 @@ nonisolated final class CipherMapper: Sendable {
 
     /// Why Prizm must not save `raw` as it is, or nil when it can.
     ///
-    /// Computed here, from the record, so Presentation never looks at raw shapes. Today the only
-    /// reason is an item key: the write path does not yet send `key` or encrypt with it, so a save
-    /// would put fields under the vault or organization key that the server and other clients read
-    /// under the item key. The own-key reason goes when saves use the item key; further reasons
-    /// (formats Prizm cannot rebuild) are added with the lasting guard.
-    /// Nothing is logged per item: every item can be keyed.
+    /// Computed here, from the record, so Presentation never looks at raw shapes. In order:
+    /// - a blob (`hasBlobData`): the official server stores a `data` that carries a `format_version`
+    ///   verbatim and ignores the typed fields, so a save would not change the item;
+    /// - a partial item (`hasPartialData`): Prizm does not hold the whole record;
+    /// - a type 1, 3, 4 or 5 item without its login, card, identity or SSH key object: nothing to
+    ///   rebuild the section from. A secure note (type 2) is mappable without its object, because
+    ///   Prizm writes `{ "type": 0 }` back;
+    /// - an item key (`hasOwnKey`): the write path does not yet send `key` or encrypt with it. This
+    ///   one goes when saves use the item key.
+    ///
+    /// The lasting reasons come first so the message stays right after the own-key reason is gone.
+    /// A `data` alone and a null `partialData` do not block: the official server sends both on every
+    /// cipher (source-reviewed, see `cipher-official-shaped.json`), so blocking on either would make
+    /// every item on that server read-only.
     func editBlock(for raw: RawCipher) -> EditBlockReason? {
-        raw.key != nil ? .hasOwnKey : nil
+        if let lasting = lastingEditBlock(for: raw) {
+            Self.logger.debug("Cipher \(raw.id, privacy: .public) cannot be edited: \(String(describing: lasting), privacy: .public)")
+            return lasting
+        }
+        // Not logged: every keyed item has it.
+        return raw.key != nil ? .hasOwnKey : nil
+    }
+
+    private func lastingEditBlock(for raw: RawCipher) -> EditBlockReason? {
+        if raw.hasBlobData { return .unsupportedFormat }
+        if raw.hasPartialData { return .partiallyAvailable }
+        if lacksItsTypeObject(raw) { return .unmappable }
+        return nil
+    }
+
+    /// True for a login, card, identity or SSH key item whose own section is absent or null.
+    private func lacksItsTypeObject(_ raw: RawCipher) -> Bool {
+        switch raw.type {
+        case 1: return raw.login == nil
+        case 3: return raw.card == nil
+        case 4: return raw.identity == nil
+        case 5: return raw.sshKey == nil
+        default: return false
+        }
     }
 
     // MARK: - Private: Content dispatch
