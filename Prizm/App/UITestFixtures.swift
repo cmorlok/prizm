@@ -84,7 +84,89 @@ enum UITestFixtures {
             } else {
                 keys = vaultKeys
             }
-            return try! mapper.toNewRawCipher(DraftVaultItem(item), encryptedWith: keys, encryptedFor: "ui-test-seed")
+            let record = try! mapper.toNewRawCipher(DraftVaultItem(item), encryptedWith: keys, encryptedFor: "ui-test-seed")
+            // The UI-test vault's records follow the same rule as the server's: each carries its
+            // item's revision, which the save path relies on to compare revisions. Re-encoding a
+            // fixed record cannot fail, so a failure traps in this DEBUG seam, like the other
+            // fixture builders.
+            return try! withRevision(record, serverRevisionString(for: item.revisionDate))
+        }
+    }
+
+    /// `date` the way Vaultwarden 1.37.4 writes revisions: ISO-8601 UTC with six fractional digits
+    /// and `Z`. The sixth digit is always zero because the app compares revisions at millisecond
+    /// resolution. The count is rounded because a decimal millisecond can be inexact in a `Double`:
+    /// a date built from the reference date, as the ISO-8601 parser does, can land a hair below the
+    /// whole millisecond (`1_793_008_800.0019999`), and truncating it would write `.001999Z`.
+    ///
+    /// The one definition of the stamped format: the unit tests' `RepositoryFixtures` use it too, so
+    /// the UI-test vault and the unit tests cannot drift apart on what the revision pre-check parses.
+    nonisolated static func serverRevisionString(for date: Date) -> String {
+        let milliseconds = Int64((date.timeIntervalSince1970 * 1000).rounded())
+        let wholeSeconds = Int64((Double(milliseconds) / 1000).rounded(.down))
+        let fraction = milliseconds - wholeSeconds * 1000
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let seconds = formatter.string(from: Date(timeIntervalSince1970: Double(wholeSeconds)))
+        // Drop the formatter's trailing "Z" and put the fraction in front of it.
+        return String(seconds.dropLast()) + "." + String(format: "%03d", fraction) + "000Z"
+    }
+
+    /// `record` with another `revisionDate`. The create path writes none and the wire model has no
+    /// setter, so the record is re-made through its JSON. Shared with the unit tests' fixtures, which
+    /// report a failure instead of trapping.
+    nonisolated static func withRevision(_ record: RawCipher, _ revision: String) throws -> RawCipher {
+        let data = try JSONEncoder().encode(record)
+        guard var json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: [], debugDescription: "Record \(record.id) did not encode to a JSON object"))
+        }
+        json["revisionDate"] = revision
+        return try JSONDecoder().decode(RawCipher.self, from: JSONSerialization.data(withJSONObject: json))
+    }
+
+    // MARK: - Conflict scenarios
+
+    /// How the UI-test vault answers a save of the edited note, chosen by `--ui-test-conflict=<value>`.
+    ///
+    /// The seeded vault has no server, so journeys that save are skipped. In every scenario Save
+    /// reports that the item changed elsewhere; the scenario decides what the sync that follows finds.
+    enum ConflictScenario: String, Equatable {
+        /// The sync works and the note has changed (banner: "Synced", reload enabled).
+        case synced
+        /// The first sync fails, then the next one works like `synced` (banner shows the sync error).
+        case syncFailsOnce = "sync-fails-once"
+        /// The sync works and the note is gone (banner: item gone, Close).
+        case gone
+    }
+
+    /// The value of `--ui-test-conflict=`, or nil when it is absent or not a known scenario.
+    static func conflictScenario(from arguments: [String]) -> ConflictScenario? {
+        let prefix = "--ui-test-conflict="
+        guard let argument = arguments.first(where: { $0.hasPrefix(prefix) }) else { return nil }
+        return ConflictScenario(rawValue: String(argument.dropFirst(prefix.count)))
+    }
+
+    static var conflictScenario: ConflictScenario? { conflictScenario(from: CommandLine.arguments) }
+
+    /// The item the scenarios change or remove: the secure note "Test Note".
+    static let conflictItemId = "note1"
+
+    /// `conflictItemId` as another device left it: other name and notes, later revision.
+    static var changedConflictItem: VaultItem {
+        VaultItem(
+            id: conflictItemId, name: "Test Note (changed elsewhere)", isFavorite: false, isDeleted: false,
+            creationDate: Date(timeIntervalSince1970: 1_700_000_000),
+            revisionDate: Date(timeIntervalSince1970: 1_700_000_060),
+            content: .secureNote(SecureNoteContent(notes: "Changed on another device.", customFields: []))
+        )
+    }
+
+    /// The fixture items as the server holds them after the conflicting change.
+    static func itemsAfterConflict(_ scenario: ConflictScenario) -> [VaultItem] {
+        items.compactMap { item in
+            guard item.id == conflictItemId else { return item }
+            return scenario == .gone ? nil : changedConflictItem
         }
     }
 
@@ -226,6 +308,43 @@ enum UITestFixtures {
             revisionDate: Date(timeIntervalSince1970: 1_700_000_000),
             content: content, attachments: attachments
         )
+    }
+}
+
+// MARK: - Scripted use cases for the conflict scenarios
+
+/// A save that always fails with `VaultError.conflict`, so a journey can reach the conflict banner
+/// without a server. Used only with `--ui-test-conflict=` (see `UITestFixtures.ConflictScenario`);
+/// nothing here exists in Release builds.
+final class UITestConflictEditUseCase: EditVaultItemUseCase {
+    func execute(draft: DraftVaultItem) async throws -> VaultItem {
+        throw VaultError.conflict
+    }
+}
+
+/// The sync that follows a scripted conflict: instead of fetching, it puts the vault in the state
+/// the scenario describes (the note changed or removed), or fails once first.
+final class UITestConflictSyncUseCase: SyncUseCase {
+    private let vault: any VaultRepository
+    private let scenario: UITestFixtures.ConflictScenario
+    private var hasFailed = false
+
+    init(vault: any VaultRepository, scenario: UITestFixtures.ConflictScenario) {
+        self.vault = vault
+        self.scenario = scenario
+    }
+
+    func execute(progress: @Sendable @escaping (String) -> Void) async throws -> SyncResult {
+        if scenario == .syncFailsOnce, !hasFailed {
+            hasFailed = true
+            throw SyncError.networkUnavailable
+        }
+        let items = UITestFixtures.itemsAfterConflict(scenario)
+        let now = Date()
+        await vault.populate(items: items, folders: UITestFixtures.folders,
+                             organizations: UITestFixtures.organizations,
+                             collections: UITestFixtures.collections, syncedAt: now)
+        return SyncResult(syncedAt: now, totalCiphers: items.count, failedDecryptionCount: 0)
     }
 }
 #endif

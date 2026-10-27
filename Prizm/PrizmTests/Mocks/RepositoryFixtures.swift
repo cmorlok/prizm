@@ -29,22 +29,11 @@ enum RepositoryFixtures {
     /// `nonisolated` so a test class can use it in a stored property's default value.
     nonisolated static let revisionDate = Date(timeIntervalSince1970: 1_793_008_800.123)
 
-    /// `date` in the shape Vaultwarden 1.37.4 writes revisions: ISO-8601 UTC with six fractional
-    /// digits and `Z`, for example `2026-10-26T18:54:01.393118Z`. The sixth digits are always zero
-    /// here because the app compares revisions at millisecond resolution.
-    ///
-    /// The millisecond count is rounded because a decimal millisecond can be inexact in a `Double`:
-    /// a date built from the reference date, as the ISO-8601 parser does, can land a hair below the
-    /// whole millisecond (`1_793_008_800.0019999`), and truncating it would write `.001999Z`.
+    /// `date` in the shape Vaultwarden 1.37.4 writes revisions, for example
+    /// `2026-10-26T18:54:01.393000Z`. Defined once, in the UI-test vault's
+    /// `UITestFixtures.serverRevisionString(for:)`, so both kinds of test stamp the same format.
     nonisolated static func serverRevisionString(for date: Date) -> String {
-        let milliseconds = Int64((date.timeIntervalSince1970 * 1000).rounded())
-        let wholeSeconds = Int64((Double(milliseconds) / 1000).rounded(.down))
-        let fraction = milliseconds - wholeSeconds * 1000
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        let seconds = formatter.string(from: Date(timeIntervalSince1970: Double(wholeSeconds)))
-        // Drop the formatter's trailing "Z" and append the fraction in front of it.
-        return String(seconds.dropLast()) + "." + String(format: "%03d", fraction) + "000Z"
+        UITestFixtures.serverRevisionString(for: date)
     }
 
     /// A holder seeded with `id`, or an empty one when `id` is nil.
@@ -171,17 +160,11 @@ enum RepositoryFixtures {
         }
     }
 
-    /// `record` with another `revisionDate`. The create path writes none, and the wire model has no
-    /// setter, so the record is re-made through its JSON.
+    /// `record` with another `revisionDate` (`UITestFixtures.withRevision`, the one definition).
     ///
     /// Also what a test that saves twice uses for the server's answer to the first save: the API mock
     /// echoes the request, which carries no revision, and a server record always has one.
     nonisolated static func withRevision(_ record: RawCipher, _ revision: String) throws -> RawCipher {
-        let data = try JSONEncoder().encode(record)
-        guard var json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw SeedError(description: "Record of item \(record.id) did not encode to a JSON object")
-        }
-        json["revisionDate"] = revision
-        return try JSONDecoder().decode(RawCipher.self, from: JSONSerialization.data(withJSONObject: json))
+        try UITestFixtures.withRevision(record, revision)
     }
 }

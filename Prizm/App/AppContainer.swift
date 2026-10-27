@@ -30,6 +30,11 @@ final class AppContainer: ObservableObject {
     #if DEBUG
     /// The one record store, also held here so the UI-test seam can fill it (`seedUITestRecords`).
     private let uiTestRecordStore: RawCipherStore
+    /// Scripted save and sync for `--ui-test-conflict=`; nil in every other launch, which uses the
+    /// real use cases. The seeded vault has no server, so these let UI journeys reach the conflict
+    /// banner.
+    private let uiTestConflictEdit: (any EditVaultItemUseCase)?
+    private let uiTestConflictSync: (any SyncUseCase)?
     #endif
 
     // MARK: - Domain repositories (Data implementations)
@@ -144,6 +149,13 @@ final class AppContainer: ObservableObject {
         self.vaultStore      = vault
         #if DEBUG
         self.uiTestRecordStore = recordStore
+        if UITestFixtures.isEnabled, let scenario = UITestFixtures.conflictScenario {
+            self.uiTestConflictEdit = UITestConflictEditUseCase()
+            self.uiTestConflictSync = UITestConflictSyncUseCase(vault: vault, scenario: scenario)
+        } else {
+            self.uiTestConflictEdit = nil
+            self.uiTestConflictSync = nil
+        }
         #endif
         self.faviconLoader   = FaviconLoader()
         self.vaultKeyCache   = keyCache
@@ -220,7 +232,12 @@ final class AppContainer: ObservableObject {
 
     /// Creates a `VaultBrowserViewModel` backed by the live vault store.
     func makeVaultBrowserViewModel() -> VaultBrowserViewModel {
-        VaultBrowserViewModel(
+        #if DEBUG
+        let sync: any SyncUseCase = uiTestConflictSync ?? syncUseCase
+        #else
+        let sync: any SyncUseCase = syncUseCase
+        #endif
+        return VaultBrowserViewModel(
             vault:            vaultStore,
             search:           searchVaultUseCase,
             delete:           deleteVaultItemUseCase,
@@ -238,7 +255,7 @@ final class AppContainer: ObservableObject {
             deleteCollection: deleteCollectionUseCase,
             syncTimestamp:    syncTimestampRepository,
             getLastSyncDate:  getLastSyncDateUseCase,
-            sync:             syncUseCase
+            sync:             sync
         )
     }
 
@@ -250,8 +267,13 @@ final class AppContainer: ObservableObject {
                                folders: [Folder] = [],
                                organizations: [Organization] = [],
                                collections: [OrgCollection] = []) -> ItemEditViewModel {
-        ItemEditViewModel(item: item, useCase: editVaultItemUseCase,
-                          folders: folders, organizations: organizations, collections: collections)
+        #if DEBUG
+        let useCase: any EditVaultItemUseCase = uiTestConflictEdit ?? editVaultItemUseCase
+        #else
+        let useCase: any EditVaultItemUseCase = editVaultItemUseCase
+        #endif
+        return ItemEditViewModel(item: item, useCase: useCase,
+                                 folders: folders, organizations: organizations, collections: collections)
     }
 
     /// Creates an `ItemEditViewModel` in create mode for the given item type.
