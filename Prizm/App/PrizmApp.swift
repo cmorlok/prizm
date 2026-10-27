@@ -176,6 +176,9 @@ struct PrizmApp: App {
                     // Wire the list-pane refresh callback to the shared VaultBrowserViewModel.
                     // Ignores a save that completes after the vault locked.
                     vm.onSaveSuccess = vaultBrowserVM.saveHandler()
+                    // The resync and the lookup run in the vault browser; the sheet gets no use case.
+                    vm.onConflict = { await vaultBrowserVM.resyncAfterConflict() }
+                    vm.latestItem = { await vaultBrowserVM.latestItem(id: $0) }
                     return vm
                 },
                 makeCreateViewModel: { [vaultBrowserVM = rootVM.vaultBrowserVM] type, contextId in

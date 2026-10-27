@@ -25,8 +25,28 @@ final class ItemEditViewModel: ObservableObject {
     @Published var draft: DraftVaultItem
 
     /// `true` while the save request is in-flight. Used to disable Save / ⌘S and
-    /// change the Save button label to "Saving…".
+    /// change the Save button label to "Saving…". Set synchronously in `save()`, so a second
+    /// click or ⌘S in the same run-loop turn finds `canSave` false and sends nothing.
     @Published private(set) var isSaving: Bool = false
+
+    /// Where the sheet stands after the server rejected a save because the item changed
+    /// elsewhere. Only an explicit reload leaves a conflict state; Save never does.
+    ///
+    /// - `none`: no conflict. The sheet shows no error, or a save error that Save may retry.
+    /// - `syncing`: the vault is syncing to learn what the server holds.
+    /// - `synced`: the sync worked and the item still exists; reload can refill the sheet.
+    /// - `syncFailed`: the sync failed with this message; reload starts a new sync.
+    /// - `itemGone`: the synced vault no longer has the item, or has it in Trash.
+    enum ConflictState: Equatable {
+        case none
+        case syncing
+        case synced
+        case syncFailed(String)
+        case itemGone
+    }
+
+    /// The conflict state; `.none` outside a conflict.
+    @Published private(set) var conflict: ConflictState = .none
 
     /// Non-nil when the save request failed. Shown as an inline error banner.
     @Published private(set) var saveError: String? = nil
@@ -36,9 +56,12 @@ final class ItemEditViewModel: ObservableObject {
 
     // MARK: - Derived state
 
-    /// `true` when the Name field is non-empty and no save is in-flight.
+    /// `true` when the Name field is non-empty, no save is in-flight and no conflict is open.
+    ///
+    /// The conflict check lives here and not in the toolbar button: Item > Save and its shortcut
+    /// reach `save()` through the vault browser without the button, so only this guard blocks them.
     var canSave: Bool {
-        !draft.name.trimmingCharacters(in: .whitespaces).isEmpty && !isSaving
+        !draft.name.trimmingCharacters(in: .whitespaces).isEmpty && !isSaving && conflict == .none
     }
 
     /// Non-nil when `draft.name` is blank, triggering inline validation.
@@ -69,6 +92,13 @@ final class ItemEditViewModel: ObservableObject {
     /// Called on save success with the server-confirmed `VaultItem` so the caller
     /// (VaultBrowserViewModel or parent) can refresh the list pane.
     var onSaveSuccess: ((VaultItem) -> Void)?
+
+    /// Syncs the vault after a conflict and reports whether that worked. Set by the app for edit
+    /// sheets only (a new item cannot conflict); the sheet has no sync use case of its own.
+    var onConflict: (() async -> ConflictResync)?
+
+    /// Looks up an item by id in the synced vault. Set by the app together with `onConflict`.
+    var latestItem: ((String) async -> LatestItem)?
 
     /// Available folders for the folder picker in the edit sheet.
     let folders: [Folder]
@@ -120,10 +150,12 @@ final class ItemEditViewModel: ObservableObject {
     /// Validates, calls the use case, handles success/failure.
     func save() {
         guard canSave else { return }
+        // Marked in progress before the task starts: a second call in the same turn is refused by
+        // `canSave` above, so one click sends one request.
+        isSaving  = true
+        saveError = nil
         Task { @MainActor [weak self] in
             guard let self else { return }
-            isSaving  = true
-            saveError = nil
             do {
                 let saved: VaultItem
                 let toSave = draftToSave()
@@ -138,11 +170,58 @@ final class ItemEditViewModel: ObservableObject {
                 clearDraft()
                 isDismissed = true
                 logger.info("Item saved: \(self.draft.id, privacy: .public)")
+            } catch VaultError.conflict {
+                // The sheet may have been dismissed by a lock while the request was out: show
+                // nothing and sync nothing for a vault that is gone.
+                if isDismissed {
+                    logger.info("Conflict ignored: the sheet was dismissed meanwhile")
+                    isSaving = false
+                    return
+                }
+                saveError = VaultError.conflict.localizedDescription
+                conflict  = .syncing
+                // The save itself is over. During the sync Discard and Esc must work and Save
+                // keeps its normal title; `conflict` keeps Save blocked.
+                isSaving = false
+                logger.info("Save rejected, item changed elsewhere: \(self.draft.id, privacy: .public)")
+                await runConflictResync()
+                return
             } catch {
-                saveError = error.localizedDescription
-                logger.error("Save failed: \(ErrorLog.describe(error), privacy: .public)")
+                if isDismissed {
+                    logger.info("Save error ignored: the sheet was dismissed meanwhile")
+                } else {
+                    saveError = error.localizedDescription
+                    logger.error("Save failed: \(ErrorLog.describe(error), privacy: .public)")
+                }
             }
             isSaving = false
+        }
+    }
+
+    /// Syncs through the vault browser, then moves `conflict` to `.synced`, `.syncFailed` or
+    /// `.itemGone`. Never touches `isSaving`: a resync is not a save.
+    private func runConflictResync() async {
+        guard let onConflict, let latestItem else {
+            // Create mode cannot conflict and the app wires both closures for edit sheets, so this
+            // is a wiring mistake; the sheet stays blocked rather than refilling from nothing.
+            logger.error("Conflict resync unavailable: closures not set")
+            conflict = .syncFailed("")
+            return
+        }
+        let id = draft.id
+        let result = await onConflict()
+        guard !isDismissed else { return }
+        switch result {
+        case .failed(let message):
+            logger.error("Conflict resync failed")
+            conflict = .syncFailed(message)
+        case .synced:
+            let latest = await latestItem(id)
+            guard !isDismissed else { return }
+            switch latest {
+            case .gone:      conflict = .itemGone
+            case .available: conflict = .synced
+            }
         }
     }
 
