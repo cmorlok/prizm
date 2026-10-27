@@ -43,6 +43,14 @@ nonisolated final class CipherMapper: Sendable {
 
     private let attachmentMapper = AttachmentMapper()
 
+    /// The clock for the dates Prizm writes itself (`login.passwordRevisionDate`). Injected so tests
+    /// get a fixed time; production always uses the current time.
+    private let now: @Sendable () -> Date
+
+    init(now: @escaping @Sendable () -> Date = Date.init) {
+        self.now = now
+    }
+
     private static let logger = Logger(subsystem: "com.prizm", category: "CipherMapper")
 
     private nonisolated(unsafe) static let iso8601: ISO8601DateFormatter = {
@@ -503,7 +511,7 @@ nonisolated final class CipherMapper: Sendable {
     ///   key text field. Plain values from the draft: folder, favorite, reprompt, organization and
     ///   collections.
     /// - Copied from `base` as received, never decrypted: `key` (byte for byte, never re-wrapped),
-    ///   `passwordHistory`, `archivedDate`, `login.passwordRevisionDate`, `sshKey.keyFingerprint`
+    ///   `passwordHistory`, `archivedDate`, `sshKey.keyFingerprint`
     ///   and the unknown keys of the login, each website, card, identity, SSH key and each custom
     ///   field (passkeys and `autofillOnPageLoad` among them). They are ciphertext or plain flags
     ///   that Prizm has no reason to read; decrypting a passkey or a history entry to validate it
@@ -515,6 +523,8 @@ nonisolated final class CipherMapper: Sendable {
     ///   stale-write protection does, so a stored value could revert the user's change. The
     ///   response-only keys (`data`, the legacy `login.uri`, `edit`, `permissions`) never reach the
     ///   model, so they cannot be sent.
+    /// - Set by Prizm: `login.passwordRevisionDate` is the save time when the password was changed,
+    ///   added or cleared, else the stored value as received (`passwordRevisionDate(newPassword:base:keys:)`).
     /// - Intentionally NOT done: re-encrypting only the fields that changed; adding, dropping or
     ///   re-wrapping the item key (the SDK re-wraps a key under the key it was read with; Prizm
     ///   keeps it unchanged, and giving new items a key is `per-item-key-on-create`); appending to
@@ -642,11 +652,55 @@ nonisolated final class CipherMapper: Sendable {
             password: try c.password.map { try encryptString($0, keys: keys) },
             uris:     rawURIs,
             totp:     try c.totp.map { try encryptString($0, keys: keys) },
-            // From the stored login as received: kept until a later rule sets the date on a password
-            // change. `extras` carries the passkeys, `autofillOnPageLoad` and unknown keys.
-            passwordRevisionDate: base?.passwordRevisionDate,
+            passwordRevisionDate: try passwordRevisionDate(newPassword: c.password, base: base, keys: keys),
+            // From the stored login as received: the passkeys, `autofillOnPageLoad` and unknown keys.
             extras:   base?.extras ?? [:]
         )
+    }
+
+    /// The `login.passwordRevisionDate` to send: the save time when the password was changed, added
+    /// or cleared, otherwise the stored value exactly as received. Nil on create (no stored login):
+    /// the server stamps a new item itself.
+    ///
+    /// - Rule and source: Bitwarden SDK `login.rs`, `detect_password_change`. A missing original
+    ///   login keeps the date; two empty passwords keep it; an empty original with a new password
+    ///   gets now; equal passwords keep the original date; any other difference (changed or
+    ///   cleared) gets now. A missing and an empty password count as the same (`?? ""`).
+    /// - Why plaintext: every save re-encrypts with a fresh IV, so comparing ciphertext would
+    ///   report a change on every edit. The stored password is decrypted under the item's effective
+    ///   key for this one comparison, held in a `Data` local that is zeroed before returning, never
+    ///   logged and never written back. A stored password that is not valid UTF-8 compares as
+    ///   changed; such an item cannot be mapped for display, so it never reaches an edit.
+    /// - Never compares dates: an unchanged password returns the typed stored value, and a
+    ///   wrong-typed stored value that sits in `extras` goes back through `extras` untouched; a
+    ///   changed password sets the typed field, which `WireWriter` writes before `extras` and so
+    ///   once only.
+    /// - Format: ISO-8601 UTC with milliseconds and `Z` (RFC 3339), the formatter this mapper already
+    ///   uses for dates. The SDK writes nanoseconds and `+00:00`. Vaultwarden 1.37.4 accepts this
+    ///   form (tested live); the official server is source-reviewed, not tested.
+    /// - Intentionally NOT done: the replaced password is not appended to `passwordHistory`
+    ///   (the separate `password-history` change).
+    ///
+    /// - Throws: `CipherMapperError.storedValueUnreadable("password")` when the stored password does
+    ///   not decrypt under `keys` (a mixed-key record that passed the name check); the save fails.
+    private func passwordRevisionDate(newPassword: String?, base: RawLoginData?, keys: CryptoKeys) throws -> String? {
+        guard let base else { return nil }
+        // Compared as bytes, not as `String`: a `String` cannot be zeroed, `Data` can (Constitution III).
+        // The typed password still arrives as a `String` from the draft; only the copies made here
+        // are wiped.
+        var stored = Data()
+        defer { stored.resetBytes(in: stored.indices) }
+        if let encrypted = base.password {
+            do {
+                stored = try EncString(string: encrypted).decrypt(keys: keys)
+            } catch {
+                throw CipherMapperError.storedValueUnreadable("password")
+            }
+        }
+        var typed = Data((newPassword ?? "").utf8)
+        defer { typed.resetBytes(in: typed.indices) }
+        if stored == typed { return base.passwordRevisionDate }
+        return Self.iso8601.string(from: now())
     }
 
     // MARK: - Private: Card reverse map
