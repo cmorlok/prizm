@@ -130,6 +130,8 @@ nonisolated enum AccessibilityID {
         static let deleteButton  = "edit.button.delete"
         /// The inline error banner shown on save failure.
         static let errorBanner   = "edit.errorBanner"
+        /// The note in ItemDetailView that says why Edit is disabled for an item.
+        static let blockedNote   = "edit.blockedNote"
     }
 
     // MARK: - Trash (delete-restore-items)

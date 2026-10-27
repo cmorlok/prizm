@@ -78,6 +78,7 @@ Prizm is a native macOS SwiftUI application. It inherits platform accessibility 
 
 - **Verification code semantics** — Each code is one VoiceOver element with the label "Verification code for <item>" and a value of the digits (read individually) plus seconds remaining. The value updates silently as the code rotates (no announcement, to avoid flooding VoiceOver), so users must re-focus the element to hear the new code. The countdown ring animation is not yet adjusted for Reduce Motion.
 1. **Drag-and-drop lacks keyboard alternative** (2.1.1) — Folder drag-and-drop operations cannot be performed via keyboard alone. Items can be moved to folders via the edit form as a workaround.
+2. **The Edit button of an item Prizm cannot edit is disabled** (2.1.1, 4.1.2) — Prizm refuses to edit an item shape it cannot write back without losing data. The toolbar Edit button of such an item is disabled, so it cannot be reached with the keyboard and shows no hover help (observed by hand). The reason is shown as a note in the detail pane and is also set as the button's accessibility hint; that VoiceOver reads the hint of a disabled button has not been confirmed.
 
 ---
 

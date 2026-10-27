@@ -213,7 +213,9 @@ struct VaultBrowserView: View {
                                 Button("Edit") {
                                     viewModel.triggerEdit()
                                 }
-                                .disabled(viewModel.editSheetOpen)
+                                .disabled(viewModel.editSheetOpen || item.editBlock != nil)
+                                // VoiceOver reads why a disabled Edit is disabled (Constitution VIII).
+                                .accessibilityHint(item.editBlock?.userMessage ?? "")
                                 .keyboardShortcut("e", modifiers: .command)
                                 .accessibilityIdentifier(AccessibilityID.Edit.editButton)
                             }

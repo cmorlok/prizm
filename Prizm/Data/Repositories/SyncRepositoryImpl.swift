@@ -252,11 +252,15 @@ actor SyncRepositoryImpl: SyncRepository {
                     } catch CipherMapperError.organisationCipherSkipped {
                         // Org key not in snapshot — org key unwrap failed for this org.
                         orgCipherFailedCount += 1
+                        // An org item that cannot be read is dropped and counted like a personal
+                        // one; `decryptList` skipped the org items, so none is in `failedCount` yet.
+                        failedCount += 1
                         if DebugConfig.isEnabled {
                             logger.debug("[debug] org cipher[\(index, privacy: .public)] skipped — org key unavailable")
                         }
                     } catch {
                         orgCipherFailedCount += 1
+                        failedCount += 1
                         logger.error("Org cipher decryption failed at index \(index, privacy: .public): \(ErrorLog.describe(error), privacy: .public)")
                     }
                 }

@@ -310,6 +310,14 @@ actor VaultRepositoryImpl: VaultRepository {
             }
         }
 
+        // Defence in depth behind the disabled Edit button, menu item and shortcut: an item with an
+        // edit block never reaches the encryption below. After the /partial branch, which carries no
+        // item data and stays available. Nothing is encrypted or sent, and the cache is untouched.
+        if let blockReason = items.first(where: { $0.id == draft.id })?.editBlock {
+            logger.error("Save refused: item \(draft.id, privacy: .public) cannot be edited (\(String(describing: blockReason), privacy: .public))")
+            throw VaultError.itemNotEditable(blockReason)
+        }
+
         let orgKeysSnapshot = await orgKeyCache.snapshot()
         let encryptionKeys = try encryptionKeys(for: draft, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot)
         let profileId = try await requireProfileId()
@@ -331,14 +339,7 @@ actor VaultRepositoryImpl: VaultRepository {
 
         // Patch collectionIds: PUT /api/ciphers/{id} returns pre-update collection state.
         if draft.organizationId != nil {
-            updatedItem = VaultItem(
-                id: updatedItem.id, name: updatedItem.name,
-                isFavorite: updatedItem.isFavorite, isDeleted: updatedItem.isDeleted,
-                creationDate: updatedItem.creationDate, revisionDate: updatedItem.revisionDate,
-                content: updatedItem.content, reprompt: updatedItem.reprompt,
-                attachments: updatedItem.attachments, folderId: updatedItem.folderId,
-                organizationId: updatedItem.organizationId, collectionIds: draft.collectionIds
-            )
+            updatedItem = updatedItem.with(collectionIds: draft.collectionIds)
         }
 
         if let idx = items.firstIndex(where: { $0.id == updatedItem.id }) {
@@ -408,12 +409,7 @@ actor VaultRepositoryImpl: VaultRepository {
             return
         }
         let old = items[idx]
-        items[idx] = VaultItem(
-            id: old.id, name: old.name, isFavorite: old.isFavorite, isDeleted: true,
-            creationDate: old.creationDate, revisionDate: old.revisionDate,
-            content: old.content, reprompt: old.reprompt, attachments: old.attachments,
-            folderId: old.folderId, organizationId: old.organizationId, collectionIds: old.collectionIds
-        )
+        items[idx] = old.with(isDeleted: true)
         buildIndexes()
         logger.info("Vault item soft-deleted: \(id, privacy: .public)")
     }
@@ -480,12 +476,7 @@ actor VaultRepositoryImpl: VaultRepository {
             return
         }
         let old = items[idx]
-        items[idx] = VaultItem(
-            id: old.id, name: old.name, isFavorite: old.isFavorite, isDeleted: false,
-            creationDate: old.creationDate, revisionDate: old.revisionDate,
-            content: old.content, reprompt: old.reprompt, attachments: old.attachments,
-            folderId: old.folderId, organizationId: old.organizationId, collectionIds: old.collectionIds
-        )
+        items[idx] = old.with(isDeleted: false)
         buildIndexes()
         logger.info("Vault item restored: \(id, privacy: .public)")
     }
@@ -500,12 +491,7 @@ actor VaultRepositoryImpl: VaultRepository {
             return
         }
         let old = items[idx]
-        items[idx] = VaultItem(
-            id: old.id, name: old.name, isFavorite: old.isFavorite, isDeleted: old.isDeleted,
-            creationDate: old.creationDate, revisionDate: old.revisionDate,
-            content: old.content, reprompt: old.reprompt, attachments: attachments,
-            folderId: old.folderId, organizationId: old.organizationId, collectionIds: old.collectionIds
-        )
+        items[idx] = old.with(attachments: attachments)
         buildIndexes()
         logger.info("Vault item attachments updated: cipher=\(cipherId, privacy: .public) count=\(attachments.count, privacy: .public)")
     }

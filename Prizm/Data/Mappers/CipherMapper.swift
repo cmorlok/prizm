@@ -55,11 +55,11 @@ nonisolated final class CipherMapper: Sendable {
     ///   `VaultRepositoryImpl.create`): destructure and discard the `cipherKey` value.
     /// - **`SyncRepositoryImpl`**: collect all `cipherKey` values and populate `VaultKeyCache`.
     ///
-    /// **Effective cipher key derivation** (Bitwarden Security Whitepaper §4):
-    /// - If `raw.key` is non-nil (cipher has a per-item symmetric key), decrypt it with the
-    ///   vault key and return the 64-byte plaintext as the effective key.
-    /// - If `raw.key` is nil, the cipher uses the vault-level key directly — return
-    ///   `keys.encryptionKey + keys.macKey` (64 bytes).
+    /// **Effective cipher key** (Bitwarden Security Whitepaper §4, see `effectiveKeys(for:activeKeys:)`):
+    /// - If `raw.key` is non-nil (cipher has a per-item symmetric key), the 64-byte plaintext of
+    ///   that key decrypts every field and attachment, and is returned as `cipherKey`.
+    /// - If `raw.key` is nil, the cipher uses the vault key (personal) or organization key
+    ///   (organization) directly, and that key is returned.
     ///
     /// - Parameters:
     ///   - raw:      The encrypted wire-format cipher from the sync response.
@@ -85,53 +85,31 @@ nonisolated final class CipherMapper: Sendable {
             activeKeys = vaultKeys
         }
 
-        let name   = try decryptRequired(raw.name, field: "name", keys: activeKeys)
-        let notes  = try raw.notes.map { try decryptRequired($0, field: "notes", keys: activeKeys) }
-        let fields = try mapFields(raw.fields ?? [], keys: activeKeys)
+        // Resolved before the first field is decrypted: every field of an item with its own key is
+        // encrypted with that key, not with the vault or organization key.
+        let effective = try effectiveKeys(for: raw, activeKeys: activeKeys)
+
+        let name   = try decryptRequired(raw.name, field: "name", keys: effective)
+        let notes  = try raw.notes.map { try decryptRequired($0, field: "notes", keys: effective) }
+        let fields = try mapFields(raw.fields ?? [], keys: effective)
 
         let content: ItemContent = try mapContent(
             type:   raw.type,
             raw:    raw,
             notes:  notes,
             fields: fields,
-            keys:   activeKeys
+            keys:   effective
         )
 
         let fallbackDate = Date(timeIntervalSince1970: 0)
         let creationDate  = raw.creationDate.flatMap  { Self.iso8601.date(from: $0) } ?? fallbackDate
         let revisionDate  = raw.revisionDate.flatMap  { Self.iso8601.date(from: $0) } ?? fallbackDate
 
-        // Effective cipher key: per-item key if present, otherwise the active (vault or org) key.
-        // Reference: Bitwarden Security Whitepaper §4 — "Cipher Key Wrapping".
-        // Must be resolved BEFORE attachment mapping so that attachment filenames are
-        // decrypted with the correct key — ciphers that have a per-item key use it for
-        // their attachments too (active key would cause MAC verification failures).
-        let cipherKey: Data
-        if let encItemKey = raw.key {
-            // Per-item key: decrypt the EncString-wrapped key using the active key (vault OR org).
-            do {
-                let enc = try EncString(string: encItemKey)
-                cipherKey = try enc.decrypt(keys: activeKeys)
-            } catch {
-                Self.logger.fault("Per-item key decryption failed for cipher \(raw.id, privacy: .public)")
-                throw CipherMapperError.fieldDecryptionFailed("key")
-            }
-        } else {
-            // No per-item key — use the active key directly.
-            cipherKey = activeKeys.encryptionKey + activeKeys.macKey
-        }
-
-        // Build CryptoKeys from the resolved 64-byte cipher key (first 32 bytes = enc, last 32 = mac).
-        let effectiveKeys = CryptoKeys(
-            encryptionKey: cipherKey.prefix(32),
-            macKey:        cipherKey.suffix(32)
-        )
-
         // Map attachments using the cipher's effective key, not the raw vault key.
         // Attachment filenames are encrypted under the same key as the cipher's fields.
         let attachments: [Attachment] = (raw.attachments ?? []).compactMap { dto in
             do {
-                return try attachmentMapper.map(dto, cipherKey: effectiveKeys)
+                return try attachmentMapper.map(dto, cipherKey: effective)
             } catch {
                 Self.logger.error("Attachment mapping failed for cipher \(raw.id, privacy: .public): \(ErrorLog.describe(error), privacy: .public)")
                 return nil
@@ -150,14 +128,79 @@ nonisolated final class CipherMapper: Sendable {
             attachments:    attachments,
             folderId:       raw.folderId,
             organizationId: raw.organizationId,
-            collectionIds:  raw.collectionIds
+            collectionIds:  raw.collectionIds,
+            editBlock:      editBlock(for: raw)
         )
-        return (item: item, cipherKey: cipherKey)
+        return (item: item, cipherKey: effective.toData())
     }
 
     /// Backward-compatible overload — passes empty orgKeys (personal vault, no org support).
     func map(raw: RawCipher, keys: CryptoKeys) throws -> (item: VaultItem, cipherKey: Data) {
         try map(raw: raw, vaultKeys: keys, orgKeys: [:])
+    }
+
+    // MARK: - Effective key
+
+    /// The key that encrypts every field and attachment of `raw`: the item's own key when it has
+    /// one, otherwise `activeKeys` (the organization key for an organization item, the vault key
+    /// otherwise).
+    ///
+    /// - Security goal: an item that another Bitwarden client gave its own key (`key` is non-nil)
+    ///   is read entirely under that key. Reading its fields under the vault or organization key
+    ///   would drop the item at sync, and worse, would let a mixed-key item be listed and later
+    ///   edited with the wrong key. The write path uses this same function (never the key cache,
+    ///   which falls back to the vault key) so what is read and what is written agree.
+    /// - Algorithm: `key` is an EncString type 2 (AES-256-CBC, HMAC-SHA256 verified before decrypt,
+    ///   Bitwarden Security Whitepaper §4, "Cipher Key Wrapping") holding 64 bytes, the AES key
+    ///   followed by the MAC key. The Bitwarden SDK does the same in `decrypt_cipher_key`: a cipher
+    ///   with no key is decrypted with the key it is given.
+    /// - Intentionally NOT done:
+    ///   • No fallback to `activeKeys` when the unwrap fails or the unwrapped key has the wrong
+    ///     length (rbw#364: a retry produces items that read under one key and save under another).
+    ///     The caller drops the item and counts it.
+    ///   • No fallback for a field that fails to decrypt under the item key either; `map` throws.
+    ///   • The local copy of the unwrapped key is not zeroed. `CryptoKeys` holds value-type `Data`
+    ///     halves, same posture as the vault keys; only the long-lived stores are zeroed on lock.
+    ///   • An EncString type 0 key is refused, never decrypted: it has no MAC, so a wrong
+    ///     `activeKeys` would show up only as a padding error or a wrong length, and nothing would
+    ///     authenticate the key that every field of the item is then read and written with. Other
+    ///     non-type-2 strings are refused too. The item is dropped.
+    /// - Logging: the cipher id only (`privacy: .public`), never key bytes or field values.
+    ///
+    /// - Throws: `CipherMapperError.fieldDecryptionFailed("key")` when the key is not an EncString
+    ///   type 2, does not unwrap, or is not exactly 64 bytes (`CryptoKeys(data:)` enforces the length).
+    func effectiveKeys(for raw: RawCipher, activeKeys: CryptoKeys) throws -> CryptoKeys {
+        guard let wrappedKey = raw.key else { return activeKeys }
+        do {
+            let wrapped = try EncString(string: wrappedKey)
+            // Only type 2 carries a MAC that `decrypt` verifies; see "Intentionally NOT done" above.
+            guard wrapped.encType == .aes256Cbc_HmacSha256_B64 else {
+                throw CipherMapperError.fieldDecryptionFailed("key")
+            }
+            let unwrapped = try wrapped.decrypt(keys: activeKeys)
+            guard let itemKeys = CryptoKeys(data: unwrapped) else {
+                throw CipherMapperError.fieldDecryptionFailed("key")
+            }
+            return itemKeys
+        } catch {
+            // `.error`, not `.fault`: one item is dropped (sync) or refused (save) and everything else goes on.
+            Self.logger.error("Per-item key decryption failed for cipher \(raw.id, privacy: .public)")
+            throw CipherMapperError.fieldDecryptionFailed("key")
+        }
+    }
+
+    // MARK: - Edit block
+
+    /// Why Prizm must not save `raw` as it is, or nil when it can.
+    ///
+    /// Computed here, from the record, so Presentation never looks at raw shapes. Today the only
+    /// reason is an item key: the write path does not yet send `key` or encrypt with it, so a save
+    /// would put fields under the vault or organization key that the server and other clients read
+    /// under the item key. The own-key reason goes when saves use the item key; further reasons
+    /// (formats Prizm cannot rebuild) are added with the lasting guard.
+    /// Nothing is logged per item: every item can be keyed.
+    func editBlock(for raw: RawCipher) -> EditBlockReason? {
+        raw.key != nil ? .hasOwnKey : nil
     }
 
     // MARK: - Private: Content dispatch

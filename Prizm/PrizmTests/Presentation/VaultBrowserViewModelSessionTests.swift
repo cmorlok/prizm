@@ -38,6 +38,25 @@ final class VaultBrowserViewModelSessionTests: XCTestCase {
         }
     }
 
+    func testTriggerEdit_ignoresAnItemThatCannotBeEdited() {
+        let blocked = VaultItem(
+            id: "keyed-1", name: "Keyed", isFavorite: false, isDeleted: false,
+            creationDate: .now, revisionDate: .now,
+            content: .login(LoginContent(username: "bob", password: "pw", uris: [], totp: nil,
+                                         notes: nil, customFields: [])),
+            editBlock: .hasOwnKey
+        )
+        let before = sut.editTrigger
+
+        sut.itemSelection = blocked
+        sut.triggerEdit()
+        XCTAssertEqual(sut.editTrigger, before, "No trigger for a blocked item, from menu, toolbar or shortcut")
+
+        sut.itemSelection = secretItem
+        sut.triggerEdit()
+        XCTAssertEqual(sut.editTrigger, before + 1, "A normal item still opens the edit sheet")
+    }
+
     func testClearSession_dropsSelectionCreateSheetAndEditState() {
         sut.itemSelection = secretItem
         sut.createItemType = .login

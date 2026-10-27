@@ -50,6 +50,7 @@ struct ItemDetailView: View {
             ScrollView {
                 VStack(spacing: 0) {
                     if item.isDeleted { trashBanner(for: item) }
+                    if !item.isDeleted, let reason = item.editBlock { editBlockedNote(reason) }
 
                     itemHeader(for: item)
                     typeDetailView(for: item)
@@ -80,7 +81,7 @@ struct ItemDetailView: View {
             }) { vm in
                 AttachmentBatchSheet(viewModel: vm)
             }
-            .onChange(of: editTrigger) { if !item.isDeleted { openEditSheet(for: item) } }
+            .onChange(of: editTrigger) { if !item.isDeleted && item.editBlock == nil { openEditSheet(for: item) } }
             .onChange(of: saveTrigger) { editViewModel?.save() }
         } else {
             ContentUnavailableView(
@@ -165,6 +166,25 @@ struct ItemDetailView: View {
         .padding(.vertical, Spacing.headerGap)
         .background(Color.secondary.opacity(Opacity.trashBanner(contrast)))
         .accessibilityIdentifier(AccessibilityID.Trash.statusBanner)
+    }
+
+    /// Why Edit is disabled, in plain language with a next step. The icon repeats what the text
+    /// says, so it is hidden from VoiceOver; the Edit button carries the same text as its hint.
+    @ViewBuilder
+    private func editBlockedNote(_ reason: EditBlockReason) -> some View {
+        HStack(spacing: Spacing.headerGap) {
+            Image(systemName: "pencil.slash")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(reason.userMessage)
+                .font(Typography.bannerText)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, Spacing.pageMargin)
+        .padding(.vertical, Spacing.headerGap)
+        .background(Color.secondary.opacity(Opacity.bannerBackground(contrast)))
+        .accessibilityIdentifier(AccessibilityID.Edit.blockedNote)
     }
 
     // MARK: - Edit sheet

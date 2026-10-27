@@ -160,6 +160,27 @@ final class RootViewModelLockTests: XCTestCase {
         XCTAssertNil(sut.selectedLogin, "Copy commands must have no login to copy from", file: file, line: line)
     }
 
+    // MARK: - Item > Edit is disabled for an item that cannot be edited
+
+    func testItemMenuEdit_isDisabledForAnItemThatCannotBeEdited() async throws {
+        let browser = try await openVaultBrowser()
+        let blocked = VaultItem(
+            id: "keyed-1", name: "Keyed", isFavorite: false, isDeleted: false,
+            creationDate: .now, revisionDate: .now,
+            content: .login(LoginContent(username: "bob", password: "pw", uris: [], totp: nil,
+                                         notes: nil, customFields: [])),
+            editBlock: .hasOwnKey
+        )
+
+        browser.itemSelection = blocked
+        try await waitUntil { !self.sut.menuBarCanEdit }
+        XCTAssertFalse(sut.menuBarCanEdit, "Item > Edit (and its shortcut) must be disabled for a blocked item")
+
+        browser.itemSelection = secretItem
+        try await waitUntil { self.sut.menuBarCanEdit }
+        XCTAssertTrue(sut.menuBarCanEdit, "A normal item can be edited again")
+    }
+
     func testLockVault_clearsVaultBrowserState() async throws {
         mockAuth.stubbedStoredAccount = stubAccount
         let browser = try await openVaultBrowser()

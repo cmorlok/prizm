@@ -115,7 +115,15 @@ final class VaultBrowserViewModel: ObservableObject {
     /// `ItemDetailView` uses `.onChange(of: saveTrigger)` to call `save()`.
     @Published private(set) var saveTrigger: Int = 0
 
-    func triggerEdit() { editTrigger += 1 }
+    /// Does nothing for an item that has an edit block: the menu item, the toolbar button and the
+    /// shortcut are disabled for it already, and this is the check behind them all.
+    func triggerEdit() {
+        if let blocked = itemSelection, blocked.editBlock != nil {
+            logger.info("Edit ignored: item \(blocked.id, privacy: .public) cannot be edited")
+            return
+        }
+        editTrigger += 1
+    }
     func triggerSave() { saveTrigger += 1 }
 
     // MARK: - Sync label refresh timer

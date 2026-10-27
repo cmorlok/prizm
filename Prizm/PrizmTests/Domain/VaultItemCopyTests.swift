@@ -1,8 +1,9 @@
 import XCTest
 @testable import Prizm
 
-/// `VaultItem.with(folderId:)` and `with(isFavorite:)` change one field and keep every other one
-/// (openspec change fix-favorite-and-folder-partial-updates, design D2).
+/// The `VaultItem.with(...)` copies (`folderId`, `isFavorite`, `isDeleted`, `attachments`,
+/// `collectionIds`) change one field and keep every other one, `editBlock` included (openspec
+/// changes fix-favorite-and-folder-partial-updates, design D2, and fix-cipher-edit-data-loss).
 final class VaultItemCopyTests: XCTestCase {
 
     /// Every stored property differs from the initializer's defaults.
@@ -15,7 +16,8 @@ final class VaultItemCopyTests: XCTestCase {
                                 url: nil, isUploadIncomplete: false)],
         folderId: "folder-1",
         organizationId: "org-1",
-        collectionIds: ["col-1", "col-2"]
+        collectionIds: ["col-1", "col-2"],
+        editBlock: .hasOwnKey
     )
 
     func testWithFolderId_changesOnlyTheFolder() {
@@ -27,7 +29,7 @@ final class VaultItemCopyTests: XCTestCase {
 
     func testWithFolderId_nil_removesTheFolder() {
         XCTAssertNil(item.with(folderId: nil).folderId)
-        XCTAssertEqual(item.with(folderId: nil), expected(folderId: nil, isFavorite: item.isFavorite))
+        XCTAssertEqual(item.with(folderId: nil), expected(folderId: .some(nil), isFavorite: item.isFavorite))
     }
 
     func testWithIsFavorite_changesOnlyTheFavorite() {
@@ -37,13 +39,60 @@ final class VaultItemCopyTests: XCTestCase {
         XCTAssertEqual(favorited, expected(folderId: item.folderId, isFavorite: true))
     }
 
+    // MARK: - Local rebuilds after delete, restore, attachment and collection changes
+
+    func testWithIsDeleted_changesOnlyIsDeleted() {
+        let restored = item.with(isDeleted: false)
+
+        XCTAssertFalse(restored.isDeleted)
+        XCTAssertEqual(restored, expected(isDeleted: false))
+        XCTAssertEqual(restored.editBlock, .hasOwnKey)
+    }
+
+    func testWithAttachments_changesOnlyTheAttachments() {
+        let replaced = item.with(attachments: [])
+
+        XCTAssertTrue(replaced.attachments.isEmpty)
+        XCTAssertEqual(replaced, expected(attachments: []))
+        XCTAssertEqual(replaced.editBlock, .hasOwnKey)
+    }
+
+    func testWithCollectionIds_changesOnlyTheCollections() {
+        let patched = item.with(collectionIds: ["col-9"])
+
+        XCTAssertEqual(patched.collectionIds, ["col-9"])
+        XCTAssertEqual(patched, expected(collectionIds: ["col-9"]))
+        XCTAssertEqual(patched.editBlock, .hasOwnKey)
+    }
+
+    func testFolderAndFavoriteCopies_keepTheEditBlock() {
+        XCTAssertEqual(item.with(folderId: "x").editBlock, .hasOwnKey)
+        XCTAssertEqual(item.with(isFavorite: true).editBlock, .hasOwnKey)
+    }
+
+    func testInitializer_editBlockDefaultsToNil() {
+        let plain = VaultItem(
+            id: "p", name: "Plain", isFavorite: false, isDeleted: false,
+            creationDate: Date(), revisionDate: Date(),
+            content: .secureNote(SecureNoteContent(notes: nil, customFields: []))
+        )
+
+        XCTAssertNil(plain.editBlock)
+    }
+
     /// The expected copy, spelled out field by field.
-    private func expected(folderId: String?, isFavorite: Bool) -> VaultItem {
+    private func expected(
+        folderId: String?? = .none, isFavorite: Bool? = nil, isDeleted: Bool? = nil,
+        attachments: [Attachment]? = nil, collectionIds: [String]? = nil
+    ) -> VaultItem {
         VaultItem(
-            id: item.id, name: item.name, isFavorite: isFavorite, isDeleted: item.isDeleted,
+            id: item.id, name: item.name, isFavorite: isFavorite ?? item.isFavorite,
+            isDeleted: isDeleted ?? item.isDeleted,
             creationDate: item.creationDate, revisionDate: item.revisionDate, content: item.content,
-            reprompt: item.reprompt, attachments: item.attachments, folderId: folderId,
-            organizationId: item.organizationId, collectionIds: item.collectionIds
+            reprompt: item.reprompt, attachments: attachments ?? item.attachments,
+            folderId: folderId ?? item.folderId,
+            organizationId: item.organizationId, collectionIds: collectionIds ?? item.collectionIds,
+            editBlock: item.editBlock
         )
     }
 }

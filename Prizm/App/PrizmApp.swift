@@ -359,7 +359,7 @@ final class RootViewModel: ObservableObject {
             .sink { [weak self] state in self?.handleUnlockFlow(state) }
             .store(in: &cancellables)
 
-        // canEdit: item selected AND edit sheet not yet open.
+        // canEdit: item selected, editable (no edit block), and edit sheet not yet open.
         // canSave: edit sheet is open.
         // Both are derived by watching editSheetOpen and itemSelection independently.
         // `for await` on @Published.values avoids Combine callbacks (CLAUDE.md async/await rule).
@@ -367,13 +367,15 @@ final class RootViewModel: ObservableObject {
             for await open in vaultBrowserVM.$editSheetOpen.values {
                 guard let self else { break }
                 self.menuBarCanSave = open
-                self.menuBarCanEdit = vaultBrowserVM.itemSelection != nil && !open
+                let selection = vaultBrowserVM.itemSelection
+                self.menuBarCanEdit = selection != nil && selection?.editBlock == nil && !open
             }
         }
         Task { [weak self, vaultBrowserVM] in
             for await selection in vaultBrowserVM.$itemSelection.values {
                 guard let self else { break }
-                self.menuBarCanEdit = selection != nil && !vaultBrowserVM.editSheetOpen
+                self.menuBarCanEdit = selection != nil && selection?.editBlock == nil
+                    && !vaultBrowserVM.editSheetOpen
                 if case .login(let login) = selection?.content {
                     self.selectedLogin = login
                 } else {

@@ -123,6 +123,9 @@ nonisolated enum VaultError: Error, LocalizedError {
     /// The user id from the last sync is not known, so a create or full update was not sent: the
     /// server rejects a save without it (Vaultwarden 1.37.4, HTTP 422).
     case profileIdUnavailable
+    /// A full save of an item Prizm cannot write back was refused before anything was encrypted or
+    /// sent. Folder and favorite changes of the same item are not affected.
+    case itemNotEditable(EditBlockReason)
 
     var errorDescription: String? {
         switch self {
@@ -142,6 +145,8 @@ nonisolated enum VaultError: Error, LocalizedError {
             return "This item's organization can't be accessed right now. Lock and unlock Prizm, then try again."
         case .profileIdUnavailable:
             return "Prizm couldn't confirm which account this item belongs to. Lock and unlock Prizm, then try again."
+        case .itemNotEditable(let reason):
+            return reason.userMessage
         }
     }
 }
