@@ -16,7 +16,8 @@ import Synchronization
 ///
 /// - Filled by: sync (every cipher of the response, including ones that fail to decrypt), create
 ///   and update (the server's answer), and every other own operation of the repository: soft delete,
-///   restore, attachment changes, favorite and moves (the restore answer, or a fetch of the item:
+///   restore, attachment changes, favorite and moves, and the collection update of an organization
+///   item (the restore or collections answer, or a fetch of the item:
 ///   `VaultRepositoryImpl.refreshRecord`). Emptied by: permanent delete (per id) and `clear()`.
 ///
 /// - The fence: `clear()` and `invalidate()` replace the current `Generation` token with a new one.
@@ -41,8 +42,9 @@ import Synchronization
 ///   • The store fences its own writes. The repository's item cache is fenced by the repository,
 ///     which checks `isCurrent(_:)` itself right before the write; `populate` is fenced the same
 ///     way with the token its sync read at the start.
-///   • A collection change of an organization item does not refresh the record yet (OpenSpec task
-///     4.4), so the record can be older than the server's after it until the next sync.
+///   • A refresh that cannot reach the server leaves the record as it was, so the record can be older
+///     than the server's until the next sync; the cost is one conflict on a later edit, and a reload
+///     resolves it.
 ///   • No fallback for a missing record: `VaultRepositoryImpl.update` reads the store and refuses a
 ///     full save without a record (`itemRecordUnavailable`), so the store is not optional.
 ///

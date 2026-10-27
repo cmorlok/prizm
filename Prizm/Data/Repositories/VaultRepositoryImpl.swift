@@ -328,6 +328,20 @@ actor VaultRepositoryImpl: VaultRepository {
     ///   stored as the item's new record and re-mapped to a `VaultItem`; the in-memory cache is
     ///   patched in place so the UI reflects the latest state without a full re-sync.
     ///
+    /// - Organization items: the collections are sent afterwards with `PUT /collections`, which
+    ///   changes the revision on the official server. The record stored for the item, and the
+    ///   revision of the item returned, are therefore the collections answer's (or a fetch when it
+    ///   holds no cipher), never the item PUT's. The PUT answer still supplies everything else and
+    ///   reports the collections from before the update, so the draft's collections are patched in.
+    ///
+    /// - Partial save: when the item PUT succeeded and the collections request failed, the saved
+    ///   item is kept (stored, cached with the collections the PUT answer reports, refreshed with a
+    ///   fetch) and `VaultError.collectionChangeNotSaved` is thrown. A retry is the same draft with
+    ///   its base moved to the cached revision, sent as a full PUT again: the item is rewritten with
+    ///   identical values, which is harmless, and the collections request then runs once more.
+    ///   Intentionally NOT done: a collections-only retry, which would be a second send path for one
+    ///   field.
+    ///
     /// - Queue: saves of one item run one after another (see `serialised(_:_:)`), so a save waits
     ///   for an earlier write to the same item and then runs every check above against the record
     ///   that write stored.
@@ -340,8 +354,12 @@ actor VaultRepositoryImpl: VaultRepository {
     ///   nothing is retried.
     /// - Throws: `VaultError.vaultLocked` also when the vault was cleared while the request ran: the
     ///   answer is then dropped unread (nothing decrypted, stored or cached).
+    /// - Throws: `VaultError.collectionChangeNotSaved` when the item was saved and its collection
+    ///   update failed, for any reason (an "out of date" answer to `/collections` included: it is not
+    ///   the item PUT, so it is no conflict).
     /// - Throws: `APIError` on any other network or HTTP failure.
-    /// - Throws: `CipherMapperError` if the response mapper fails.
+    /// - Throws: `CipherMapperError` if the server's answer to the PUT cannot be mapped. Nothing is
+    ///   stored or cached then, and the collections request is not sent.
     func update(_ draft: DraftVaultItem) async throws -> VaultItem {
         // First, before the save waits for its turn and before any await: `clearVault()` bumps this
         // token, so a lock that lands while the save waits or while its request runs makes it
@@ -487,8 +505,10 @@ actor VaultRepositoryImpl: VaultRepository {
         // Security goal: no plaintext re-enters memory after lock. The keys above were captured
         // before the lock, so a response mapped with them would put the decrypted item back into the
         // emptied cache. The save throws instead of returning, so no success callback runs for it.
-        // Checked after the request, after the collections request, and (with no suspension in
-        // between) right before the map and the cache write.
+        // Checked after the request (with no suspension before the map), after the collections
+        // request, and (with no suspension in between) right before each cache write. The mapped
+        // item stays in this function until the cache write; a lock meanwhile makes those checks
+        // throw, and it is dropped with the function.
         // Intentionally NOT done here: `deleteItem`, `restoreItem`, `updateAttachments` and
         // `sendPartial` only modify entries that are already cached, so they cannot put an item
         // back into an emptied cache.
@@ -497,11 +517,37 @@ actor VaultRepositoryImpl: VaultRepository {
             throw VaultError.vaultLocked
         }
 
+        // Mapped before anything is stored. If the answer cannot be read, the save fails with the
+        // mapping error and neither the stored record nor the cache changes: an unreadable answer
+        // in the store next to the old cached item would leave the two on different revisions,
+        // and a retry from the still-open sheet would be refused here as a change made elsewhere,
+        // although the change was this save. The retry goes to the server instead, which decides.
+        var (updatedItem, _) = try mapper.map(raw: updatedRaw, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot)
+
         // Keep what the server answered, not what was sent. Refused after a lock by the store too.
         await storeRecord(updatedRaw, ifCurrent: storeGeneration)
 
+        // The collections answer is the item's newest record (the official server changes the
+        // revision on this call); nil for a personal item and for an answer without a cipher.
+        var collectionsAnswer: RawCipher?
         if draft.organizationId != nil {
-            try await apiClient.updateCipherCollections(id: draft.id, collectionIds: draft.collectionIds)
+            do {
+                collectionsAnswer = try await apiClient.updateCipherCollections(id: draft.id, collectionIds: draft.collectionIds)
+            } catch {
+                guard recordStore.isCurrent(storeGeneration) else {
+                    logger.info("Save finished after lock, dropped: \(draft.id, privacy: .public)")
+                    throw VaultError.vaultLocked
+                }
+                // The item PUT went through and is the server's copy now: keep it, with the
+                // collections its answer reports, because the collection change did not happen. Then
+                // learn the revision the server holds, so a retry is checked against it and is not
+                // mistaken for a conflict with this very save.
+                cacheItem(updatedItem)
+                await refreshRecord(id: draft.id, from: nil, token: storeGeneration)
+                logger.error("Collection update failed after the item was saved: \(draft.id, privacy: .public): \(ErrorLog.describe(error), privacy: .public)")
+                guard recordStore.isCurrent(storeGeneration) else { throw VaultError.vaultLocked }
+                throw VaultError.collectionChangeNotSaved
+            }
         }
 
         // Last check before the first write to the item cache: everything below is synchronous.
@@ -509,21 +555,36 @@ actor VaultRepositoryImpl: VaultRepository {
             logger.info("Save finished after lock, dropped: \(draft.id, privacy: .public)")
             throw VaultError.vaultLocked
         }
-        var (updatedItem, _) = try mapper.map(raw: updatedRaw, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot)
 
         // Patch collectionIds: PUT /api/ciphers/{id} returns pre-update collection state.
         if draft.organizationId != nil {
             updatedItem = updatedItem.with(collectionIds: draft.collectionIds)
         }
 
-        if let idx = items.firstIndex(where: { $0.id == updatedItem.id }) {
-            items[idx] = updatedItem
-        } else {
-            items.append(updatedItem)
+        cacheItem(updatedItem)
+        if draft.organizationId != nil {
+            // Stores the collections answer (or a fetch) and moves the cached revision to it. A
+            // personal item keeps what the PUT answered.
+            await refreshRecord(id: draft.id, from: collectionsAnswer, token: storeGeneration)
+            guard recordStore.isCurrent(storeGeneration) else {
+                logger.info("Save finished after lock, dropped: \(draft.id, privacy: .public)")
+                throw VaultError.vaultLocked
+            }
+            updatedItem = items.first(where: { $0.id == updatedItem.id }) ?? updatedItem
         }
-        buildIndexes()
         logger.info("Vault item updated: \(draft.id, privacy: .public)")
         return updatedItem
+    }
+
+    /// Replaces the cached item with the same id, or appends it, and rebuilds the indexes. The
+    /// caller has just checked the store token, with no suspension in between.
+    private func cacheItem(_ item: VaultItem) {
+        if let idx = items.firstIndex(where: { $0.id == item.id }) {
+            items[idx] = item
+        } else {
+            items.append(item)
+        }
+        buildIndexes()
     }
 
     // MARK: - Create (write path)

@@ -268,6 +268,41 @@ final class RevisionRefreshTests: XCTestCase {
         XCTAssertEqual(rig.api.updateCipherCallCount, 1, "The pre-check passes and the PUT is sent")
     }
 
+    // MARK: - An update answer that cannot be read
+
+    /// The server saved the edit, but its answer cannot be read (a name no key opens). Nothing is
+    /// stored that cannot also be cached, so the stored record and the cached item keep the same
+    /// revision, and a retry from the still-open sheet is not refused locally as a change made
+    /// elsewhere.
+    func testUnreadableUpdateAnswer_storesNothingAndTheRetryIsSent() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1")
+        try await seed([item], in: rig)
+        rig.api.updateCipherResponse = try await record("c1", in: rig, revision: Self.r2,
+                                                        replacing: ["name": "2.AAAA|BBBB|CCCC"])
+        let draft = StaleWriteRig.renamed(item)
+
+        do {
+            _ = try await rig.vault.update(draft)
+            XCTFail("An answer that cannot be read fails the save")
+        } catch VaultError.conflict {
+            XCTFail("An unreadable answer is not a conflict")
+        } catch {
+            // expected: the mapping error
+        }
+
+        let stored = await rig.store.record(for: "c1")
+        XCTAssertEqual(stored?.revisionDate, Self.r1, "The unreadable answer is not stored")
+        let cached = try await rig.vault.itemDetail(id: "c1")
+        try assertRevision(cached.revisionDate, is: Self.r1)
+        XCTAssertEqual(cached.name, "Login", "The cache keeps the item it had")
+
+        // The retry: the same draft, as the sheet still holds it. The mock now echoes the request.
+        rig.api.updateCipherResponse = nil
+        _ = try await rig.vault.update(draft)
+        XCTAssertEqual(rig.api.updateCipherCallCount, 2, "The retry passes the local check and is sent")
+    }
+
     // MARK: - A refresh never decrypts
 
     func testRefresh_storesAnUnreadableRecordAsReceivedAndMapsNothing() async throws {
@@ -621,7 +656,207 @@ final class RevisionRefreshTests: XCTestCase {
         XCTAssertTrue(cached.isEmpty)
     }
 
+    // MARK: - Org save: the revision comes from after the collection update
+
+    private static let orgId = "org-acme"
+    private static let orgKeys = CryptoKeys(
+        encryptionKey: Data(repeating: 0xAC, count: 32),
+        macKey:        Data(repeating: 0xCE, count: 32)
+    )
+
+    /// The official server changes the revision on `PUT /collections`, so the revision an org save
+    /// leaves behind is the collection answer's, not the item PUT's.
+    func testOrgSave_takesTheRevisionFromTheCollectionsAnswer() async throws {
+        let (rig, item) = try await orgRig()
+        answerPut(of: rig, revision: Self.r2, collectionIds: [])
+        answerFollowUps(of: rig, collectionsRevision: Self.r3)
+        var draft = StaleWriteRig.renamed(item)
+        draft.collectionIds = ["col-a"]
+
+        let saved = try await rig.vault.update(draft)
+
+        XCTAssertEqual(rig.api.callLog, ["PUT o1", "collections o1"], "The collections answer carries the cipher: no GET")
+        let stored = await rig.store.record(for: "o1")
+        XCTAssertEqual(stored?.revisionDate, Self.r3, "The stored record is the collections answer, not the PUT answer")
+        try assertRevision(saved.revisionDate, is: Self.r3)
+        XCTAssertEqual(saved.collectionIds, ["col-a"], "The returned item has the draft's collections")
+        XCTAssertEqual(saved.name, "Renamed")
+        let cached = try await rig.vault.itemDetail(id: "o1")
+        try assertRevision(cached.revisionDate, is: Self.r3)
+        XCTAssertEqual(cached.collectionIds, ["col-a"])
+    }
+
+    func testOrgSaveWithoutCollectionsCipher_refreshesWithGet() async throws {
+        let (rig, item) = try await orgRig()
+        answerPut(of: rig, revision: Self.r2, collectionIds: [])
+        rig.api.updateCipherCollectionsResponse = nil
+        answerFollowUps(of: rig, getRevision: Self.r3)
+        var draft = StaleWriteRig.renamed(item)
+        draft.collectionIds = ["col-a"]
+
+        let saved = try await rig.vault.update(draft)
+
+        XCTAssertEqual(rig.api.callLog, ["PUT o1", "collections o1", "GET o1"])
+        let stored = await rig.store.record(for: "o1")
+        XCTAssertEqual(stored?.revisionDate, Self.r3, "The stored record is the GET answer")
+        try assertRevision(saved.revisionDate, is: Self.r3)
+        XCTAssertEqual(saved.collectionIds, ["col-a"])
+    }
+
+    func testCollectionsFailure_throwsCollectionChangeNotSavedAndKeepsTheSave() async throws {
+        let (rig, item) = try await orgRig()
+        answerPut(of: rig, revision: Self.r2, collectionIds: [])
+        rig.api.updateCipherCollectionsShouldThrow = APIError.httpError(statusCode: 500, body: "")
+        answerFollowUps(of: rig, getRevision: Self.r3)
+        var draft = StaleWriteRig.renamed(item)
+        draft.collectionIds = ["col-a"]
+
+        do {
+            _ = try await rig.vault.update(draft)
+            XCTFail("A failed collection update must be reported")
+        } catch VaultError.collectionChangeNotSaved {
+            // expected
+        }
+
+        XCTAssertEqual(rig.api.callLog, ["PUT o1", "collections o1", "GET o1"], "The saved item is refreshed")
+        let stored = await rig.store.record(for: "o1")
+        XCTAssertEqual(stored?.revisionDate, Self.r3, "The stored record is the refresh's answer")
+        let cached = try await rig.vault.itemDetail(id: "o1")
+        XCTAssertEqual(cached.name, "Renamed", "The saved edit is in the cache")
+        XCTAssertEqual(cached.collectionIds, [], "The collections the PUT answer reports: the collection change did not happen")
+        try assertRevision(cached.revisionDate, is: Self.r3)
+    }
+
+    func testCollectionsFailureAndFailedRefresh_keepTheSavedRecordAndItsRevision() async throws {
+        let (rig, item) = try await orgRig()
+        answerPut(of: rig, revision: Self.r2, collectionIds: [])
+        rig.api.updateCipherCollectionsShouldThrow = APIError.httpError(statusCode: 500, body: "")
+        rig.api.getCipherShouldThrow = APIError.httpError(statusCode: 500, body: "")
+        var draft = StaleWriteRig.renamed(item)
+        draft.collectionIds = ["col-a"]
+
+        do {
+            _ = try await rig.vault.update(draft)
+            XCTFail("A failed collection update must be reported")
+        } catch VaultError.collectionChangeNotSaved {
+            // expected
+        }
+
+        let stored = await rig.store.record(for: "o1")
+        XCTAssertEqual(stored?.revisionDate, Self.r2, "Without a refresh the stored record is the PUT answer")
+        let cached = try await rig.vault.itemDetail(id: "o1")
+        XCTAssertEqual(cached.name, "Renamed")
+        try assertRevision(cached.revisionDate, is: Self.r2)
+    }
+
+    /// Retry policy: the same draft again as a full PUT, with its base moved to the cached
+    /// revision. The PUT is not a conflict because the save before it was Prizm's own.
+    func testRetryAfterCollectionsFailure_hasNoConflict() async throws {
+        let (rig, item) = try await orgRig()
+        answerPut(of: rig, revision: Self.r2, collectionIds: [])
+        rig.api.updateCipherCollectionsShouldThrow = APIError.httpError(statusCode: 500, body: "")
+        answerFollowUps(of: rig, getRevision: Self.r3)
+        var draft = StaleWriteRig.renamed(item)
+        draft.collectionIds = ["col-a"]
+        do {
+            _ = try await rig.vault.update(draft)
+            XCTFail("The first attempt must report the failed collection update")
+        } catch VaultError.collectionChangeNotSaved {
+            // expected
+        }
+        let cached = try await rig.vault.itemDetail(id: "o1")
+
+        rig.api.updateCipherCollectionsShouldThrow = nil
+        var retry = draft
+        retry.revisionDate = cached.revisionDate
+        let saved = try await rig.vault.update(retry)
+
+        XCTAssertEqual(rig.api.updateCipherCallCount, 2, "The retry is sent as a full PUT, not stopped by the pre-check")
+        XCTAssertEqual(rig.api.updateCipherCollectionsCallCount, 2)
+        XCTAssertEqual(saved.collectionIds, ["col-a"])
+    }
+
+    /// `PUT /collections` can say "out of date" too; it is not the item PUT, so it is not a conflict.
+    func testCollectionsOutOfDate_isNotAConflict() async throws {
+        let (rig, item) = try await orgRig()
+        answerPut(of: rig, revision: Self.r2, collectionIds: [])
+        rig.api.updateCipherCollectionsShouldThrow = APIError.httpError(
+            statusCode: 400,
+            body: #"{"message":"The client copy of this cipher is out of date. Resync the client and try again."}"#)
+        var draft = StaleWriteRig.renamed(item)
+        draft.collectionIds = ["col-a"]
+
+        do {
+            _ = try await rig.vault.update(draft)
+            XCTFail("A failed collection update must be reported")
+        } catch VaultError.collectionChangeNotSaved {
+            // expected: the item was saved, so there is no conflict to resolve
+        } catch VaultError.conflict {
+            XCTFail("An out-of-date answer to /collections is not a conflict")
+        }
+    }
+
     // MARK: - Helpers
+
+    /// A rig with one organization item cached and stored (revision `r1`), and its key available.
+    private func orgRig() async throws -> (StaleWriteRig, VaultItem) {
+        let api = MockPrizmAPIClient()
+        let crypto = MockPrizmCryptoService()
+        await crypto.unlockWith(keys: StaleWriteRig.vaultKeys)
+        crypto.stubbedVaultKeys = StaleWriteRig.vaultKeys
+        let orgKeyCache = OrgKeyCache()
+        await orgKeyCache.replaceAll(with: [Self.orgId: Self.orgKeys])
+        let store = RawCipherStore()
+        let vault = await RepositoryFixtures.vaultRepository(
+            apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache, recordStore: store)
+        let item = VaultItem(
+            id: "o1", name: "Shared", isFavorite: false, isDeleted: false, creationDate: Date(),
+            revisionDate: RepositoryFixtures.revisionDate,
+            content: .login(LoginContent(username: "u", password: "p", uris: [], totp: nil, notes: nil, customFields: [])),
+            organizationId: Self.orgId)
+        try await RepositoryFixtures.seedRecords(
+            for: [item], in: store, vaultKeys: StaleWriteRig.vaultKeys, orgKeys: [Self.orgId: Self.orgKeys])
+        await vault.populate(items: [item], folders: [], organizations: [], collections: [], syncedAt: Date())
+        return (StaleWriteRig(api: api, store: store, vault: vault), item)
+    }
+
+    /// Makes the item PUT answer with the request it received, stamped with `revision` and reporting
+    /// `collectionIds`: the official server's PUT answer holds the collections from before the
+    /// separate collection update.
+    private func answerPut(of rig: StaleWriteRig, revision: String, collectionIds: [String]) {
+        let api = rig.api
+        api.whileUpdatingCipher = { [api] in
+            guard let sent = api.lastUpdatedCipher,
+                  let data = try? JSONEncoder().encode(sent),
+                  var json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
+            json["revisionDate"] = revision
+            json["collectionIds"] = collectionIds
+            guard let body = try? JSONSerialization.data(withJSONObject: json),
+                  let answer = try? JSONDecoder().decode(RawCipher.self, from: body) else { return }
+            api.updateCipherResponse = answer
+        }
+    }
+
+    /// Prepares the answers an organization save gets after its PUT: `/collections`, and the fetch
+    /// that replaces a collections answer without a cipher. Both carry the content the PUT sent, as
+    /// a server's answers do, and differ only in their revision: an answer built from the record
+    /// stored before the save would hold another client's content, and a refresh that finds changed
+    /// content does not take the new revision. Call it after `answerPut`; it runs once the PUT has
+    /// been answered.
+    private func answerFollowUps(of rig: StaleWriteRig, collectionsRevision: String? = nil, getRevision: String? = nil) {
+        let api = rig.api
+        let answerPut = api.whileUpdatingCipher
+        api.whileUpdatingCipher = { [api] in
+            await answerPut?()
+            guard let sent = api.lastUpdatedCipher else { return }
+            if let collectionsRevision {
+                api.updateCipherCollectionsResponse = try? RepositoryFixtures.withRevision(sent, collectionsRevision)
+            }
+            if let getRevision {
+                api.getCipherResponses[sent.id] = try? RepositoryFixtures.withRevision(sent, getRevision)
+            }
+        }
+    }
 
     /// Stores and caches `items` as a sync would leave them (revision `r1` for the default login).
     private func seed(_ items: [VaultItem], in rig: StaleWriteRig) async throws {
@@ -742,7 +977,8 @@ private actor FetchGate {
 
 // MARK: - The wire: GET one cipher, restore with and without an answer
 
-/// `getCipher` and the cipher-returning `restoreCipher` of the real client, at the HTTP level.
+/// `getCipher` and the cipher-returning `restoreCipher` and `updateCipherCollections` of the real
+/// client, at the HTTP level.
 final class RevisionRefreshWireTests: XCTestCase {
 
     private let base = URL(string: "https://vault.example.com")!
@@ -818,6 +1054,41 @@ final class RevisionRefreshWireTests: XCTestCase {
             let restored = try await sut.restoreCipher(id: "c1")
 
             XCTAssertNil(restored, "A restore that succeeded is a success whatever the body holds")
+        }
+    }
+
+    func testUpdateCipherCollections_returnsTheCipherTheServerSent() async throws {
+        StubURLProtocol.responder = { [cipherBody] _ in .status(200, body: cipherBody) }
+
+        let answer = try await sut.updateCipherCollections(id: "c1", collectionIds: ["col-a"])
+
+        XCTAssertEqual(answer?.revisionDate, "2026-10-26T10:00:00.123456Z", "The revision string is kept as received")
+        let request = try XCTUnwrap(StubURLProtocol.requests.first)
+        XCTAssertEqual(request.method, "PUT")
+        XCTAssertEqual(request.url?.path, "/api/ciphers/c1/collections")
+        XCTAssertEqual(request.jsonBody?["collectionIds"] as? [String], ["col-a"])
+    }
+
+    func testUpdateCipherCollections_emptyOrUndecodableBodyGivesNilNotAnError() async throws {
+        for body in [Data(), Data("not json".utf8), Data("{\"object\":\"cipher\"}".utf8)] {
+            StubURLProtocol.responder = { _ in .status(200, body: body) }
+
+            let answer = try await sut.updateCipherCollections(id: "c1", collectionIds: [])
+
+            XCTAssertNil(answer, "A collection update that succeeded is a success whatever the body holds")
+        }
+    }
+
+    func testUpdateCipherCollections_httpErrorStillThrows() async {
+        StubURLProtocol.responder = { _ in .status(400, body: Data(#"{"message":"out of date"}"#.utf8)) }
+
+        do {
+            _ = try await sut.updateCipherCollections(id: "c1", collectionIds: ["col-a"])
+            XCTFail("A 400 must throw")
+        } catch APIError.httpError(let status, _) {
+            XCTAssertEqual(status, 400)
+        } catch {
+            XCTFail("Expected httpError, got \(error)")
         }
     }
 

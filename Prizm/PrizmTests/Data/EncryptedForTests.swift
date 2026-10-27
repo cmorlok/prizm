@@ -209,7 +209,7 @@ final class EncryptedForTests: XCTestCase {
         let client = await makeClient()
 
         _ = try await client.updateCipherPartial(id: "c1", folderId: "f1", favorite: true)
-        try await client.updateCipherCollections(id: "c1", collectionIds: ["col-a"])
+        _ = try await client.updateCipherCollections(id: "c1", collectionIds: ["col-a"])
 
         let requests = StubURLProtocol.requests
         XCTAssertEqual(requests.map { $0.url?.path }, ["/api/ciphers/c1/partial", "/api/ciphers/c1/collections"])

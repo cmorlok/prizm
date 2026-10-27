@@ -97,8 +97,13 @@ protocol PrizmAPIClientProtocol: Actor {
     /// called separately whenever `collectionIds` changes. Passing an empty array moves the
     /// item to the org's Default collection.
     ///
+    /// Vaultwarden 1.37.4 answers with the cipher (tested), and the official server answers with it
+    /// and changes the item's revision on this call (source-reviewed, not tested), so the answer is
+    /// returned for the caller to keep as the item's record. Nil when the body is empty or not a
+    /// cipher: the call itself succeeded then, and the caller fetches the item instead.
+    ///
     /// Reference: Bitwarden Server API PUT /api/ciphers/{id}/collections
-    func updateCipherCollections(id: String, collectionIds: [String]) async throws
+    func updateCipherCollections(id: String, collectionIds: [String]) async throws -> RawCipher?
 
     /// PUT `/api/ciphers/{id}/delete` — soft-deletes a cipher by moving it to Trash.
     ///
@@ -828,7 +833,7 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
 
     // MARK: - updateCipherCollections
 
-    func updateCipherCollections(id: String, collectionIds: [String]) async throws {
+    func updateCipherCollections(id: String, collectionIds: [String]) async throws -> RawCipher? {
         guard let base = baseURL else { throw APIError.baseURLNotSet }
         let url = base.appendingPathComponent("api/ciphers/\(id)/collections")
         var request = baseRequest(url: url)
@@ -839,7 +844,7 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
         }
         let body = ["collectionIds": collectionIds]
         request.httpBody = try JSONEncoder().encode(body)
-        try await performEmpty(request: request)
+        return try await performOptional(request: request)
     }
 
     // MARK: - softDeleteCipher
@@ -1323,8 +1328,9 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
 
     /// Sends `request`, checks the HTTP status code, and decodes the body if it holds a `T`.
     ///
-    /// For an endpoint whose success does not depend on its answer (restore: both servers answer
-    /// with the cipher, but the operation is done either way). A non-2xx status throws
+    /// For an endpoint whose success does not depend on its answer (restore and the collection
+    /// update: Vaultwarden 1.37.4 answers with the cipher, tested, and the official server
+    /// source-reviewed, but the operation is done either way). A non-2xx status throws
     /// `APIError.httpError` exactly as `performEmpty` does; a 2xx with an empty or undecodable body
     /// returns nil. Only the path is logged, never the body.
     private func performOptional<T: Decodable>(request: URLRequest) async throws -> T? {

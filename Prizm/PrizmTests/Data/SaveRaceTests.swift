@@ -79,6 +79,44 @@ final class SaveRaceTests: XCTestCase {
         await assertNothingLeft(in: rig, id: item.id)
     }
 
+    /// The collections request fails and a lock lands while it runs: the item PUT went through, but
+    /// the save must not cache the item or refresh its record for a vault that is already locked.
+    func testOrgUpdateWhenTheCollectionsRequestFailsAfterALock_throwsLockedAndLeavesNothing() async throws {
+        let (rig, item) = try await orgRig()
+        let vault = rig.vault
+        rig.api.whileUpdatingCollections = { await vault.clearVault() }
+        rig.api.updateCipherCollectionsShouldThrow = URLError(.networkConnectionLost)
+
+        await assertThrowsVaultLocked {
+            var draft = StaleWriteRig.renamed(item)
+            draft.collectionIds = ["col-a"]
+            _ = try await rig.vault.update(draft)
+        }
+
+        XCTAssertEqual(rig.api.updateCipherCollectionsCallCount, 1)
+        XCTAssertFalse(rig.api.callLog.contains { $0.hasPrefix("GET") }, "No refresh is started for a locked vault")
+        await assertNothingLeft(in: rig, id: item.id)
+    }
+
+    /// The collections request fails and the lock lands during the refresh that follows: the save
+    /// reports the lock, not "collection change not saved", and nothing is left of the item.
+    func testOrgUpdateWhenALockLandsDuringTheRefreshAfterAFailedCollectionsRequest_throwsLocked() async throws {
+        let (rig, item) = try await orgRig()
+        let vault = rig.vault
+        rig.api.updateCipherCollectionsShouldThrow = URLError(.networkConnectionLost)
+        rig.api.whileGettingCipher = { await vault.clearVault() }
+
+        await assertThrowsVaultLocked {
+            var draft = StaleWriteRig.renamed(item)
+            draft.collectionIds = ["col-a"]
+            _ = try await rig.vault.update(draft)
+        }
+
+        XCTAssertEqual(rig.api.updateCipherCollectionsCallCount, 1)
+        XCTAssertTrue(rig.api.callLog.contains { $0.hasPrefix("GET") }, "The refresh did start")
+        await assertNothingLeft(in: rig, id: item.id)
+    }
+
     func testOldSaveAfterLockAndUnlock_doesNotTouchTheNewSession() async throws {
         let rig = await StaleWriteRig.make()
         let item = StaleWriteRig.login("c1", name: "Original")

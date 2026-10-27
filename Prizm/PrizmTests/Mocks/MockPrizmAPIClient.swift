@@ -158,11 +158,18 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     /// Runs while the collections request is "in flight", for example to lock the vault meanwhile.
     nonisolated(unsafe) var whileUpdatingCollections: (@Sendable () async -> Void)?
 
-    func updateCipherCollections(id: String, collectionIds: [String]) async throws {
+    /// The cipher the collections request answers with; nil is an answer without a decodable
+    /// cipher (the default, which older tests rely on).
+    nonisolated(unsafe) var updateCipherCollectionsResponse: RawCipher?
+    nonisolated(unsafe) var updateCipherCollectionsShouldThrow: Error?
+
+    func updateCipherCollections(id: String, collectionIds: [String]) async throws -> RawCipher? {
         callLog.append("collections \(id)")
         updateCipherCollectionsCallCount += 1
         lastUpdatedCipherCollections = (id, collectionIds)
         await whileUpdatingCollections?()
+        if let err = updateCipherCollectionsShouldThrow { throw err }
+        return updateCipherCollectionsResponse
     }
 
     // MARK: - Stubs: createCipher
