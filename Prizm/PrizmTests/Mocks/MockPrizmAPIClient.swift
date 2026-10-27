@@ -130,10 +130,14 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
 
     nonisolated(unsafe) var lastUpdatedCipher: RawCipher?
 
+    /// Runs while an update request is "in flight", for example to lock the vault meanwhile.
+    nonisolated(unsafe) var whileUpdatingCipher: (@Sendable () async -> Void)?
+
     func updateCipher(id: String, cipher: RawCipher) async throws -> RawCipher {
         updateCipherCallCount += 1
         lastUpdatedCipherId = id
         lastUpdatedCipher = cipher
+        await whileUpdatingCipher?()
         if let err = updateCipherShouldThrow { throw err }
         return updateCipherResponse ?? cipher
     }
@@ -155,10 +159,13 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     nonisolated(unsafe) var createCipherCallCount: Int = 0
     /// The cipher the last `createCipher` was called with, recorded before any throw.
     nonisolated(unsafe) var lastCreatedCipher: RawCipher?
+    /// Runs while a create request (personal or org) is "in flight", for example to lock the vault.
+    nonisolated(unsafe) var whileCreatingCipher: (@Sendable () async -> Void)?
 
     func createCipher(cipher: RawCipher) async throws -> RawCipher {
         createCipherCallCount += 1
         lastCreatedCipher = cipher
+        await whileCreatingCipher?()
         if let err = createCipherShouldThrow { throw err }
         return createCipherResponse ?? cipher
     }
@@ -173,6 +180,7 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     func createOrgCipher(cipher: RawCipher) async throws -> RawCipher {
         createOrgCipherCallCount += 1
         lastCreatedOrgCipher = cipher
+        await whileCreatingCipher?()
         if let err = createCipherShouldThrow { throw err }
         return createOrgCipherResponse ?? cipher
     }
@@ -182,10 +190,13 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     nonisolated(unsafe) var softDeleteShouldThrow: Error?
     nonisolated(unsafe) var softDeleteCallCount: Int = 0
     nonisolated(unsafe) var lastSoftDeletedId: String?
+    /// Runs while the soft-delete request is "in flight", for example to lock the vault meanwhile.
+    nonisolated(unsafe) var whileSoftDeletingCipher: (@Sendable () async -> Void)?
 
     func softDeleteCipher(id: String) async throws {
         softDeleteCallCount += 1
         lastSoftDeletedId = id
+        await whileSoftDeletingCipher?()
         if let err = softDeleteShouldThrow { throw err }
     }
 
@@ -194,10 +205,13 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     nonisolated(unsafe) var permanentDeleteShouldThrow: Error?
     nonisolated(unsafe) var permanentDeleteCallCount: Int = 0
     nonisolated(unsafe) var lastPermanentDeletedId: String?
+    /// Runs while the permanent-delete request is "in flight", for example to lock the vault meanwhile.
+    nonisolated(unsafe) var whileDeletingCipher: (@Sendable () async -> Void)?
 
     func permanentDeleteCipher(id: String) async throws {
         permanentDeleteCallCount += 1
         lastPermanentDeletedId = id
+        await whileDeletingCipher?()
         if let err = permanentDeleteShouldThrow { throw err }
     }
 
@@ -206,9 +220,12 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     nonisolated(unsafe) var bulkDeleteCalls: [[String]] = []
     /// Throws on the call with this index (0-based), to simulate a failing chunk.
     nonisolated(unsafe) var bulkDeleteFailsOnCall: Int?
+    /// Runs while a bulk delete request is "in flight", for example to lock the vault meanwhile.
+    nonisolated(unsafe) var whileDeletingCiphers: (@Sendable () async -> Void)?
 
     func permanentDeleteCiphers(ids: [String]) async throws {
         bulkDeleteCalls.append(ids)
+        await whileDeletingCiphers?()
         if bulkDeleteFailsOnCall == bulkDeleteCalls.count - 1 {
             throw APIError.httpError(statusCode: 400, body: "")
         }
@@ -219,10 +236,13 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     nonisolated(unsafe) var restoreShouldThrow: Error?
     nonisolated(unsafe) var restoreCallCount: Int = 0
     nonisolated(unsafe) var lastRestoredId: String?
+    /// Runs while the restore request is "in flight", for example to lock the vault meanwhile.
+    nonisolated(unsafe) var whileRestoringCipher: (@Sendable () async -> Void)?
 
     func restoreCipher(id: String) async throws {
         restoreCallCount += 1
         lastRestoredId = id
+        await whileRestoringCipher?()
         if let err = restoreShouldThrow { throw err }
     }
 

@@ -17,7 +17,8 @@ import os.log
 /// Individual cipher decryption failures are non-fatal — they are counted and logged
 /// but the remaining ciphers are still stored.
 ///
-/// Concurrent calls: the second caller receives `SyncError.syncInProgress`.
+/// Concurrent calls: the second caller of the same session receives `SyncError.syncInProgress`.
+/// A sync that began before a lock or sign-out does not block the next session's sync.
 actor SyncRepositoryImpl: SyncRepository {
 
     // MARK: - Dependencies
@@ -28,12 +29,15 @@ actor SyncRepositoryImpl: SyncRepository {
     private let vaultKeyCache:   VaultKeyCache
     private let orgKeyCache:     OrgKeyCache
     private let profileIds:      ProfileIdCache
+    private let recordStore:     RawCipherStore
 
     private let logger = Logger(subsystem: "com.prizm", category: "SyncRepository")
 
     // MARK: - State
 
-    private var isSyncing = false
+    /// The store generation of the sync that is running, nil when none is. A sync from an earlier
+    /// generation does not count as running for a caller of a later one (see `sync`).
+    private var activeSyncGeneration: RawCipherStore.Generation?
 
     // MARK: - Init
 
@@ -44,7 +48,9 @@ actor SyncRepositoryImpl: SyncRepository {
         vaultKeyCache:   VaultKeyCache,
         orgKeyCache:     OrgKeyCache = OrgKeyCache(),
         // No default: the same holder must reach `VaultRepositoryImpl`, which reads it on every save.
-        profileIds:      ProfileIdCache
+        profileIds:      ProfileIdCache,
+        // No default: the same store must reach `VaultRepositoryImpl`, which empties it on lock.
+        recordStore: RawCipherStore
     ) {
         self.apiClient       = apiClient
         self.crypto          = crypto
@@ -52,17 +58,31 @@ actor SyncRepositoryImpl: SyncRepository {
         self.vaultKeyCache   = vaultKeyCache
         self.orgKeyCache     = orgKeyCache
         self.profileIds      = profileIds
+        self.recordStore     = recordStore
     }
 
     // MARK: - SyncRepository
 
     func sync(progress: @Sendable @escaping (String) -> Void) async throws -> SyncResult {
-        guard !isSyncing else {
+        // Read before the first network await, not right before the write: a token read at the
+        // write is always current and would fence nothing. `clearVault()` bumps it, so a lock
+        // (also one followed by an unlock) that lands while this sync runs makes `replaceAll`
+        // refuse, which `ensureStillUnlocked()` alone cannot do.
+        let storeGeneration = await recordStore.currentGeneration()
+
+        // Only a sync of the same session blocks this one. A sync that started before a lock is
+        // going to be discarded at its store write; if it still blocked callers, the sync that
+        // follows an unlock would get `syncInProgress`, `UnlockViewModel` would treat that as
+        // non-fatal and show an empty vault. Check and set run without an await in between, so two
+        // callers of one session cannot both pass.
+        if activeSyncGeneration == storeGeneration {
             logger.info("sync() called while already in progress")
             throw SyncError.syncInProgress
         }
-        isSyncing = true
-        defer { isSyncing = false }
+        activeSyncGeneration = storeGeneration
+        // Only the sync that set the marker clears it: the marker may belong to a newer session's
+        // sync by the time a discarded one ends.
+        defer { if activeSyncGeneration == storeGeneration { activeSyncGeneration = nil } }
 
         // Phase 1: Fetch encrypted vault from server.
         progress("Syncing vault…")
@@ -252,6 +272,12 @@ actor SyncRepositoryImpl: SyncRepository {
         // Phase 3: Populate the in-memory vault store.
         let syncedAt = Date()
         try await ensureStillUnlocked()
+        // After the last lock check and before the profile id and `populate`: a sync that was
+        // cleared while it ran stops here and writes nothing else.
+        guard await recordStore.replaceAll(syncResponse.ciphers, ifCurrent: storeGeneration) else {
+            logger.info("Sync discarded: the vault was cleared while it ran")
+            throw PrizmCryptoServiceError.vaultLocked
+        }
         // Before populate, so the vault is never shown without the id its saves need.
         await profileIds.set(syncResponse.profile.id)
         await vaultRepository.populate(
@@ -277,7 +303,9 @@ actor SyncRepositoryImpl: SyncRepository {
     /// in memory. The lock clears the vault store and the key caches, and Empty Trash runs syncs in
     /// the middle of a session (fix-empty-trash). Checked right before each cache or store write.
     /// Intentionally NOT done: a lock that lands between this check and the write it guards is
-    /// not caught; the window is one actor hop.
+    /// not caught; the window is one actor hop. The record store's generation token covers that
+    /// window for the store only (and a lock followed by an unlock); the caches and `populate` are
+    /// not covered by it.
     private func ensureStillUnlocked() async throws {
         guard await crypto.isUnlocked else {
             logger.info("Sync discarded: the vault locked while it ran")

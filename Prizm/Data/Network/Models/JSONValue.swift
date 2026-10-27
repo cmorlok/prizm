@@ -90,6 +90,27 @@ nonisolated enum JSONValue: Codable, Equatable, Sendable {
     }
 }
 
+// MARK: - Redaction
+
+/// Wire values print as their type name and nothing else, in `String(describing:)`,
+/// `String(reflecting:)`, interpolation and `dump` (Constitution III: secrets must not appear in
+/// logs). Ciphertext and plain metadata are not printed either: a log line is no place for a vault
+/// record, and the synthesized description of these structs would print every field. Tests compare
+/// wire values through key paths, not through their descriptions.
+///
+/// `nonisolated`: under the module's default main-actor isolation, the default implementations
+/// below would be main-actor isolated and fail to compile for nonisolated types.
+nonisolated protocol RedactedWireModel: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {}
+
+nonisolated extension RedactedWireModel {
+    var description: String { "\(Self.self)(redacted)" }
+    var debugDescription: String { description }
+    /// No children, so `dump` and the debugger show nothing of the contents either.
+    var customMirror: Mirror { Mirror(self, children: [], displayStyle: .struct) }
+}
+
+nonisolated extension JSONValue: RedactedWireModel {}
+
 // MARK: - Dynamic-key coding helpers
 
 /// A coding key built from any string, so a struct can read and write keys it does not know.

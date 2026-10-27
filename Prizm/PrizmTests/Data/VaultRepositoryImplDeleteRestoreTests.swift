@@ -145,6 +145,102 @@ final class VaultRepositoryImplDeleteRestoreTests: XCTestCase {
         XCTAssertEqual(trashed.count, 1, "Trashed item should remain when API call fails")
     }
 
+    // MARK: - The vault changes while the request is in flight
+
+    // The repository is an actor, so a lock (`clearVault`) or a sync (`populate`) can run while a
+    // request waits for the server. The item is looked up again after the request: an index taken
+    // before it would trap after a lock and point at another item after a sync.
+
+    func testDeleteItem_vaultClearedDuringRequest_doesNotCrash() async throws {
+        await sut.populate(items: [makeLogin(id: "a", name: "A")], folders: [], organizations: [], collections: [], syncedAt: Date())
+        let vault = sut!
+        mockAPI.whileSoftDeletingCipher = { await vault.clearVault() }
+
+        try await sut.deleteItem(id: "a")
+
+        let all = try await sut.allItems()
+        let trashed = try await sut.items(for: .trash)
+        XCTAssertTrue(all.isEmpty)
+        XCTAssertTrue(trashed.isEmpty, "The lock emptied the cache; the finished delete must not bring an item back")
+    }
+
+    func testDeleteItem_cacheReplacedDuringRequest_marksOnlyThatItem() async throws {
+        let a = makeLogin(id: "a", name: "A")
+        let b = makeLogin(id: "b", name: "B")
+        await sut.populate(items: [a, b], folders: [], organizations: [], collections: [], syncedAt: Date())
+        let vault = sut!
+        // A sync delivered the same items in another order.
+        mockAPI.whileSoftDeletingCipher = {
+            await vault.populate(items: [b, a], folders: [], organizations: [], collections: [], syncedAt: Date())
+        }
+
+        try await sut.deleteItem(id: "a")
+
+        let trashed = try await sut.items(for: .trash)
+        let active = try await sut.allItems()
+        XCTAssertEqual(trashed.map(\.id), ["a"])
+        XCTAssertEqual(active.map(\.id), ["b"])
+    }
+
+    func testPermanentDeleteItem_vaultClearedDuringRequest_doesNotCrash() async throws {
+        await sut.populate(items: [makeLogin(id: "t1", name: "T1", isDeleted: true)],
+                           folders: [], organizations: [], collections: [], syncedAt: Date())
+        let vault = sut!
+        mockAPI.whileDeletingCipher = { await vault.clearVault() }
+
+        try await sut.permanentDeleteItem(id: "t1")
+
+        XCTAssertEqual(mockAPI.permanentDeleteCallCount, 1)
+        let trashed = try await sut.items(for: .trash)
+        XCTAssertTrue(trashed.isEmpty)
+    }
+
+    func testPermanentDeleteItem_cacheReplacedDuringRequest_removesOnlyThatItem() async throws {
+        let t1 = makeLogin(id: "t1", name: "T1", isDeleted: true)
+        let t2 = makeLogin(id: "t2", name: "T2", isDeleted: true)
+        await sut.populate(items: [t1, t2], folders: [], organizations: [], collections: [], syncedAt: Date())
+        let vault = sut!
+        mockAPI.whileDeletingCipher = {
+            await vault.populate(items: [t2, t1], folders: [], organizations: [], collections: [], syncedAt: Date())
+        }
+
+        try await sut.permanentDeleteItem(id: "t1")
+
+        let trashed = try await sut.items(for: .trash)
+        XCTAssertEqual(trashed.map(\.id), ["t2"])
+    }
+
+    func testRestoreItem_vaultClearedDuringRequest_doesNotCrash() async throws {
+        await sut.populate(items: [makeLogin(id: "r1", name: "R1", isDeleted: true)],
+                           folders: [], organizations: [], collections: [], syncedAt: Date())
+        let vault = sut!
+        mockAPI.whileRestoringCipher = { await vault.clearVault() }
+
+        try await sut.restoreItem(id: "r1")
+
+        let all = try await sut.allItems()
+        let trashed = try await sut.items(for: .trash)
+        XCTAssertTrue(all.isEmpty, "The lock emptied the cache; the finished restore must not bring an item back")
+        XCTAssertTrue(trashed.isEmpty)
+    }
+
+    func testRestoreItem_cacheReplacedDuringRequest_restoresOnlyThatItem() async throws {
+        let r1 = makeLogin(id: "r1", name: "R1", isDeleted: true)
+        let r2 = makeLogin(id: "r2", name: "R2", isDeleted: true)
+        await sut.populate(items: [r1, r2], folders: [], organizations: [], collections: [], syncedAt: Date())
+        let vault = sut!
+        mockAPI.whileRestoringCipher = {
+            await vault.populate(items: [r2, r1], folders: [], organizations: [], collections: [], syncedAt: Date())
+        }
+
+        try await sut.restoreItem(id: "r1")
+
+        let active = try await sut.allItems()
+        let trashed = try await sut.items(for: .trash)
+        XCTAssertEqual(active.map(\.id), ["r1"])
+        XCTAssertEqual(trashed.map(\.id), ["r2"])
+    }
+
     // MARK: - items(for: .trash)
 
     func testItemsForTrash_onlyReturnsTrashedItems() async throws {

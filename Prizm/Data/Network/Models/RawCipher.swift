@@ -515,3 +515,15 @@ nonisolated enum CipherKeys {
     ]
     static var classified: Set<String> { modelled.union(preserved).union(serverDerived) }
 }
+
+// MARK: - Redaction
+
+// Every wire struct prints as its type name only (see `RedactedWireModel`).
+nonisolated extension RawCipher: RedactedWireModel {}
+nonisolated extension RawLoginData: RedactedWireModel {}
+nonisolated extension RawURI: RedactedWireModel {}
+nonisolated extension RawCardData: RedactedWireModel {}
+nonisolated extension RawIdentityData: RedactedWireModel {}
+nonisolated extension RawSecureNoteData: RedactedWireModel {}
+nonisolated extension RawSSHKeyData: RedactedWireModel {}
+nonisolated extension RawField: RedactedWireModel {}

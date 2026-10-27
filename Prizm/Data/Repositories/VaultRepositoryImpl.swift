@@ -26,6 +26,8 @@ actor VaultRepositoryImpl: VaultRepository {
     private let orgKeyCache: OrgKeyCache
     /// The profile id of the last sync, sent as `encryptedFor` on creates and full updates.
     private let profileIds: ProfileIdCache
+    /// The last server record of each item; filled by sync, create and update, emptied here.
+    private let recordStore: RawCipherStore
 
     // MARK: - Raw stores
 
@@ -59,13 +61,16 @@ actor VaultRepositoryImpl: VaultRepository {
         mapper:      CipherMapper = CipherMapper(),
         orgKeyCache: OrgKeyCache = OrgKeyCache(),
         // No default: one holder is shared with `SyncRepositoryImpl`, which fills it.
-        profileIds:  ProfileIdCache
+        profileIds:  ProfileIdCache,
+        // No default: one store is shared with `SyncRepositoryImpl`, which fills it.
+        recordStore: RawCipherStore
     ) {
         self.apiClient         = apiClient
         self.crypto            = crypto
         self.mapper            = mapper
         self.orgKeyCache       = orgKeyCache
         self.profileIds        = profileIds
+        self.recordStore       = recordStore
 
         // Pre-populate static keys with zero counts so itemCounts() returns 0 (not nil)
         // before the first populate() / buildIndexes() call (e.g. empty-vault tests).
@@ -98,8 +103,10 @@ actor VaultRepositoryImpl: VaultRepository {
     }
 
     func clearVault() async {
-        // First: lock and sign-out both reach this hook (RootViewModel), so the id never outlives
-        // the session.
+        // First: lock and sign-out both reach this hook (RootViewModel), so neither the id nor the
+        // records outlive the session. The store goes first because its generation bump is what
+        // refuses a sync or save that is still in flight, so it should happen as early as possible.
+        await recordStore.clear()
         await profileIds.clear()
         items             = []
         folderStore       = []
@@ -276,6 +283,11 @@ actor VaultRepositoryImpl: VaultRepository {
         // TODO: Require biometric re-auth before encrypting and sending — deferred pending
         // SecureEnclave entitlement approval.
 
+        // First, before any await on the network: `clearVault()` bumps this token, so a lock that
+        // lands while the request runs makes the store write below refuse. A token read at the
+        // write would always be current.
+        let storeGeneration = await recordStore.currentGeneration()
+
         let vaultKeys: CryptoKeys
         do {
             vaultKeys = try await crypto.currentKeys()
@@ -306,6 +318,10 @@ actor VaultRepositoryImpl: VaultRepository {
 
         // TODO: Queue encrypted rawCipher for offline persistence (deferred — requires WAL).
         let updatedRaw = try await apiClient.updateCipher(id: draft.id, cipher: rawCipher)
+        // Keep what the server answered, not what was sent. Refused after a lock: the save itself
+        // still returns, only the store stays empty (its item-cache update is stale-write
+        // protection's, OpenSpec task 4.5).
+        await storeRecord(updatedRaw, ifCurrent: storeGeneration)
 
         if draft.organizationId != nil {
             try await apiClient.updateCipherCollections(id: draft.id, collectionIds: draft.collectionIds)
@@ -338,6 +354,11 @@ actor VaultRepositoryImpl: VaultRepository {
     // MARK: - Create (write path)
 
     func create(_ draft: DraftVaultItem) async throws -> VaultItem {
+        // First, before any await on the network: `clearVault()` bumps this token, so a lock that
+        // lands while the request runs makes the store write below refuse. A token read at the
+        // write would always be current.
+        let storeGeneration = await recordStore.currentGeneration()
+
         let vaultKeys: CryptoKeys
         do {
             vaultKeys = try await crypto.currentKeys()
@@ -359,6 +380,7 @@ actor VaultRepositoryImpl: VaultRepository {
         } else {
             createdRaw = try await apiClient.createCipher(cipher: rawCipher)
         }
+        await storeRecord(createdRaw, ifCurrent: storeGeneration)
 
         // Discard cipherKey — newly created items are picked up by the next sync.
         let (createdItem, _) = try mapper.map(raw: createdRaw, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot)
@@ -376,8 +398,15 @@ actor VaultRepositoryImpl: VaultRepository {
     ///   The access token (held by `PrizmAPIClientImpl`) authorises the operation.
     /// - Bitwarden endpoint: `PUT /api/ciphers/{id}/delete` — moves the cipher to Trash.
     func deleteItem(id: String) async throws {
-        guard let idx = items.firstIndex(where: { $0.id == id }) else { return }
+        guard items.contains(where: { $0.id == id }) else { return }
         try await apiClient.softDeleteCipher(id: id)
+        // Looked up again: this actor is reentrant, so a lock or a sync can have emptied or
+        // replaced `items` while the request ran, and an index taken before it would trap or hit
+        // another item.
+        guard let idx = items.firstIndex(where: { $0.id == id }) else {
+            logger.info("Vault item soft-deleted on the server, no longer cached: \(id, privacy: .public)")
+            return
+        }
         let old = items[idx]
         items[idx] = VaultItem(
             id: old.id, name: old.name, isFavorite: old.isFavorite, isDeleted: true,
@@ -394,9 +423,13 @@ actor VaultRepositoryImpl: VaultRepository {
     /// - Security goal: same as `deleteItem` — only the cipher ID is sent; no key material.
     /// - Bitwarden endpoint: `DELETE /api/ciphers/{id}` — permanently removes the cipher.
     func permanentDeleteItem(id: String) async throws {
-        guard let idx = items.firstIndex(where: { $0.id == id }) else { return }
+        let storeGeneration = await recordStore.currentGeneration()
+        guard items.contains(where: { $0.id == id }) else { return }
         try await apiClient.permanentDeleteCipher(id: id)
-        items.remove(at: idx)
+        await removeRecords([id], ifCurrent: storeGeneration)
+        // By id, not by an index taken before the request: this actor is reentrant, so a lock or a
+        // sync can have emptied or replaced `items` meanwhile.
+        items.removeAll { $0.id == id }
         buildIndexes()
         logger.info("Vault item permanently deleted: \(id, privacy: .public)")
     }
@@ -411,6 +444,7 @@ actor VaultRepositoryImpl: VaultRepository {
     /// through; the first failure is thrown at the end.
     @discardableResult
     func permanentDeleteItems(ids: [String]) async throws -> Int {
+        let storeGeneration = await recordStore.currentGeneration()
         let requested = Set(ids)
         let trashed = items.filter { $0.isDeleted && requested.contains($0.id) }.map(\.id)
         var deletedCount = 0
@@ -423,6 +457,7 @@ actor VaultRepositoryImpl: VaultRepository {
                 if firstFailure == nil { firstFailure = error }
                 continue
             }
+            await removeRecords(chunk, ifCurrent: storeGeneration)
             let deleted = Set(chunk)
             items.removeAll { deleted.contains($0.id) }
             deletedCount += chunk.count
@@ -437,8 +472,13 @@ actor VaultRepositoryImpl: VaultRepository {
     ///
     /// - Security goal: same as `deleteItem` — only the cipher ID is sent; no key material.
     func restoreItem(id: String) async throws {
-        guard let idx = items.firstIndex(where: { $0.id == id }) else { return }
+        guard items.contains(where: { $0.id == id }) else { return }
         try await apiClient.restoreCipher(id: id)
+        // Looked up again, as in `deleteItem`: the cache can have changed while the request ran.
+        guard let idx = items.firstIndex(where: { $0.id == id }) else {
+            logger.info("Vault item restored on the server, no longer cached: \(id, privacy: .public)")
+            return
+        }
         let old = items[idx]
         items[idx] = VaultItem(
             id: old.id, name: old.name, isFavorite: old.isFavorite, isDeleted: false,
@@ -674,6 +714,23 @@ actor VaultRepositoryImpl: VaultRepository {
             throw VaultError.organizationKeyUnavailable
         }
         return orgKey
+    }
+
+    /// Stores the server's answer for one item. A refusal means the vault was cleared since the
+    /// operation started; the record is dropped and only the item id is logged.
+    private func storeRecord(_ cipher: RawCipher, ifCurrent token: RawCipherStore.Generation) async {
+        let stored = await recordStore.upsert(cipher, ifCurrent: token)
+        if !stored {
+            logger.info("Stored record not updated for \(cipher.id, privacy: .public): the vault was cleared during the save")
+        }
+    }
+
+    /// Removes the records of permanently deleted items; a refusal is logged by count, not by id.
+    private func removeRecords(_ ids: [String], ifCurrent token: RawCipherStore.Generation) async {
+        let removed = await recordStore.remove(ids: ids, ifCurrent: token)
+        if !removed {
+            logger.info("Stored records not removed for \(ids.count, privacy: .public) item(s): the vault was cleared during the delete")
+        }
     }
 
     /// The id for `encryptedFor`, or `VaultError.profileIdUnavailable` before the first sync of the
