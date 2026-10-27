@@ -81,6 +81,16 @@ protocol PrizmAPIClientProtocol: Actor {
     /// Reference: Bitwarden Server API PUT /api/ciphers/{id}
     func updateCipher(id: String, cipher: RawCipher) async throws -> RawCipher
 
+    /// GET `/api/ciphers/{id}` — one cipher, in the shape `/api/sync` uses for its `ciphers` array.
+    ///
+    /// Used to learn the server's current record (and so its revision) of an item after an operation
+    /// whose answer carries none. Vaultwarden 1.37.4 answers with the same fields as the sync
+    /// (`deletedDate` included, tested on that version); the official server's shape is source-reviewed,
+    /// not tested.
+    ///
+    /// Reference: Bitwarden Server API GET /api/ciphers/{id}
+    func getCipher(id: String) async throws -> RawCipher
+
     /// PUT `/api/ciphers/{id}/collections` — updates the collection membership of an org cipher.
     ///
     /// `PUT /api/ciphers/{id}` does not change collection assignments — this endpoint must be
@@ -123,8 +133,13 @@ protocol PrizmAPIClientProtocol: Actor {
     ///
     /// Clears `deletedDate` on the server. The item becomes visible in the active vault again.
     ///
+    /// Vaultwarden 1.37.4 answers with the restored cipher (tested), and so does the official server
+    /// (source-reviewed, not tested); this returns it so the caller can take the new revision from
+    /// it. A successful restore whose answer is empty or not a cipher returns nil: the restore
+    /// happened, only the answer is unusable. An HTTP failure still throws.
+    ///
     /// Reference: Bitwarden Server API PUT /api/ciphers/{id}/restore
-    func restoreCipher(id: String) async throws
+    func restoreCipher(id: String) async throws -> RawCipher?
 
     /// POST `/api/ciphers` — creates a new cipher with encrypted field values.
     ///
@@ -504,6 +519,15 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
         static let userAgent     = Config.userAgent
     }
 
+    /// Idle time-out, in seconds, of `getCipher`, instead of the session default of 60.
+    ///
+    /// Why: the fetch learns an item's revision after one of Prizm's own writes and runs inside that
+    /// item's write queue, so while it waits every later write to the item waits too (an edit-sheet
+    /// Save shows "Saving…" meanwhile). A failed fetch is only logged and costs at most one later
+    /// conflict, so giving up early is cheap; one cipher is a small answer. `timeoutInterval` limits
+    /// the time without data, so a slow answer that keeps arriving is not cut off.
+    nonisolated static let revisionRefreshTimeout: TimeInterval = 10
+
     // MARK: - Init
 
     init(session: URLSession = .shared) {
@@ -778,6 +802,30 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
         return updated
     }
 
+    // MARK: - getCipher
+
+    func getCipher(id: String) async throws -> RawCipher {
+        guard let base = baseURL else { throw APIError.baseURLNotSet }
+        let url = base.appendingPathComponent("api/ciphers/\(id)")
+
+        if DebugConfig.isEnabled {
+            logger.debug("[debug] getCipher → GET \(url.absoluteString, privacy: .public)")
+        }
+
+        var request = baseRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = Self.revisionRefreshTimeout
+        if let token = accessToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        let cipher: RawCipher = try await perform(request: request)
+        if DebugConfig.isEnabled {
+            logger.debug("[debug] getCipher ← id=\(cipher.id, privacy: .public)")
+        }
+        return cipher
+    }
+
     // MARK: - updateCipherCollections
 
     func updateCipherCollections(id: String, collectionIds: [String]) async throws {
@@ -855,7 +903,7 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
 
     // MARK: - restoreCipher
 
-    func restoreCipher(id: String) async throws {
+    func restoreCipher(id: String) async throws -> RawCipher? {
         guard let base = baseURL else { throw APIError.baseURLNotSet }
         let url = base.appendingPathComponent("api/ciphers/\(id)/restore")
 
@@ -871,10 +919,11 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
         // No body — the server identifies the cipher by URL path only.
         // Sending Content-Type: application/json with a body causes Vaultwarden to return 400.
 
-        try await performEmpty(request: request)
+        let restored: RawCipher? = try await performOptional(request: request)
         if DebugConfig.isEnabled {
-            logger.debug("[debug] restoreCipher ← ok id=\(id, privacy: .public)")
+            logger.debug("[debug] restoreCipher ← ok id=\(id, privacy: .public) cipher=\(restored != nil, privacy: .public)")
         }
+        return restored
     }
 
     // MARK: - createAttachmentMetadata
@@ -1270,6 +1319,34 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
             logger.error("HTTP \(http.statusCode) for \(request.url?.path ?? "unknown")")
             throw APIError.httpError(statusCode: http.statusCode, body: body)
         }
+    }
+
+    /// Sends `request`, checks the HTTP status code, and decodes the body if it holds a `T`.
+    ///
+    /// For an endpoint whose success does not depend on its answer (restore: both servers answer
+    /// with the cipher, but the operation is done either way). A non-2xx status throws
+    /// `APIError.httpError` exactly as `performEmpty` does; a 2xx with an empty or undecodable body
+    /// returns nil. Only the path is logged, never the body.
+    private func performOptional<T: Decodable>(request: URLRequest) async throws -> T? {
+        let (data, response) = try await session.data(for: request)
+
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.httpError(statusCode: 0, body: "")
+        }
+
+        logger.debug("[\(http.statusCode)] \(request.httpMethod ?? "?") \(request.url?.path ?? "")")
+
+        guard (200..<300).contains(http.statusCode) else {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            logger.error("HTTP \(http.statusCode) for \(request.url?.path ?? "unknown")")
+            throw APIError.httpError(statusCode: http.statusCode, body: body)
+        }
+
+        guard !data.isEmpty, let decoded = try? JSONDecoder().decode(T.self, from: data) else {
+            logger.info("No usable \(T.self) in the answer for \(request.url?.path ?? "unknown")")
+            return nil
+        }
+        return decoded
     }
 
     /// Character set safe for `application/x-www-form-urlencoded` values.

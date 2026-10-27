@@ -41,6 +41,13 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     nonisolated(unsafe) var updateCipherCallCount: Int = 0
     nonisolated(unsafe) var lastUpdatedCipherId: String?
 
+    // MARK: - Call order
+
+    /// Every write and refresh request in the order it started, for example
+    /// `["delete c1", "GET c1", "PUT c1"]`. Entries: "PUT <id>" (updateCipher), "collections <id>",
+    /// "GET <id>" (getCipher), "partial <id>", "delete <id>", "restore <id>" and "move".
+    nonisolated(unsafe) var callLog: [String] = []
+
     // MARK: - Protocol conformance
 
     func setBaseURL(_ url: URL) {
@@ -134,6 +141,7 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     nonisolated(unsafe) var whileUpdatingCipher: (@Sendable () async -> Void)?
 
     func updateCipher(id: String, cipher: RawCipher) async throws -> RawCipher {
+        callLog.append("PUT \(id)")
         updateCipherCallCount += 1
         lastUpdatedCipherId = id
         lastUpdatedCipher = cipher
@@ -151,6 +159,7 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     nonisolated(unsafe) var whileUpdatingCollections: (@Sendable () async -> Void)?
 
     func updateCipherCollections(id: String, collectionIds: [String]) async throws {
+        callLog.append("collections \(id)")
         updateCipherCollectionsCallCount += 1
         lastUpdatedCipherCollections = (id, collectionIds)
         await whileUpdatingCollections?()
@@ -198,6 +207,7 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     nonisolated(unsafe) var whileSoftDeletingCipher: (@Sendable () async -> Void)?
 
     func softDeleteCipher(id: String) async throws {
+        callLog.append("delete \(id)")
         softDeleteCallCount += 1
         lastSoftDeletedId = id
         await whileSoftDeletingCipher?()
@@ -243,11 +253,38 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     /// Runs while the restore request is "in flight", for example to lock the vault meanwhile.
     nonisolated(unsafe) var whileRestoringCipher: (@Sendable () async -> Void)?
 
-    func restoreCipher(id: String) async throws {
+    /// The cipher the restore answers with; nil is an answer without a decodable cipher.
+    nonisolated(unsafe) var restoreCipherResponse: RawCipher?
+
+    func restoreCipher(id: String) async throws -> RawCipher? {
+        callLog.append("restore \(id)")
         restoreCallCount += 1
         lastRestoredId = id
         await whileRestoringCipher?()
         if let err = restoreShouldThrow { throw err }
+        return restoreCipherResponse
+    }
+
+    // MARK: - Stubs: getCipher
+
+    /// The answer per item id. An id without an entry throws, so a test that does not stub the
+    /// refresh sees a failed refresh (logged, nothing changed) and needs no change.
+    nonisolated(unsafe) var getCipherResponses: [String: RawCipher] = [:]
+    nonisolated(unsafe) var getCipherShouldThrow: Error?
+    /// The ids `getCipher` was called with, in order, recorded before any throw.
+    nonisolated(unsafe) var getCipherCalls: [String] = []
+    /// Runs while a GET is "in flight", for example to lock the vault or to hold the request.
+    nonisolated(unsafe) var whileGettingCipher: (@Sendable () async -> Void)?
+
+    func getCipher(id: String) async throws -> RawCipher {
+        callLog.append("GET \(id)")
+        getCipherCalls.append(id)
+        await whileGettingCipher?()
+        if let err = getCipherShouldThrow { throw err }
+        guard let answer = getCipherResponses[id] else {
+            throw APIError.httpError(statusCode: 404, body: "")
+        }
+        return answer
     }
 
     // MARK: - Stubs: attachment endpoints
@@ -420,6 +457,7 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     nonisolated(unsafe) var whilePartialUpdateInFlight: (@Sendable () async -> Void)?
 
     func updateCipherPartial(id: String, folderId: String?, favorite: Bool) async throws -> PartialCipherResponse {
+        callLog.append("partial \(id)")
         if let err = updateCipherPartialShouldThrow { throw err }
         partialUpdates.append((id, folderId, favorite))
         await whilePartialUpdateInFlight?()
@@ -430,6 +468,7 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     nonisolated(unsafe) var moveCalls: [(ids: [String], folderId: String?)] = []
 
     func moveCiphersToFolder(ids: [String], folderId: String?) async throws {
+        callLog.append("move")
         if let err = moveCiphersShouldThrow { throw err }
         moveCalls.append((ids, folderId))
     }

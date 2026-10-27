@@ -585,11 +585,20 @@ actor VaultRepositoryImpl: VaultRepository {
     /// - Security goal: no vault key material is needed — only the cipher ID is sent.
     ///   The access token (held by `PrizmAPIClientImpl`) authorises the operation.
     /// - Bitwarden endpoint: `PUT /api/ciphers/{id}/delete` — moves the cipher to Trash.
+    ///
+    /// - Revision: the server gives the item a new revision, and the answer carries none, so the
+    ///   item is fetched afterwards and its record and cached revision are refreshed
+    ///   (`refreshRecord`); a failed fetch does not fail the delete.
     func deleteItem(id: String) async throws {
-        try await serialised([id]) { [self] in try await performDeleteItem(id: id) }
+        // Before the delete waits for its turn, as in `update`: a lock while it waits must stop the
+        // refresh from storing a record of the next session.
+        let storeGeneration = recordStore.currentGeneration()
+        try await serialised([id]) { [self] in
+            try await performDeleteItem(id: id, storeGeneration: storeGeneration)
+        }
     }
 
-    private func performDeleteItem(id: String) async throws {
+    private func performDeleteItem(id: String, storeGeneration: RawCipherStore.Generation) async throws {
         guard items.contains(where: { $0.id == id }) else { return }
         try await apiClient.softDeleteCipher(id: id)
         // Looked up again: this actor is reentrant, so a lock or a sync can have emptied or
@@ -603,6 +612,7 @@ actor VaultRepositoryImpl: VaultRepository {
         items[idx] = old.with(isDeleted: true)
         buildIndexes()
         logger.info("Vault item soft-deleted: \(id, privacy: .public)")
+        await refreshRecord(id: id, from: nil, token: storeGeneration)
     }
 
     /// Permanently deletes the trashed item with `id` by calling `DELETE /ciphers/{id}`.
@@ -676,13 +686,21 @@ actor VaultRepositoryImpl: VaultRepository {
     /// Restores the trashed item with `id` by calling `PUT /api/ciphers/{id}/restore`.
     ///
     /// - Security goal: same as `deleteItem` — only the cipher ID is sent; no key material.
+    ///
+    /// - Revision: Vaultwarden 1.37.4 answers with the restored cipher (tested) and the official
+    ///   server does too (source-reviewed, not tested); its record and revision replace the stored
+    ///   and cached ones (`refreshRecord`), or the item is fetched when the answer holds no usable
+    ///   cipher.
     func restoreItem(id: String) async throws {
-        try await serialised([id]) { [self] in try await performRestoreItem(id: id) }
+        let storeGeneration = recordStore.currentGeneration()
+        try await serialised([id]) { [self] in
+            try await performRestoreItem(id: id, storeGeneration: storeGeneration)
+        }
     }
 
-    private func performRestoreItem(id: String) async throws {
+    private func performRestoreItem(id: String, storeGeneration: RawCipherStore.Generation) async throws {
         guard items.contains(where: { $0.id == id }) else { return }
-        try await apiClient.restoreCipher(id: id)
+        let restored = try await apiClient.restoreCipher(id: id)
         // Looked up again, as in `deleteItem`: the cache can have changed while the request ran.
         guard let idx = items.firstIndex(where: { $0.id == id }) else {
             logger.info("Vault item restored on the server, no longer cached: \(id, privacy: .public)")
@@ -692,6 +710,7 @@ actor VaultRepositoryImpl: VaultRepository {
         items[idx] = old.with(isDeleted: false)
         buildIndexes()
         logger.info("Vault item restored: \(id, privacy: .public)")
+        await refreshRecord(id: id, from: restored, token: storeGeneration)
     }
 
     // MARK: - Attachment cache patch
@@ -956,6 +975,72 @@ actor VaultRepositoryImpl: VaultRepository {
         if !stored {
             logger.info("Stored record not updated for \(cipher.id, privacy: .public): the vault was cleared during the save")
         }
+    }
+
+    /// Takes the server's current record of one item after an operation of Prizm's own and makes the
+    /// stored record and the cached item's revision match it, so the next edit starts from the
+    /// revision the server holds. `known` is the operation's answer when it carried the cipher;
+    /// otherwise the item is fetched.
+    ///
+    /// Runs whether or not the server changed the revision: Vaultwarden bumps it on soft delete and
+    /// restore only, the official server also on attachments and collection changes, and one extra
+    /// fetch costs less than a wrong guess about either.
+    ///
+    /// - Security goal: nothing decrypted is created or kept by a refresh. It never maps or decrypts
+    ///   the record (no key is read); only the ciphertext record in the store and the cached item's
+    ///   revision date change, and a record that no key can read is stored as received. Both writes
+    ///   are refused after a lock: the token the operation read at its start is checked before the
+    ///   request, after it, and after the store write.
+    /// - Not queued: called only from inside the queued body of the operation that caused it, so it
+    ///   runs before any later write to the same item. It must never call a queued public method
+    ///   (the queue would wait for itself).
+    /// - A failed fetch is logged (item id and `ErrorLog.describe` only) and otherwise ignored: the
+    ///   operation already succeeded on the server, the stored record and cached revision stay as
+    ///   they were, and the worst case is one conflict on a later edit that a reload resolves. An
+    ///   answer without a readable revision is treated the same way and never stored.
+    /// - Intentionally NOT done: a fetch that was started before a sync and answers after it can
+    ///   store an older record than the sync's, which costs one conflict and a reload. Comparing
+    ///   revisions to prevent that would add a rule for a narrow window.
+    private func refreshRecord(id: String, from known: RawCipher?, token: RawCipherStore.Generation) async {
+        guard recordStore.isCurrent(token) else { return }
+        let fresh: RawCipher
+        if let known {
+            fresh = known
+        } else {
+            do {
+                fresh = try await apiClient.getCipher(id: id)
+            } catch {
+                logger.error("Revision refresh failed for \(id, privacy: .public): \(ErrorLog.describe(error), privacy: .public)")
+                return
+            }
+        }
+        // The store is keyed by the record's own id and the cached items by the id the sync
+        // delivered: an answer for another item must not replace this one's record, and an answer
+        // that spells the id differently (a case change) would open a second entry the next save
+        // never reads, so the ids are compared exactly.
+        guard fresh.id == id else {
+            logger.error("Revision refresh ignored: the answer for \(id, privacy: .public) names another item")
+            return
+        }
+        // Checked before the store write: an answer without a readable revision (the epoch is what a
+        // missing one turns into) would replace a good record with one the next save refuses, while
+        // the cached revision stayed behind. The old record stays, as after a failed fetch.
+        guard let revision = CipherMapper.parseRevisionDate(fresh.revisionDate),
+              revision.timeIntervalSince1970 > 0 else {
+            logger.error("Revision refresh ignored: the answer for \(id, privacy: .public) has no readable revision")
+            return
+        }
+        guard recordStore.isCurrent(token) else {
+            logger.info("Revision refresh dropped, the vault was cleared while it ran: \(id, privacy: .public)")
+            return
+        }
+        await storeRecord(fresh, ifCurrent: token)
+        // Checked again after the store await, and with no suspension between the check and the
+        // write: a lock that landed during the await must not get a cached item back.
+        guard recordStore.isCurrent(token),
+              let idx = items.firstIndex(where: { $0.id == id }) else { return }
+        items[idx] = items[idx].with(revisionDate: revision)
+        buildIndexes()
     }
 
     /// Removes the records of permanently deleted items; a refusal is logged by count, not by id.

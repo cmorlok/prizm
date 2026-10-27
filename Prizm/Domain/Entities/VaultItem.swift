@@ -51,7 +51,8 @@ nonisolated struct VaultItem: Identifiable, Equatable, Hashable {
     /// Settable only inside this file, for `with(isDeleted:)`.
     private(set) var isDeleted: Bool
     let creationDate: Date
-    let revisionDate: Date
+    /// Settable only inside this file, for `with(revisionDate:)`.
+    private(set) var revisionDate: Date
     let content: ItemContent
     /// Master-password re-prompt setting mirrored from the Bitwarden wire format.
     /// 0 = disabled (default), 1 = require master password before revealing fields.
@@ -143,6 +144,14 @@ nonisolated extension VaultItem {
     func with(collectionIds: [String]) -> VaultItem {
         var copy = self
         copy.collectionIds = collectionIds
+        return copy
+    }
+
+    /// A copy with the revision the server gave after one of Prizm's own operations, with every
+    /// other field kept (including `editBlock`). The edit sheet's draft starts from this date.
+    func with(revisionDate: Date) -> VaultItem {
+        var copy = self
+        copy.revisionDate = revisionDate
         return copy
     }
 }

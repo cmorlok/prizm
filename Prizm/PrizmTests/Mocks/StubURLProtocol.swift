@@ -13,6 +13,8 @@ nonisolated final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         let url: URL?
         let headers: [String: String]
         let body: Data?
+        /// The request's own idle time-out, in seconds.
+        let timeoutInterval: TimeInterval
 
         /// The body decoded as a JSON object, or nil.
         var jsonBody: [String: Any]? {
@@ -59,7 +61,8 @@ nonisolated final class StubURLProtocol: URLProtocol, @unchecked Sendable {
             method: request.httpMethod,
             url: request.url,
             headers: request.allHTTPHeaderFields ?? [:],
-            body: request.httpBody ?? request.httpBodyStream.map(Self.readAll)
+            body: request.httpBody ?? request.httpBodyStream.map(Self.readAll),
+            timeoutInterval: request.timeoutInterval
         )
         Self.lock.withLock { Self._requests.append(recorded) }
         // Guard (fix-empty-trash, D5): POST /ciphers/purge deletes the user's whole vault. No test
