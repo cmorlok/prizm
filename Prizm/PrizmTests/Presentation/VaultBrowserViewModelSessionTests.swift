@@ -184,7 +184,8 @@ private func makeVaultBrowserViewModel(vault: MockVaultRepository, search: any S
         renameCollection: StubRenameCollection(),
         deleteCollection: StubDeleteCollection(),
         syncTimestamp:    syncRepo,
-        getLastSyncDate:  GetLastSyncDateUseCaseImpl(repository: syncRepo)
+        getLastSyncDate:  GetLastSyncDateUseCaseImpl(repository: syncRepo),
+        sync:             MockSyncUseCase()
     )
 }
 

@@ -237,7 +237,8 @@ final class AppContainer: ObservableObject {
             renameCollection: renameCollectionUseCase,
             deleteCollection: deleteCollectionUseCase,
             syncTimestamp:    syncTimestampRepository,
-            getLastSyncDate:  getLastSyncDateUseCase
+            getLastSyncDate:  getLastSyncDateUseCase,
+            sync:             syncUseCase
         )
     }
 

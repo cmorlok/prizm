@@ -586,7 +586,8 @@ final class MockRootDependencies: RootViewModelDependencies {
             renameCollection: StubRenameCollection(),
             deleteCollection: StubDeleteCollection(),
             syncTimestamp:    syncRepo,
-            getLastSyncDate:  GetLastSyncDateUseCaseImpl(repository: syncRepo)
+            getLastSyncDate:  GetLastSyncDateUseCaseImpl(repository: syncRepo),
+            sync:             MockSyncUseCase()
         )
     }
 

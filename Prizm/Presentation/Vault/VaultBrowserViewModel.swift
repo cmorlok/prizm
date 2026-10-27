@@ -3,6 +3,22 @@ import Combine
 import Foundation
 import os.log
 
+// MARK: - Conflict resync outcome
+
+/// The outcome of the sync the edit sheet starts after the server rejected a save as based on an
+/// outdated copy. The sheet refills only from `.synced`; `.failed` carries the message to show.
+nonisolated enum ConflictResync: Equatable {
+    case synced
+    case failed(String)
+}
+
+/// What the vault store holds for an item after a conflict resync: the item to refill the edit
+/// sheet from, or `.gone` when the item was deleted or moved to Trash by someone else.
+nonisolated enum LatestItem: Equatable {
+    case available(VaultItem)
+    case gone
+}
+
 // MARK: - VaultBrowserViewModel
 
 /// ViewModel for the three-pane vault browser (User Story 3).
@@ -101,6 +117,7 @@ final class VaultBrowserViewModel: ObservableObject {
     private let deleteCollectionUseCase:  any DeleteCollectionUseCase
     private var syncTimestamp:          any SyncTimestampRepository
     private var getLastSyncDate:        any GetLastSyncDateUseCase
+    private let sync:                   any SyncUseCase
     private let logger = Logger(subsystem: "com.prizm", category: "VaultBrowserViewModel")
 
     // MARK: - Menu bar action relay
@@ -173,7 +190,8 @@ final class VaultBrowserViewModel: ObservableObject {
         renameCollection:  any RenameCollectionUseCase,
         deleteCollection:  any DeleteCollectionUseCase,
         syncTimestamp:     any SyncTimestampRepository,
-        getLastSyncDate:   any GetLastSyncDateUseCase
+        getLastSyncDate:   any GetLastSyncDateUseCase,
+        sync:              any SyncUseCase
     ) {
         self.vault                  = vault
         self.search                 = search
@@ -192,6 +210,7 @@ final class VaultBrowserViewModel: ObservableObject {
         self.deleteCollectionUseCase = deleteCollection
         self.syncTimestamp          = syncTimestamp
         self.getLastSyncDate        = getLastSyncDate
+        self.sync                   = sync
         refreshItems()
         refreshCounts()
         refreshFolders()
@@ -396,6 +415,55 @@ final class VaultBrowserViewModel: ObservableObject {
     /// Called when a sync fails mid-session (FR-049).
     func handleSyncError(_ message: String) {
         syncErrorMessage = message
+    }
+
+    // MARK: - Conflict resync
+
+    /// Runs the app's sync for the edit sheet after the server rejected a save as based on an
+    /// outdated copy, applies it to the browser like any other sync, and reports whether it ran.
+    ///
+    /// The edit view model gets this closure instead of the sync use case or the repository: the
+    /// browser already owns sync results, the session generation and the selection. The sheet
+    /// refills only from `.synced`, a sync that started after the conflict.
+    func resyncAfterConflict() async -> ConflictResync {
+        let generation = sessionGeneration
+        do {
+            let result = try await sync.execute(progress: { _ in })
+            // A lock or sign-out while the sync ran: the vault store was cleared, so this result
+            // must not repopulate the browser or reach the sheet.
+            guard isCurrent(generation) else {
+                return .failed(VaultError.vaultLocked.localizedDescription)
+            }
+            handleSyncCompleted(syncedAt: result.syncedAt)
+            return .synced
+        } catch {
+            guard isCurrent(generation) else {
+                return .failed(VaultError.vaultLocked.localizedDescription)
+            }
+            let message = error.localizedDescription
+            logger.error("Conflict resync failed: \(ErrorLog.describe(error), privacy: .public)")
+            handleSyncError(message)
+            return .failed(message)
+        }
+    }
+
+    /// Reads the item with `id` from the vault store, to refill the edit sheet after a resync.
+    ///
+    /// A missing item and a trashed item both count as gone: trashed items cannot be edited
+    /// (`ItemDetailView` opens the sheet only for active items). An item with an edit block is
+    /// still available; the sheet shows it with its block.
+    func latestItem(id: String) async -> LatestItem {
+        do {
+            let found = try await vault.itemDetail(id: id)
+            if found.isDeleted {
+                logger.info("Item \(id, privacy: .public) is in Trash after the resync")
+                return .gone
+            }
+            return .available(found)
+        } catch {
+            logger.info("Item \(id, privacy: .public) is not in the vault after the resync")
+            return .gone
+        }
     }
 
     /// Called by `ItemDetailView` when the edit sheet opens or closes.

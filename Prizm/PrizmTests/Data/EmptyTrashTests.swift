@@ -359,7 +359,8 @@ private func makeEmptyTrashTestViewModel(emptyTrash: any EmptyTrashUseCase,
         renameCollection: RenameCollectionUseCaseImpl(repository: vault),
         deleteCollection: DeleteCollectionUseCaseImpl(repository: vault),
         syncTimestamp:    syncRepo,
-        getLastSyncDate:  GetLastSyncDateUseCaseImpl(repository: syncRepo)
+        getLastSyncDate:  GetLastSyncDateUseCaseImpl(repository: syncRepo),
+        sync:             MockSyncUseCase()
     )
 }
 
