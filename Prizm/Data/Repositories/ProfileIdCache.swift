@@ -19,11 +19,14 @@ import os.log
 /// - Why a type of its own: the id belongs to the account, not to any cipher record, so it is held
 ///   apart from the cached vault items; its lifetime is the unlocked session (see Lifecycle).
 ///
-/// - Intentionally NOT done: a generation fence. A sync that passed its last lock check can set the
-///   id after `clearVault()` ran and leave a stale id until the next sync. No save can use it: while
-///   locked `currentKeys()` throws `vaultLocked` first, and the first sync of the next session
-///   overwrites it before the vault is shown. The id is not a secret (the server sends it with
-///   every sync), so it is neither zeroed nor kept out of memory, only kept out of the logs.
+/// - Fence: the sync that writes the id passes the record store's generation check
+///   (`set(_:ifCurrent:)`), so a sync of an earlier session cannot leave its account's id behind
+///   after a lock, also one followed by an unlock or a sign-in as another account. The check runs
+///   inside this actor, with no suspension before the write, and `VaultRepositoryImpl.clearVault()`
+///   invalidates the store's token before it clears this holder: an id that passed the check is
+///   cleared by that lock, and one that arrives later is refused. The id is not a secret (the
+///   server sends it with every sync), so it is neither zeroed nor kept out of memory, only kept
+///   out of the logs.
 actor ProfileIdCache {
 
     private let logger = Logger(subsystem: "com.prizm", category: "ProfileIdCache")
@@ -45,6 +48,18 @@ actor ProfileIdCache {
         profileId = id
         // The id itself is never logged.
         logger.info("ProfileIdCache: profile id captured")
+    }
+
+    /// Stores the id only while `isCurrent()` still holds, and says whether it did. A refusal
+    /// changes nothing: the id of a sync that was cleared while it ran never reaches a later session.
+    @discardableResult
+    func set(_ id: String, ifCurrent isCurrent: @Sendable () -> Bool) -> Bool {
+        guard isCurrent() else {
+            logger.info("ProfileIdCache: profile id refused, the vault was cleared while the sync ran")
+            return false
+        }
+        set(id)
+        return true
     }
 
     /// The profile id of the last sync of this session, or nil before the first sync and after

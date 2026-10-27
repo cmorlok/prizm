@@ -39,12 +39,16 @@ final class EffectiveKeyReadTests: XCTestCase {
         await crypto.unlockWith(keys: golden.vaultKeys)
         let profileIds = await RepositoryFixtures.profileIds(seededWith: nil)
         let orgKeyCache = OrgKeyCache()
+        // One store for both, as in the app: the sync's session token must be the vault's.
+        let store = RawCipherStore()
         let vault = await RepositoryFixtures.vaultRepository(
-            apiClient: client, crypto: crypto, orgKeyCache: orgKeyCache, profileIds: profileIds
+            apiClient: client, crypto: crypto, orgKeyCache: orgKeyCache, profileIds: profileIds,
+            recordStore: store
         )
         let sync = await RepositoryFixtures.syncRepository(
             apiClient: client, crypto: crypto, vaultRepository: vault,
-            vaultKeyCache: VaultKeyCache(), orgKeyCache: orgKeyCache, profileIds: profileIds
+            vaultKeyCache: VaultKeyCache(), orgKeyCache: orgKeyCache, profileIds: profileIds,
+            recordStore: store
         )
         StubURLProtocol.responder = { _ in .status(200, body: body) }
         return SyncRig(sync: sync, vault: vault)

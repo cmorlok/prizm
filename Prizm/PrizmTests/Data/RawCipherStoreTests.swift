@@ -22,6 +22,8 @@ final class RawCipherStoreTests: XCTestCase {
         let crypto: MockPrizmCryptoService
         let store: RawCipherStore
         let profileIds: ProfileIdCache
+        let vaultKeyCache: VaultKeyCache
+        let orgKeyCache: OrgKeyCache
         let vault: VaultRepositoryImpl
         let sync: SyncRepositoryImpl
     }
@@ -36,10 +38,12 @@ final class RawCipherStoreTests: XCTestCase {
         let profileIds = await RepositoryFixtures.profileIds(seededWith: seedProfileId)
         let vault = await RepositoryFixtures.vaultRepository(
             apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache, profileIds: profileIds, recordStore: store)
+        let vaultKeyCache = VaultKeyCache()
         let sync = await RepositoryFixtures.syncRepository(
-            apiClient: api, crypto: crypto, vaultRepository: vault, vaultKeyCache: VaultKeyCache(),
+            apiClient: api, crypto: crypto, vaultRepository: vault, vaultKeyCache: vaultKeyCache,
             orgKeyCache: orgKeyCache, profileIds: profileIds, recordStore: store)
-        return Rig(api: api, crypto: crypto, store: store, profileIds: profileIds, vault: vault, sync: sync)
+        return Rig(api: api, crypto: crypto, store: store, profileIds: profileIds, vaultKeyCache: vaultKeyCache,
+                   orgKeyCache: orgKeyCache, vault: vault, sync: sync)
     }
 
     private func goldenSyncResponse() throws -> SyncResponse {
@@ -151,6 +155,82 @@ final class RawCipherStoreTests: XCTestCase {
         XCTAssertTrue(items.isEmpty, "populate never ran")
         let profileId = await rig.profileIds.current()
         XCTAssertNil(profileId, "The profile id is not set by a refused sync")
+    }
+
+    /// The sync of an earlier session also writes the key caches, and a lock followed by an unlock
+    /// passes the unlocked check: the old answer must not replace the keys the next session holds.
+    func testSyncStillRunningAtLock_doesNotOverwriteTheNextSessionsKeyCaches() async throws {
+        let rig = await makeRig()
+        rig.api.syncResponse = try goldenSyncResponse()
+        rig.crypto.stubbedDecryptList = [vaultItem("a")]
+        let vault = rig.vault
+        let orgKeys = rig.orgKeyCache
+        let itemKeys = rig.vaultKeyCache
+        let nextSessionOrgKeys = ["next-org": vaultKeys]
+        // By the time the old answer arrives, the next session's sync has filled the caches.
+        rig.api.whileFetchingSync = {
+            await vault.clearVault()
+            await orgKeys.replaceAll(with: nextSessionOrgKeys)
+            await itemKeys.populate(keys: ["next-cipher": Data(repeating: 0x33, count: 64)])
+        }
+
+        do {
+            _ = try await rig.sync.sync(progress: { _ in })
+            XCTFail("A sync that was cleared while it ran must throw")
+        } catch PrizmCryptoServiceError.vaultLocked {
+            // expected
+        }
+
+        let orgKeysAfter = await orgKeys.snapshot()
+        XCTAssertEqual(Set(orgKeysAfter.keys), ["next-org"], "The discarded sync must not replace the org keys")
+        let itemKeyAfter = await itemKeys.key(for: "next-cipher")
+        XCTAssertNotNil(itemKeyAfter, "The discarded sync must not replace the per-item keys")
+    }
+
+    /// The same for an answer without organizations, which clears the org keys of leavers.
+    func testSyncWithoutOrganizationsStillRunningAtLock_doesNotClearTheNextSessionsOrgKeys() async throws {
+        let rig = await makeRig()
+        let golden = try goldenSyncResponse()
+        rig.api.syncResponse = SyncResponse(profile: golden.profile, ciphers: golden.ciphers, folders: golden.folders)
+        rig.crypto.stubbedDecryptList = [vaultItem("a")]
+        let vault = rig.vault
+        let orgKeys = rig.orgKeyCache
+        let nextSessionOrgKeys = ["next-org": vaultKeys]
+        rig.api.whileFetchingSync = {
+            await vault.clearVault()
+            await orgKeys.replaceAll(with: nextSessionOrgKeys)
+        }
+
+        _ = try? await rig.sync.sync(progress: { _ in })
+
+        let orgKeysAfter = await orgKeys.snapshot()
+        XCTAssertEqual(Set(orgKeysAfter.keys), ["next-org"], "The discarded sync must not clear the org keys")
+    }
+
+    /// The profile id is written after the store, with a hop in between; a stale token refuses it.
+    func testProfileIdIsNotSetWithAStaleToken() async {
+        let ids = ProfileIdCache()
+        let stale = RawCipherStore()
+        let token = stale.currentGeneration()
+        stale.invalidate()
+
+        let wrote = await ids.set("profile-1", ifCurrent: { stale.isCurrent(token) })
+
+        XCTAssertFalse(wrote)
+        let current = await ids.current()
+        XCTAssertNil(current, "A refused write leaves no id")
+    }
+
+    func testProfileIdIsSetWithACurrentToken() async {
+        let ids = ProfileIdCache()
+        let store = RawCipherStore()
+        let token = store.currentGeneration()
+
+        let wrote = await ids.set("profile-1", ifCurrent: { store.isCurrent(token) })
+
+        XCTAssertTrue(wrote)
+        let current = await ids.current()
+        XCTAssertEqual(current, "profile-1")
     }
 
     /// Holds the first caller until released; later callers pass. Lets a test park a request that is

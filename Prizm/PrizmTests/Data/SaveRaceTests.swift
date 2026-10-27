@@ -109,6 +109,72 @@ final class SaveRaceTests: XCTestCase {
         XCTAssertEqual(storedName, "Next session", "The old save must not replace the new session's record")
     }
 
+    // MARK: - A sync result that arrives after lock
+
+    func testPopulateWithAStaleSession_changesNothing() async throws {
+        let rig = await StaleWriteRig.make()
+        let session = rig.store.currentGeneration()
+        let item = StaleWriteRig.login("c1", name: "Synced")
+
+        await rig.vault.populate(items: [item], folders: [], organizations: [], collections: [],
+                                 syncedAt: Date(), session: session)
+        let listed = try await rig.vault.allItems().map(\.name)
+        XCTAssertEqual(listed, ["Synced"], "A populate with the current session goes through")
+
+        await rig.vault.clearVault()
+        let countsAfterLock = try await rig.vault.itemCounts()
+        await rig.vault.populate(items: [item], folders: [], organizations: [], collections: [],
+                                 syncedAt: Date(), session: session)
+
+        let afterStale = try await rig.vault.allItems()
+        XCTAssertTrue(afterStale.isEmpty, "A sync result that arrives after lock must not refill the vault")
+        let countsAfterStale = try await rig.vault.itemCounts()
+        XCTAssertEqual(countsAfterStale, countsAfterLock, "The indexes stay as the lock left them")
+    }
+
+    /// The debug-only test seam populates under the session that is current when it is called.
+    func testPopulateWithoutSession_stillPopulates() async throws {
+        let rig = await StaleWriteRig.make()
+        await rig.vault.populate(items: [StaleWriteRig.login("c1", name: "Seam")], folders: [],
+                                 organizations: [], collections: [], syncedAt: Date())
+
+        let listed = try await rig.vault.allItems().map(\.name)
+        XCTAssertEqual(listed, ["Seam"], "The UI-test seam and the tests populate the current session")
+    }
+
+    /// A token can only be current if the store handed it out: one built anywhere else is refused
+    /// like a token from before a lock.
+    func testTokenBuiltOutsideTheStore_isNeverCurrent() async throws {
+        let rig = await StaleWriteRig.make()
+        let forged = VaultSessionToken()
+
+        XCTAssertFalse(rig.store.isCurrent(forged), "A token the store did not hand out is never current")
+        XCTAssertNotEqual(forged, rig.store.currentGeneration())
+        await rig.vault.populate(items: [StaleWriteRig.login("c1", name: "Forged")], folders: [],
+                                 organizations: [], collections: [], syncedAt: Date(), session: forged)
+
+        let listed = try await rig.vault.allItems()
+        XCTAssertTrue(listed.isEmpty, "A populate with a token from outside the store changes nothing")
+    }
+
+    func testSyncPassesItsSessionToPopulate() async throws {
+        let api = MockPrizmAPIClient()
+        let crypto = MockPrizmCryptoService()
+        await crypto.unlockWith(keys: StaleWriteRig.vaultKeys)
+        crypto.stubbedDecryptList = []
+        let mockVault = MockVaultRepository()
+        let store = RawCipherStore()
+        let sync = await RepositoryFixtures.syncRepository(
+            apiClient: api, crypto: crypto, vaultRepository: mockVault, vaultKeyCache: VaultKeyCache(),
+            recordStore: store)
+        let before = store.currentGeneration()
+
+        _ = try await sync.sync(progress: { _ in })
+
+        XCTAssertEqual(mockVault.lastPopulateSession, before,
+                       "The sync hands populate the generation it read at its start")
+    }
+
     // MARK: - Helpers
 
     private static func record(_ id: String) -> RawCipher {

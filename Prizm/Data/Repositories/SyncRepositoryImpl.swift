@@ -67,8 +67,8 @@ actor SyncRepositoryImpl: SyncRepository {
         // Read before the first network await, not right before the write: a token read at the
         // write is always current and would fence nothing. `clearVault()` bumps it, so a lock
         // (also one followed by an unlock) that lands while this sync runs makes `replaceAll`
-        // refuse, which `ensureStillUnlocked()` alone cannot do.
-        let storeGeneration = await recordStore.currentGeneration()
+        // refuse, which the unlocked check alone cannot do.
+        let storeGeneration = recordStore.currentGeneration()
 
         // Only a sync of the same session blocks this one. A sync that started before a lock is
         // going to be discarded at its store write; if it still blocked callers, the sync that
@@ -142,7 +142,7 @@ actor SyncRepositoryImpl: SyncRepository {
         // Phase 2b: Populate the per-cipher key cache from keys collected during decryptList.
         // Only ciphers with a per-item key are included; vault-key-only ciphers are handled
         // by VaultKeyServiceImpl's fallback path.
-        try await ensureStillUnlocked()
+        try await ensureStillUnlocked(storeGeneration)
         await vaultKeyCache.populate(keys: cipherKeyMap)
         logger.info("VaultKeyCache populated with \(cipherKeyMap.count, privacy: .public) per-item key(s)")
 
@@ -194,7 +194,7 @@ actor SyncRepositoryImpl: SyncRepository {
                         logger.fault("Failed to unwrap org key for org \(rawOrg.id.prefix(8), privacy: .public)… — org ciphers will be skipped: \(ErrorLog.describe(error), privacy: .public)")
                     }
                 }
-                try await ensureStillUnlocked()
+                try await ensureStillUnlocked(storeGeneration)
                 await orgKeyCache.replaceAll(with: unwrappedOrgKeys)
 
                 // Build domain Organization entities.
@@ -265,7 +265,7 @@ actor SyncRepositoryImpl: SyncRepository {
                     }
                 }
                 // Refresh the VaultKeyCache to include per-item keys from org ciphers.
-                try await ensureStillUnlocked()
+                try await ensureStillUnlocked(storeGeneration)
                 await vaultKeyCache.populate(keys: cipherKeyMap)
 
                 logger.info("Org sync: \(organizations.count) org(s), \(collections.count) collection(s), \(orgCipherFailedCount, privacy: .public) org cipher(s) skipped")
@@ -273,32 +273,47 @@ actor SyncRepositoryImpl: SyncRepository {
                 logger.error("Org key sync failed — org ciphers unavailable this session: \(ErrorLog.describe(error), privacy: .public)")
                 // Non-fatal: personal items still work without org support. No org item is listed
                 // from this sync, so the old org keys have no use and go
-                // (harden-key-lifecycle-and-logging, D2).
-                await orgKeyCache.replaceAll(with: [:])
+                // (harden-key-lifecycle-and-logging, D2). Not for a sync that was cleared while it
+                // ran: the keys then belong to the next session.
+                if recordStore.isCurrent(storeGeneration) {
+                    await orgKeyCache.replaceAll(with: [:])
+                }
             }
         } else {
             // No organizations (or no private key to unwrap them): drop the keys of orgs the user
-            // has left.
-            await orgKeyCache.replaceAll(with: [:])
+            // has left. Not for a sync that was cleared while it ran: the keys then belong to the
+            // next session.
+            if recordStore.isCurrent(storeGeneration) {
+                await orgKeyCache.replaceAll(with: [:])
+            }
         }
 
         // Phase 3: Populate the in-memory vault store.
         let syncedAt = Date()
-        try await ensureStillUnlocked()
+        try await ensureStillUnlocked(storeGeneration)
         // After the last lock check and before the profile id and `populate`: a sync that was
         // cleared while it ran stops here and writes nothing else.
         guard await recordStore.replaceAll(syncResponse.ciphers, ifCurrent: storeGeneration) else {
             logger.info("Sync discarded: the vault was cleared while it ran")
             throw PrizmCryptoServiceError.vaultLocked
         }
-        // Before populate, so the vault is never shown without the id its saves need.
-        await profileIds.set(syncResponse.profile.id)
+        // Before populate, so the vault is never shown without the id its saves need. Refused for a
+        // sync that was cleared since the store write above, so no id outlives its session.
+        guard await profileIds.set(syncResponse.profile.id, ifCurrent: { [recordStore] in
+            recordStore.isCurrent(storeGeneration)
+        }) else {
+            logger.info("Sync discarded: the vault was cleared while it ran")
+            throw PrizmCryptoServiceError.vaultLocked
+        }
         await vaultRepository.populate(
             items:         items,
             folders:       folders,
             organizations: organizations,
             collections:   collections,
-            syncedAt:      syncedAt
+            syncedAt:      syncedAt,
+            // The token read at the start: a lock that lands after the profile id above makes
+            // populate change nothing.
+            session: storeGeneration
         )
 
         return SyncResult(
@@ -313,14 +328,19 @@ actor SyncRepositoryImpl: SyncRepository {
     /// Throws if the vault locked while this sync was running.
     ///
     /// Security goal: a sync that finishes after a lock must not put decrypted items or keys back
-    /// in memory. The lock clears the vault store and the key caches, and Empty Trash runs syncs in
-    /// the middle of a session (fix-empty-trash). Checked right before each cache or store write.
-    /// Intentionally NOT done: a lock that lands between this check and the write it guards is
-    /// not caught; the window is one actor hop. The record store's generation token covers that
-    /// window for the store only (and a lock followed by an unlock); the caches and `populate` are
-    /// not covered by it.
-    private func ensureStillUnlocked() async throws {
-        guard await crypto.isUnlocked else {
+    /// in memory, nor replace the keys of the session that followed it. The lock clears the vault
+    /// store and the key caches, and Empty Trash runs syncs in the middle of a session
+    /// (fix-empty-trash). Checked right before each cache or store write.
+    ///
+    /// Two checks, because neither covers the other: the crypto service says whether the vault is
+    /// unlocked now, and the record store's token says whether it is still the session this sync
+    /// started in. After a lock followed by an unlock (or a sign-in as another account) the first is
+    /// true again, and only the token tells the old sync from the new one.
+    /// Intentionally NOT done: a lock that lands between this check and the write it guards is not
+    /// caught for the key caches; the window is one actor hop. The record store and `populate` close
+    /// it with the token itself (`replaceAll(_:ifCurrent:)`, the sync's session).
+    private func ensureStillUnlocked(_ token: RawCipherStore.Generation) async throws {
+        guard recordStore.isCurrent(token), await crypto.isUnlocked else {
             logger.info("Sync discarded: the vault locked while it ran")
             throw PrizmCryptoServiceError.vaultLocked
         }

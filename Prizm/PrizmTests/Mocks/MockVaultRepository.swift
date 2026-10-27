@@ -15,6 +15,8 @@ final class MockVaultRepository: VaultRepository {
     private(set) var populatedOrganizations: [Organization] = []
     private(set) var populatedCollections: [OrgCollection] = []
     private(set) var clearVaultCalled: Bool = false
+    /// The session token of the last `populate` (nil after the seam variant without one).
+    private(set) var lastPopulateSession: VaultSessionToken?
 
     // MARK: - update(_:) stubbing
 
@@ -26,7 +28,18 @@ final class MockVaultRepository: VaultRepository {
     // MARK: - VaultRepository (write side)
 
     func populate(items: [VaultItem], folders: [Folder], organizations: [Organization],
+                  collections: [OrgCollection], syncedAt: Date, session: VaultSessionToken) async {
+        lastPopulateSession    = session
+        populatedItems         = items
+        populatedFolders       = folders
+        populatedOrganizations = organizations
+        populatedCollections   = collections
+    }
+
+    /// The test seam without a token; records no session.
+    func populate(items: [VaultItem], folders: [Folder], organizations: [Organization],
                   collections: [OrgCollection], syncedAt: Date) async {
+        lastPopulateSession    = nil
         populatedItems         = items
         populatedFolders       = folders
         populatedOrganizations = organizations

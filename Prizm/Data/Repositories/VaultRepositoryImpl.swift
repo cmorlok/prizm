@@ -91,8 +91,15 @@ actor VaultRepositoryImpl: VaultRepository {
 
     // MARK: - Write side (called by SyncRepositoryImpl)
 
+    /// Security goal: a sync result must not put decrypted items back into a vault that was
+    /// cleared while the sync ran. The check is the first statement and synchronous, so nothing is
+    /// changed when the token is stale or was not handed out by the record store.
     func populate(items: [VaultItem], folders: [Folder], organizations: [Organization],
-                  collections: [OrgCollection], syncedAt: Date) async {
+                  collections: [OrgCollection], syncedAt: Date, session: VaultSessionToken) async {
+        guard recordStore.isCurrent(session) else {
+            logger.info("Sync result dropped: the vault was cleared while it ran")
+            return
+        }
         self.items             = items
         self.folderStore       = folders
         self.organizationStore = organizations
@@ -101,6 +108,16 @@ actor VaultRepositoryImpl: VaultRepository {
         buildIndexes()
         logger.info("Vault populated: \(items.count) item(s), \(folders.count) folder(s), \(organizations.count) org(s), \(collections.count) collection(s)")
     }
+
+    #if DEBUG
+    /// The test seam of `VaultRepository`: populates under the token current now, so it fences
+    /// nothing; compiled out of Release builds.
+    func populate(items: [VaultItem], folders: [Folder], organizations: [Organization],
+                  collections: [OrgCollection], syncedAt: Date) async {
+        await populate(items: items, folders: folders, organizations: organizations,
+                       collections: collections, syncedAt: syncedAt, session: recordStore.currentGeneration())
+    }
+    #endif
 
     func clearVault() async {
         // First: lock and sign-out both reach this hook (RootViewModel), so neither the id nor the
