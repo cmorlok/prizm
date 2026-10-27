@@ -59,6 +59,44 @@ nonisolated final class CipherMapper: Sendable {
         return f
     }()
 
+    /// For a date without a fractional part: the fractional formatter above returns nil for it.
+    private nonisolated(unsafe) static let iso8601WholeSeconds: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    // MARK: - Revision dates
+
+    /// Reads a `revisionDate` (or `creationDate`) the way every part of Prizm must read it: with a
+    /// fraction of any length (Vaultwarden writes six digits, the official server seven) or none, and
+    /// with `Z` or an offset. Nil for nil, an empty string and anything that is not a date.
+    ///
+    /// Why one function: the item's date and the stale-write check read the same string, and two
+    /// parsers would let them disagree, for example by reading a fraction-less revision as a real
+    /// date in one place and as the epoch in the other. Sub-millisecond digits are not kept
+    /// (`ISO8601DateFormatter` resolves milliseconds), which `sameRevision` accounts for.
+    ///
+    /// The epoch parses like any date; callers that need a real revision refuse it themselves.
+    nonisolated static func parseRevisionDate(_ raw: String?) -> Date? {
+        guard let raw, !raw.isEmpty else { return nil }
+        return iso8601.date(from: raw) ?? iso8601WholeSeconds.date(from: raw)
+    }
+
+    /// Whether two revisions are the same one: equal after rounding both to the nearest whole
+    /// millisecond.
+    ///
+    /// Why not `==`: the parser keeps milliseconds while the server sends six or seven digits, and
+    /// a date built from a decimal count of milliseconds can sit a hair off the whole one in a
+    /// `Double`. Why not more: this is not the servers' check. Vaultwarden compares whole seconds
+    /// and rejects a difference of two seconds or more, the official server rejects a difference of
+    /// more than one second; Prizm's local check only has to tell two different saves of the server
+    /// copy apart, so it is exact to the millisecond and promises nothing about edits made within
+    /// two seconds of each other.
+    nonisolated static func sameRevision(_ lhs: Date, _ rhs: Date) -> Bool {
+        (lhs.timeIntervalSince1970 * 1000).rounded() == (rhs.timeIntervalSince1970 * 1000).rounded()
+    }
+
     // MARK: - Public API
 
     /// Maps a single `RawCipher` to a `VaultItem` and returns the effective cipher key.
@@ -115,8 +153,10 @@ nonisolated final class CipherMapper: Sendable {
         )
 
         let fallbackDate = Date(timeIntervalSince1970: 0)
-        let creationDate  = raw.creationDate.flatMap  { Self.iso8601.date(from: $0) } ?? fallbackDate
-        let revisionDate  = raw.revisionDate.flatMap  { Self.iso8601.date(from: $0) } ?? fallbackDate
+        // The epoch fallback is for display only; the stale-write check refuses a record whose
+        // revision does not parse (`parseRevisionDate`), so it never sees this fallback.
+        let creationDate  = Self.parseRevisionDate(raw.creationDate) ?? fallbackDate
+        let revisionDate  = Self.parseRevisionDate(raw.revisionDate) ?? fallbackDate
 
         // Map attachments using the cipher's effective key, not the raw vault key.
         // Attachment filenames are encrypted under the same key as the cipher's fields.

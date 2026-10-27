@@ -266,14 +266,16 @@ actor VaultRepositoryImpl: VaultRepository {
     ///   5. The stored record's own edit block → `itemNotEditable`.
     ///   6. The draft's organization differs from the record's → `itemRecordUnavailable` (a draft
     ///      cannot move an item between organizations, and its collections are never sent on a guess).
-    ///   7. The active key follows the stored record's organization: that organization's key, or the
+    ///   7. The stored record has no readable revision (missing, empty, not a date, or the epoch)
+    ///      → `itemRevisionUnavailable`: without one no revision check can protect the edit.
+    ///   8. The active key follows the stored record's organization: that organization's key, or the
     ///      vault key for a personal item. A missing organization key → `organizationKeyUnavailable`.
-    ///   8. The profile id for `encryptedFor` → `profileIdUnavailable`.
-    ///   9. The effective key: the item's own key unwrapped with the active key, or the active key
-    ///      for an item without one. A key that does not unwrap → `itemKeyUnavailable`.
-    ///   10. The key check: the stored name must verify and decrypt under that key
+    ///   9. The profile id for `encryptedFor` → `profileIdUnavailable`.
+    ///   10. The effective key: the item's own key unwrapped with the active key, or the active key
+    ///       for an item without one. A key that does not unwrap → `itemKeyUnavailable`.
+    ///   11. The key check: the stored name must verify and decrypt under that key
     ///       (`CipherMapper.verifyKey`) → `itemKeyUnavailable`.
-    ///   11. The overlay: the draft's edits over the stored record.
+    ///   12. The overlay: the draft's edits over the stored record.
     ///
     /// - What is NOT done:
     ///   • No fallback to another key at any step. In particular the vault key is never tried for an
@@ -289,7 +291,8 @@ actor VaultRepositoryImpl: VaultRepository {
     ///   patched in place so the UI reflects the latest state without a full re-sync.
     ///
     /// - Throws: `VaultError.vaultLocked`, `itemNotEditable`, `itemRecordUnavailable`,
-    ///   `organizationKeyUnavailable`, `profileIdUnavailable` or `itemKeyUnavailable` as above.
+    ///   `itemRevisionUnavailable`, `organizationKeyUnavailable`, `profileIdUnavailable` or
+    ///   `itemKeyUnavailable` as above.
     /// - Throws: `APIError` on network or HTTP failure.
     /// - Throws: `CipherMapperError` if the response mapper fails.
     func update(_ draft: DraftVaultItem) async throws -> VaultItem {
@@ -351,6 +354,17 @@ actor VaultRepositoryImpl: VaultRepository {
         guard draft.organizationId == base.organizationId else {
             logger.error("Save refused: draft of \(draft.id, privacy: .public) is in \(draft.organizationId?.prefix(8) ?? "personal", privacy: .public), stored record in \(base.organizationId?.prefix(8) ?? "personal", privacy: .public)")
             throw VaultError.itemRecordUnavailable
+        }
+
+        // The revision the server last gave for this item. Without one Prizm cannot tell whether the
+        // copy it edited is still the server's, and Vaultwarden skips its own check on a revision it
+        // cannot parse, so the save would be a blind overwrite: refused before any key work. The
+        // epoch is refused too, because it is what a missing date turns into once something falls
+        // back to a default.
+        guard let baseRevision = CipherMapper.parseRevisionDate(base.revisionDate),
+              baseRevision.timeIntervalSince1970 > 0 else {
+            logger.error("Save refused: stored record of \(draft.id, privacy: .public) has no readable revision")
+            throw VaultError.itemRevisionUnavailable
         }
 
         // Read once: a lock or a sync during the save cannot change the keys used for this request.

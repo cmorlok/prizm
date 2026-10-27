@@ -132,6 +132,11 @@ nonisolated enum VaultError: Error, LocalizedError {
     /// The item's own key could not be unwrapped, or the key check on the stored name failed, so
     /// Prizm does not know which key the server expects. Nothing was encrypted or sent.
     case itemKeyUnavailable
+    /// The stored server record of the item has no revision Prizm can read (missing, empty, not a
+    /// date, or the epoch). Nothing was encrypted or sent: without a readable revision neither the
+    /// local check nor the server's can protect the edit, and Vaultwarden skips its check on a
+    /// revision it cannot parse.
+    case itemRevisionUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -157,6 +162,8 @@ nonisolated enum VaultError: Error, LocalizedError {
             return "Prizm couldn't load this item's latest saved version. Lock and unlock the vault, then try again."
         case .itemKeyUnavailable:
             return "Prizm couldn't load the encryption key for this item. Lock and unlock the vault, then try again."
+        case .itemRevisionUnavailable:
+            return "Prizm couldn't confirm which version of this item you are editing. Lock and unlock the vault, then try again."
         }
     }
 }
