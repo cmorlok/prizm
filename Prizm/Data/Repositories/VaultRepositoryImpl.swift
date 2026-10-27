@@ -104,8 +104,12 @@ actor VaultRepositoryImpl: VaultRepository {
 
     func clearVault() async {
         // First: lock and sign-out both reach this hook (RootViewModel), so neither the id nor the
-        // records outlive the session. The store goes first because its generation bump is what
-        // refuses a sync or save that is still in flight, so it should happen as early as possible.
+        // records outlive the session. The invalidation is the very first statement, before any
+        // suspension: it is synchronous, so a save that resumes on this actor after this call sees
+        // the lock at its next `isCurrent` check, and `clear()` below only has to empty the store.
+        // The second bump `clear()` makes is harmless; the first one is what the item-cache checks
+        // in `update` and `create` rely on.
+        recordStore.invalidate()
         await recordStore.clear()
         await profileIds.clear()
         items             = []
@@ -299,6 +303,8 @@ actor VaultRepositoryImpl: VaultRepository {
     /// - Throws: `VaultError.conflict` from the pre-check, and when the server rejects the PUT as out
     ///   of date (HTTP 400, `APIError.isOutOfDateRejection`). The server copy is untouched and
     ///   nothing is retried.
+    /// - Throws: `VaultError.vaultLocked` also when the vault was cleared while the request ran: the
+    ///   answer is then dropped unread (nothing decrypted, stored or cached).
     /// - Throws: `APIError` on any other network or HTTP failure.
     /// - Throws: `CipherMapperError` if the response mapper fails.
     func update(_ draft: DraftVaultItem) async throws -> VaultItem {
@@ -306,9 +312,10 @@ actor VaultRepositoryImpl: VaultRepository {
         // SecureEnclave entitlement approval.
 
         // First, before any await on the network: `clearVault()` bumps this token, so a lock that
-        // lands while the request runs makes the store write below refuse. A token read at the
-        // write would always be current.
-        let storeGeneration = await recordStore.currentGeneration()
+        // lands while the request runs makes the store write and the cache write below refuse. A
+        // token read at the write would always be current. Synchronous, so no suspension sits
+        // between starting the save and holding the token.
+        let storeGeneration = recordStore.currentGeneration()
 
         let vaultKeys: CryptoKeys
         do {
@@ -419,15 +426,31 @@ actor VaultRepositoryImpl: VaultRepository {
             logger.info("Save rejected: item \(draft.id, privacy: .public) is out of date")
             throw VaultError.conflict
         }
-        // Keep what the server answered, not what was sent. Refused after a lock: the save itself
-        // still returns, only the store stays empty (its item-cache update is stale-write
-        // protection's, OpenSpec task 4.5).
+        // Security goal: no plaintext re-enters memory after lock. The keys above were captured
+        // before the lock, so a response mapped with them would put the decrypted item back into the
+        // emptied cache. The save throws instead of returning, so no success callback runs for it.
+        // Checked after the request, after the collections request, and (with no suspension in
+        // between) right before the map and the cache write.
+        // Intentionally NOT done here: `deleteItem`, `restoreItem`, `updateAttachments` and
+        // `sendPartial` only modify entries that are already cached, so they cannot put an item
+        // back into an emptied cache.
+        guard recordStore.isCurrent(storeGeneration) else {
+            logger.info("Save finished after lock, dropped: \(draft.id, privacy: .public)")
+            throw VaultError.vaultLocked
+        }
+
+        // Keep what the server answered, not what was sent. Refused after a lock by the store too.
         await storeRecord(updatedRaw, ifCurrent: storeGeneration)
 
         if draft.organizationId != nil {
             try await apiClient.updateCipherCollections(id: draft.id, collectionIds: draft.collectionIds)
         }
 
+        // Last check before the first write to the item cache: everything below is synchronous.
+        guard recordStore.isCurrent(storeGeneration) else {
+            logger.info("Save finished after lock, dropped: \(draft.id, privacy: .public)")
+            throw VaultError.vaultLocked
+        }
         var (updatedItem, _) = try mapper.map(raw: updatedRaw, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot)
 
         // Patch collectionIds: PUT /api/ciphers/{id} returns pre-update collection state.
@@ -449,9 +472,9 @@ actor VaultRepositoryImpl: VaultRepository {
 
     func create(_ draft: DraftVaultItem) async throws -> VaultItem {
         // First, before any await on the network: `clearVault()` bumps this token, so a lock that
-        // lands while the request runs makes the store write below refuse. A token read at the
-        // write would always be current.
-        let storeGeneration = await recordStore.currentGeneration()
+        // lands while the request runs makes the store write and the cache write below refuse. A
+        // token read at the write would always be current.
+        let storeGeneration = recordStore.currentGeneration()
 
         let vaultKeys: CryptoKeys
         do {
@@ -474,8 +497,19 @@ actor VaultRepositoryImpl: VaultRepository {
         } else {
             createdRaw = try await apiClient.createCipher(cipher: rawCipher)
         }
+        // Same security goal as in `update`: a create that finishes after lock throws and caches
+        // nothing; the keys captured before the lock are never used to decrypt its answer.
+        guard recordStore.isCurrent(storeGeneration) else {
+            logger.info("Save finished after lock, dropped: \(createdRaw.id, privacy: .public)")
+            throw VaultError.vaultLocked
+        }
         await storeRecord(createdRaw, ifCurrent: storeGeneration)
 
+        // Last check before the cache write: everything below is synchronous.
+        guard recordStore.isCurrent(storeGeneration) else {
+            logger.info("Save finished after lock, dropped: \(createdRaw.id, privacy: .public)")
+            throw VaultError.vaultLocked
+        }
         // Discard cipherKey — newly created items are picked up by the next sync.
         let (createdItem, _) = try mapper.map(raw: createdRaw, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot)
         items.append(createdItem)
@@ -512,7 +546,7 @@ actor VaultRepositoryImpl: VaultRepository {
     /// - Security goal: same as `deleteItem` — only the cipher ID is sent; no key material.
     /// - Bitwarden endpoint: `DELETE /api/ciphers/{id}` — permanently removes the cipher.
     func permanentDeleteItem(id: String) async throws {
-        let storeGeneration = await recordStore.currentGeneration()
+        let storeGeneration = recordStore.currentGeneration()
         guard items.contains(where: { $0.id == id }) else { return }
         try await apiClient.permanentDeleteCipher(id: id)
         await removeRecords([id], ifCurrent: storeGeneration)
@@ -533,7 +567,7 @@ actor VaultRepositoryImpl: VaultRepository {
     /// through; the first failure is thrown at the end.
     @discardableResult
     func permanentDeleteItems(ids: [String]) async throws -> Int {
-        let storeGeneration = await recordStore.currentGeneration()
+        let storeGeneration = recordStore.currentGeneration()
         let requested = Set(ids)
         let trashed = items.filter { $0.isDeleted && requested.contains($0.id) }.map(\.id)
         var deletedCount = 0

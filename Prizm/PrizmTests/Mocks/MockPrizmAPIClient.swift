@@ -147,9 +147,13 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     nonisolated(unsafe) var updateCipherCollectionsCallCount = 0
     nonisolated(unsafe) var lastUpdatedCipherCollections: (id: String, collectionIds: [String])?
 
+    /// Runs while the collections request is "in flight", for example to lock the vault meanwhile.
+    nonisolated(unsafe) var whileUpdatingCollections: (@Sendable () async -> Void)?
+
     func updateCipherCollections(id: String, collectionIds: [String]) async throws {
         updateCipherCollectionsCallCount += 1
         lastUpdatedCipherCollections = (id, collectionIds)
+        await whileUpdatingCollections?()
     }
 
     // MARK: - Stubs: createCipher

@@ -474,12 +474,18 @@ final class RawCipherStoreTests: XCTestCase {
         try await RepositoryFixtures.seedRecords(
             for: [personalLogin("c1", name: "Original")], in: rig.store, vaultKeys: vaultKeys)
 
-        // The save itself still returns as before; only the store write is fenced.
-        _ = try await rig.vault.update(loginDraft(id: "c1", name: "Renamed"))
+        do {
+            _ = try await rig.vault.update(loginDraft(id: "c1", name: "Renamed"))
+            XCTFail("An update finishing after the clear must throw")
+        } catch VaultError.vaultLocked {
+            // expected: no success callback can run for a save that throws
+        }
 
         XCTAssertEqual(rig.api.updateCipherCallCount, 1)
         let storedCount = await rig.store.count
         XCTAssertEqual(storedCount, 0, "An update finishing after the clear must not refill the store")
+        let cached = try await rig.vault.allItems()
+        XCTAssertTrue(cached.isEmpty, "An update finishing after the clear must not cache the item")
     }
 
     func testCreateCompletingAfterLock_doesNotRefillTheStore() async throws {
@@ -487,11 +493,18 @@ final class RawCipherStoreTests: XCTestCase {
         let vault = rig.vault
         rig.api.whileCreatingCipher = { await vault.clearVault() }
 
-        _ = try await rig.vault.create(loginDraft(id: "n1", name: "New"))
+        do {
+            _ = try await rig.vault.create(loginDraft(id: "n1", name: "New"))
+            XCTFail("A create finishing after the clear must throw")
+        } catch VaultError.vaultLocked {
+            // expected
+        }
 
         XCTAssertEqual(rig.api.createCipherCallCount, 1)
         let storedCount = await rig.store.count
         XCTAssertEqual(storedCount, 0, "A create finishing after the clear must not refill the store")
+        let cached = try await rig.vault.allItems()
+        XCTAssertTrue(cached.isEmpty, "A create finishing after the clear must not cache the item")
     }
 
     /// Lock, then a sync of the next session stores a record for the same id, all while the old
