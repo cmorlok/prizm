@@ -43,7 +43,14 @@ final class MockVaultRepository: VaultRepository {
 
     // MARK: - VaultRepository (read side)
 
-    func allItems() async throws -> [VaultItem] { populatedItems }
+    /// How often `allItems()` was called. The vault browser reads it only to refresh the selected
+    /// item, so a test can wait for that refresh instead of sleeping.
+    private(set) var allItemsCallCount = 0
+
+    func allItems() async throws -> [VaultItem] {
+        allItemsCallCount += 1
+        return populatedItems
+    }
 
     func folders() async throws -> [Folder] { populatedFolders }
 

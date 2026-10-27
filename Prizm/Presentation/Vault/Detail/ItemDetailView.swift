@@ -46,51 +46,58 @@ struct ItemDetailView: View {
     @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
-        if let item {
-            ScrollView {
-                VStack(spacing: 0) {
-                    if item.isDeleted { trashBanner(for: item) }
-                    if !item.isDeleted, let reason = item.editBlock { editBlockedNote(reason) }
+        Group {
+            if let item {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        if item.isDeleted { trashBanner(for: item) }
+                        if !item.isDeleted, let reason = item.editBlock { editBlockedNote(reason) }
 
-                    itemHeader(for: item)
-                    typeDetailView(for: item)
-                    attachmentsSection(for: item)
-                    organizationRow(for: item)
-                    folderRow(for: item)
+                        itemHeader(for: item)
+                        typeDetailView(for: item)
+                        attachmentsSection(for: item)
+                        organizationRow(for: item)
+                        folderRow(for: item)
 
-                    Spacer(minLength: 20)
-                    metadataFooter(for: item)
+                        Spacer(minLength: 20)
+                        metadataFooter(for: item)
+                    }
                 }
-            }
-            .sheet(isPresented: $isEditSheetPresented, onDismiss: {
-                editViewModel = nil
-                onEditSheetChanged?(false)
-            }) {
-                if let vm = editViewModel {
-                    ItemEditView(viewModel: vm, isPresented: $isEditSheetPresented,
-                                 onDelete: onSoftDelete)
+                .sheet(item: $addAttachmentViewModel, onDismiss: {
+                    onAttachmentsChanged?()
+                }) { vm in
+                    AttachmentConfirmSheet(viewModel: vm)
                 }
+                .sheet(item: $batchAttachmentViewModel, onDismiss: {
+                    onAttachmentsChanged?()
+                }) { vm in
+                    AttachmentBatchSheet(viewModel: vm)
+                }
+                .onChange(of: editTrigger) { if !item.isDeleted && item.editBlock == nil { openEditSheet(for: item) } }
+            } else {
+                ContentUnavailableView(
+                    "No Item Selected",
+                    systemImage: "square.dashed",
+                    description: Text("Select an item from the list.")
+                )
+                .accessibilityIdentifier(AccessibilityID.Detail.emptyState)
             }
-            .sheet(item: $addAttachmentViewModel, onDismiss: {
-                onAttachmentsChanged?()
-            }) { vm in
-                AttachmentConfirmSheet(viewModel: vm)
-            }
-            .sheet(item: $batchAttachmentViewModel, onDismiss: {
-                onAttachmentsChanged?()
-            }) { vm in
-                AttachmentBatchSheet(viewModel: vm)
-            }
-            .onChange(of: editTrigger) { if !item.isDeleted && item.editBlock == nil { openEditSheet(for: item) } }
-            .onChange(of: saveTrigger) { editViewModel?.save() }
-        } else {
-            ContentUnavailableView(
-                "No Item Selected",
-                systemImage: "square.dashed",
-                description: Text("Select an item from the list.")
-            )
-            .accessibilityIdentifier(AccessibilityID.Detail.emptyState)
         }
+        // The edit sheet and its Save trigger sit on the pane itself, not inside the branch for a
+        // selected item. While the sheet is open, a sync (the one after a conflict) can replace or
+        // remove the selected item, and the list may then drop its selection, so this view switches
+        // to the empty state. That must not close the sheet: it holds the user's text and the
+        // note that the item is gone. Only Save, Discard, Close, Esc or a lock end it.
+        .sheet(isPresented: $isEditSheetPresented, onDismiss: {
+            editViewModel = nil
+            onEditSheetChanged?(false)
+        }) {
+            if let vm = editViewModel {
+                ItemEditView(viewModel: vm, isPresented: $isEditSheetPresented,
+                             onDelete: onSoftDelete)
+            }
+        }
+        .onChange(of: saveTrigger) { editViewModel?.save() }
     }
 
     // MARK: - Subviews

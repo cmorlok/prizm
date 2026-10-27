@@ -133,6 +133,51 @@ final class VaultBrowserViewModelConflictTests: XCTestCase {
         XCTAssertFalse(sut.syncErrorFromConflictResync, "A lock clears the flag")
     }
 
+    // MARK: - Selection after the resync
+
+    private func waitUntil(timeout: Duration = .milliseconds(500), _ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while !condition(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+    }
+
+    func testResync_movesTheSelectionToTheSyncedItem() async throws {
+        sut.itemSelection = item(name: "Old")
+        let synced = item(name: "New")
+        sync.onExecute = { [vault] in
+            await vault?.populate(items: [synced], folders: [], organizations: [], collections: [], syncedAt: .now)
+        }
+
+        let outcome = await sut.resyncAfterConflict()
+        try await waitUntil { sut.itemSelection?.name == "New" }
+
+        XCTAssertEqual(outcome, .synced)
+        XCTAssertEqual(sut.itemSelection?.id, "item-1")
+        XCTAssertEqual(sut.itemSelection?.name, "New", "The detail pane follows the synced copy of the same item")
+    }
+
+    func testResync_itemGone_neverSelectsAnotherItem() async throws {
+        sut.itemSelection = item()
+        let other = item(id: "other", name: "Other")
+        sync.onExecute = { [vault] in
+            await vault?.populate(items: [other], folders: [], organizations: [], collections: [], syncedAt: .now)
+        }
+
+        let outcome = await sut.resyncAfterConflict()
+        // Wait until the list shows the synced vault and the selection refresh has read it: that
+        // refresh is where a wrong selection would come from.
+        try await waitUntil { vault.allItemsCallCount > 0 && sut.displayedItems.map(\.id) == ["other"] }
+        // The refresh assigns right after its read; let that step run before looking.
+        for _ in 0..<3 { await Task.yield() }
+
+        XCTAssertEqual(outcome, .synced)
+        XCTAssertGreaterThan(vault.allItemsCallCount, 0, "The selection refresh ran")
+        XCTAssertEqual(sut.displayedItems.map(\.id), ["other"])
+        XCTAssertEqual(sut.itemSelection?.id, "item-1",
+                       "The selection stays on the edited item, whose sheet explains that it is gone; it never moves to another item")
+    }
+
     // MARK: - latestItem
 
     func testLatestItem_findsTheSyncedItem() async {
