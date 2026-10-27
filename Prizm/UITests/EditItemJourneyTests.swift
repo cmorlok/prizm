@@ -238,6 +238,44 @@ final class EditItemJourneyTests: PrizmUITestCase {
         XCTAssertFalse(app.menuItems["Edit"].isEnabled, "Nothing should be editable while the vault is locked")
         app.typeKey(.escape, modifierFlags: [])
     }
+
+    // MARK: - Blocked items
+
+    /// An item Prizm cannot write back without loss shows why, and nothing opens the edit sheet:
+    /// not the toolbar button, not the Item menu, not ⌘E. The test state adds such an item with
+    /// `--ui-test-blocked-item`. Only app-level keys are sent, never a system-wide shortcut.
+    func testBlockedItem_editDisabledWithReason() throws {
+        app.terminate()
+        app.launch(in: UITestLaunch.vault + ["--ui-test-blocked-item"])
+        XCTAssertTrue(app.waitForVaultBrowser(), "Vault browser must be visible")
+
+        let row = app.element(Fixture.row("theta"))
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "The blocked fixture item is listed")
+        row.click()
+
+        let note = app.element(AccessibilityID.Edit.blockedNote)
+        XCTAssertTrue(note.waitForExistence(timeout: 3), "A note says why the item can't be edited")
+        // The note is one container with a text inside; read both, as the label may sit on either.
+        let noteText = ([note.label, note.value as? String ?? ""]
+            + note.descendants(matching: .staticText).allElementsBoundByIndex.map { $0.label })
+            .joined(separator: " ")
+        XCTAssertTrue(noteText.contains("Edit it in the Bitwarden web vault or browser extension."),
+                      "The note names the next step, got: \(noteText)")
+
+        let editButton = app.buttons[AccessibilityID.Edit.editButton]
+        XCTAssertTrue(editButton.waitForExistence(timeout: 3))
+        XCTAssertFalse(editButton.isEnabled, "The toolbar Edit button is disabled for a blocked item")
+
+        let itemMenu = app.menuBars.menuBarItems["Item"]
+        itemMenu.click()
+        XCTAssertTrue(app.menuItems["Edit"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.menuItems["Edit"].isEnabled, "Item > Edit is disabled for a blocked item")
+        app.typeKey(.escape, modifierFlags: [])
+
+        app.typeKey("e", modifierFlags: .command)
+        XCTAssertFalse(app.buttons[AccessibilityID.Edit.saveButton].waitForExistence(timeout: 2),
+                       "⌘E must not open the edit sheet for a blocked item")
+    }
 }
 
 // MARK: - XCUIElement convenience

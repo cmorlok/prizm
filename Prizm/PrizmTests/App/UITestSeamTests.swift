@@ -131,6 +131,17 @@ final class UITestSeamTests: XCTestCase {
         XCTAssertEqual(Set(withSeeds.map(\.id)), ["alpha", "beta", "delta", "zeta"])
     }
 
+    func test_blockedItem_isASecureNoteThatCannotBeEdited() {
+        let blocked = UITestFixtures.blockedItem
+
+        XCTAssertEqual(blocked.editBlock, .unsupportedFormat)
+        guard case .secureNote = blocked.content else { return XCTFail("a blocked fixture is a secure note") }
+        // No TOTP seed and no other fixture's id: the Codes list and the other journeys stay unchanged.
+        // The flag is off in unit tests, so `items` holds only the other fixtures.
+        let otherIds = Set((UITestFixtures.items + [UITestFixtures.orgItemInFolder]).map(\.id))
+        XCTAssertFalse(otherIds.contains(blocked.id))
+    }
+
     // MARK: - Stored server records
 
     func test_rawRecords_oneMappableRecordPerFixtureItem() throws {

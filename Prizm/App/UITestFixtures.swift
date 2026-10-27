@@ -125,6 +125,10 @@ enum UITestFixtures {
     /// journeys walk through is unchanged.
     static var withOrgFolders: Bool { CommandLine.arguments.contains("--ui-test-org-folders") }
 
+    /// `--ui-test-blocked-item`: adds an item Prizm cannot edit, for the journey that checks the
+    /// disabled Edit button and its note. Off by default so the other journeys' lists stay unchanged.
+    static var withBlockedItem: Bool { CommandLine.arguments.contains("--ui-test-blocked-item") }
+
     static var folders: [Folder] { withOrgFolders ? [Folder(id: "work", name: "Work")] : [] }
     static var organizations: [Organization] {
         withOrgFolders ? [Organization(id: "org-acme", name: "Acme", role: .user, membershipId: .known("m-uitest"))] : []
@@ -134,7 +138,7 @@ enum UITestFixtures {
     }
 
     static var items: [VaultItem] {
-        let all = seededItems + (withOrgFolders ? [orgItemInFolder] : [])
+        let all = seededItems + (withOrgFolders ? [orgItemInFolder] : []) + (withBlockedItem ? [blockedItem] : [])
         guard withoutSeeds else { return all }
         return all.map { item in
             guard case .login = item.content else { return item }
@@ -187,6 +191,18 @@ enum UITestFixtures {
             revisionDate: Date(timeIntervalSince1970: 1_700_000_000),
             content: .secureNote(SecureNoteContent(notes: "shared", customFields: [])),
             folderId: "work", organizationId: "org-acme", collectionIds: ["col-shared"]
+        )
+    }
+
+    /// The item `--ui-test-blocked-item` adds: a secure note with no TOTP seed, flagged as stored in
+    /// a format Prizm cannot write back. Internal so the seam tests can check it.
+    static var blockedItem: VaultItem {
+        VaultItem(
+            id: "theta", name: "Theta Blocked", isFavorite: false, isDeleted: false,
+            creationDate: Date(timeIntervalSince1970: 1_700_000_000),
+            revisionDate: Date(timeIntervalSince1970: 1_700_000_000),
+            content: .secureNote(SecureNoteContent(notes: "Kept in a format Prizm cannot edit.", customFields: [])),
+            editBlock: .unsupportedFormat
         )
     }
 
