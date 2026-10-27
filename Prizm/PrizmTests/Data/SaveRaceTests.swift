@@ -109,6 +109,49 @@ final class SaveRaceTests: XCTestCase {
         XCTAssertEqual(storedName, "Next session", "The old save must not replace the new session's record")
     }
 
+    // MARK: - A lock that lands before the request is sent
+
+    /// The token is checked when a save starts and again after its request, but the awaits in between
+    /// (keys, stored record, organization keys, profile id) can straddle a lock. The request must not
+    /// go out for a vault that is already locked: a save queued before a lock sends nothing.
+    func testUpdateWhenALockLandsBeforeTheRequest_sendsNothing() async throws {
+        let crypto = MockPrizmCryptoService()
+        let rig = await Self.rig(crypto: crypto)
+        let item = StaleWriteRig.login("c1", name: "Original")
+        try await rig.storeRecord(of: item, revision: RepositoryFixtures.serverRevisionString(for: item.revisionDate))
+        await rig.cache(item)
+        let store = rig.store
+        crypto.whileReadingKeys = { store.invalidate() }
+
+        await assertThrowsVaultLocked { _ = try await rig.vault.update(StaleWriteRig.renamed(item)) }
+
+        XCTAssertEqual(rig.api.updateCipherCallCount, 0, "No PUT leaves the device after the lock")
+    }
+
+    func testCreateWhenALockLandsBeforeTheRequest_sendsNothing() async throws {
+        let crypto = MockPrizmCryptoService()
+        let rig = await Self.rig(crypto: crypto)
+        let store = rig.store
+        crypto.whileReadingKeys = { store.invalidate() }
+
+        await assertThrowsVaultLocked { _ = try await rig.vault.create(DraftVaultItem(StaleWriteRig.login("n1", name: "New"))) }
+
+        XCTAssertEqual(rig.api.createCipherCallCount, 0, "No create request leaves the device after the lock")
+        XCTAssertEqual(rig.api.createOrgCipherCallCount, 0)
+    }
+
+    func testOrganizationCreateWhenALockLandsBeforeTheRequest_sendsNothing() async throws {
+        let crypto = MockPrizmCryptoService()
+        let (rig, item) = try await orgRig(crypto: crypto)
+        let store = rig.store
+        crypto.whileReadingKeys = { store.invalidate() }
+
+        await assertThrowsVaultLocked { _ = try await rig.vault.create(DraftVaultItem(item)) }
+
+        XCTAssertEqual(rig.api.createOrgCipherCallCount, 0, "No organization create request leaves the device after the lock")
+        XCTAssertEqual(rig.api.createCipherCallCount, 0)
+    }
+
     // MARK: - A sync result that arrives after lock
 
     func testPopulateWithAStaleSession_changesNothing() async throws {
@@ -287,6 +330,79 @@ final class SaveRaceTests: XCTestCase {
         XCTAssertEqual(afterwards, 0, "The queue keeps nothing once its writes have finished")
     }
 
+    func testFavoriteThenUpdate_runInOrder() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1", name: "Original")
+        try await seed([item], in: rig)
+        let gate = SaveGate()
+        rig.api.whilePartialUpdateInFlight = { await gate.hold() }
+        let vault = rig.vault
+
+        let favorite = Task { try await vault.setFavorite(itemId: "c1", isFavorite: true) }
+        let favoriteInFlight = await gate.waitUntilEntered(1)
+        XCTAssertTrue(favoriteInFlight, "The favorite request is in flight")
+        let update = Task { try await vault.update(StaleWriteRig.renamed(item)) }
+        await settle()
+        XCTAssertEqual(rig.api.updateCipherCallCount, 0, "No PUT until the favorite has finished")
+
+        await gate.open()
+        _ = try await favorite.value
+        _ = try await update.value
+        XCTAssertEqual(rig.api.updateCipherCallCount, 1)
+    }
+
+    func testBulkMove_waitsForEveryItemsWrite() async throws {
+        let rig = await StaleWriteRig.make()
+        let items = [StaleWriteRig.login("c1"), StaleWriteRig.login("c2")]
+        try await seed(items, in: rig)
+        let gate = SaveGate()
+        rig.api.whileUpdatingCipher = { await gate.hold() }
+        let vault = rig.vault
+
+        let update = Task { try await vault.update(StaleWriteRig.renamed(items[0])) }
+        let updateInFlight = await gate.waitUntilEntered(1)
+        XCTAssertTrue(updateInFlight)
+        let move = Task { try await vault.moveItemsToFolder(itemIds: ["c1", "c2"], folderId: "work") }
+        // The move is in the queue once c2 has an entry too; only then can "it has not run" mean
+        // that it waits, and not that it has not started yet.
+        let queued = await waitUntilQueued(2, in: vault)
+        XCTAssertTrue(queued, "The bulk move is queued for both items")
+        await settle()
+        XCTAssertTrue(rig.api.moveCalls.isEmpty, "The bulk move waits for the update of c1")
+
+        await gate.open()
+        _ = try await update.value
+        try await move.value
+        XCTAssertEqual(rig.api.moveCalls.count, 1, "The move runs once the update is done, and does not fail")
+        XCTAssertEqual(rig.api.moveCalls.first?.ids, ["c1", "c2"])
+    }
+
+    func testSoftDeleteWhileUpdating_waitsForTheUpdate() async throws {
+        let rig = await StaleWriteRig.make()
+        let item = StaleWriteRig.login("c1", name: "Original")
+        try await seed([item], in: rig)
+        let gate = SaveGate()
+        rig.api.whileUpdatingCipher = { await gate.hold() }
+        let vault = rig.vault
+
+        let update = Task { try await vault.update(StaleWriteRig.renamed(item)) }
+        let updateInFlight = await gate.waitUntilEntered(1)
+        XCTAssertTrue(updateInFlight)
+        let delete = Task { try await vault.deleteItem(id: "c1") }
+        await settle()
+        XCTAssertEqual(rig.api.softDeleteCallCount, 0, "No soft delete while the update is running")
+
+        await gate.open()
+        _ = try await update.value
+        try await delete.value
+        XCTAssertEqual(rig.api.softDeleteCallCount, 1)
+        // The update was cached first; the delete then marked that item as deleted. In the other
+        // order the update's answer would bring the item back out of the trash.
+        let after = try await rig.vault.itemDetail(id: "c1")
+        XCTAssertEqual(after.name, "Renamed")
+        XCTAssertTrue(after.isDeleted)
+    }
+
     // MARK: - Helpers
 
     private static let laterRevision = RepositoryFixtures.serverRevisionString(
@@ -311,9 +427,21 @@ final class SaveRaceTests: XCTestCase {
     }
 
     /// Lets queued work run: there is no event to wait for when the thing under test is "nothing
-    /// happens while the first write is held".
+    /// happens while the first write is held". It cannot cause a false failure, but on a very slow
+    /// machine it can let a broken queue pass; a test that can see the queue waits for it first
+    /// (`waitUntilQueued`).
     private func settle() async {
         try? await Task.sleep(for: .milliseconds(150))
+    }
+
+    /// True once `count` item ids have a write queued or running; gives up after about two seconds
+    /// so a write that never queues fails the test instead of hanging it.
+    private func waitUntilQueued(_ count: Int, in vault: VaultRepositoryImpl) async -> Bool {
+        for _ in 0..<400 {
+            if await vault.queuedWriteCount >= count { return true }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return await vault.queuedWriteCount >= count
     }
 
     private static func record(_ id: String) -> RawCipher {
@@ -325,10 +453,19 @@ final class SaveRaceTests: XCTestCase {
         )
     }
 
-    /// A rig with one organization item cached and stored, and the organization key available.
-    private func orgRig() async throws -> (StaleWriteRig, VaultItem) {
+    /// The plain rig of `StaleWriteRig.make()` with the crypto mock handed in, so a test can reach its hooks.
+    private static func rig(crypto: MockPrizmCryptoService) async -> StaleWriteRig {
         let api = MockPrizmAPIClient()
-        let crypto = MockPrizmCryptoService()
+        await crypto.unlockWith(keys: StaleWriteRig.vaultKeys)
+        crypto.stubbedVaultKeys = StaleWriteRig.vaultKeys
+        let store = RawCipherStore()
+        let vault = await RepositoryFixtures.vaultRepository(apiClient: api, crypto: crypto, recordStore: store)
+        return StaleWriteRig(api: api, store: store, vault: vault)
+    }
+
+    /// A rig with one organization item cached and stored, and the organization key available.
+    private func orgRig(crypto: MockPrizmCryptoService = MockPrizmCryptoService()) async throws -> (StaleWriteRig, VaultItem) {
+        let api = MockPrizmAPIClient()
         await crypto.unlockWith(keys: StaleWriteRig.vaultKeys)
         crypto.stubbedVaultKeys = StaleWriteRig.vaultKeys
         let orgKeyCache = OrgKeyCache()

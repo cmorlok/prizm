@@ -460,6 +460,14 @@ actor VaultRepositoryImpl: VaultRepository {
             throw VaultError.itemKeyUnavailable
         }
 
+        // The last check before the request, with no suspension between it and the send: a lock that
+        // landed in the awaits above (keys, stored record, organization keys, profile id) must not
+        // let this save leave the device. The result of one that is sent after all is dropped below.
+        guard recordStore.isCurrent(storeGeneration) else {
+            logger.info("Save dropped before sending, the vault was cleared while it prepared: \(draft.id, privacy: .public)")
+            throw VaultError.vaultLocked
+        }
+
         // TODO: Queue encrypted rawCipher for offline persistence (deferred — requires WAL).
         // Only this call is mapped: /partial, the collections call and create carry no last-known
         // revision, so the same words in their answer are not a stale write. Nothing is retried and
@@ -536,6 +544,13 @@ actor VaultRepositoryImpl: VaultRepository {
         // RawCipher there); a personal create has it at the top level.
         let rawCipher = try mapper.toNewRawCipher(draft, encryptedWith: encryptionKeys, encryptedFor: profileId)
 
+        // The last check before the request, with no suspension between it and the send (same as in
+        // `performUpdate`): a lock that landed in the awaits above must not let the create go out.
+        guard recordStore.isCurrent(storeGeneration) else {
+            logger.info("Create dropped before sending, the vault was cleared while it prepared")
+            throw VaultError.vaultLocked
+        }
+
         let createdRaw: RawCipher
         if draft.organizationId != nil {
             createdRaw = try await apiClient.createOrgCipher(cipher: rawCipher)
@@ -571,6 +586,10 @@ actor VaultRepositoryImpl: VaultRepository {
     ///   The access token (held by `PrizmAPIClientImpl`) authorises the operation.
     /// - Bitwarden endpoint: `PUT /api/ciphers/{id}/delete` — moves the cipher to Trash.
     func deleteItem(id: String) async throws {
+        try await serialised([id]) { [self] in try await performDeleteItem(id: id) }
+    }
+
+    private func performDeleteItem(id: String) async throws {
         guard items.contains(where: { $0.id == id }) else { return }
         try await apiClient.softDeleteCipher(id: id)
         // Looked up again: this actor is reentrant, so a lock or a sync can have emptied or
@@ -591,7 +610,15 @@ actor VaultRepositoryImpl: VaultRepository {
     /// - Security goal: same as `deleteItem` — only the cipher ID is sent; no key material.
     /// - Bitwarden endpoint: `DELETE /api/ciphers/{id}` — permanently removes the cipher.
     func permanentDeleteItem(id: String) async throws {
+        // Before the write waits for its turn, as in `update`: a lock while it waits must stop it
+        // from removing a record of the next session.
         let storeGeneration = recordStore.currentGeneration()
+        try await serialised([id]) { [self] in
+            try await performPermanentDeleteItem(id: id, storeGeneration: storeGeneration)
+        }
+    }
+
+    private func performPermanentDeleteItem(id: String, storeGeneration: RawCipherStore.Generation) async throws {
         guard items.contains(where: { $0.id == id }) else { return }
         try await apiClient.permanentDeleteCipher(id: id)
         await removeRecords([id], ifCurrent: storeGeneration)
@@ -613,6 +640,16 @@ actor VaultRepositoryImpl: VaultRepository {
     @discardableResult
     func permanentDeleteItems(ids: [String]) async throws -> Int {
         let storeGeneration = recordStore.currentGeneration()
+        // Queued behind the writes of every item it may send, those in Trash now. Which items are
+        // in Trash is decided again when its turn comes.
+        let requested = Set(ids)
+        let queuedIds = items.filter { $0.isDeleted && requested.contains($0.id) }.map(\.id)
+        return try await serialised(queuedIds) { [self] in
+            try await performPermanentDeleteItems(ids: ids, storeGeneration: storeGeneration)
+        }
+    }
+
+    private func performPermanentDeleteItems(ids: [String], storeGeneration: RawCipherStore.Generation) async throws -> Int {
         let requested = Set(ids)
         let trashed = items.filter { $0.isDeleted && requested.contains($0.id) }.map(\.id)
         var deletedCount = 0
@@ -640,6 +677,10 @@ actor VaultRepositoryImpl: VaultRepository {
     ///
     /// - Security goal: same as `deleteItem` — only the cipher ID is sent; no key material.
     func restoreItem(id: String) async throws {
+        try await serialised([id]) { [self] in try await performRestoreItem(id: id) }
+    }
+
+    private func performRestoreItem(id: String) async throws {
         guard items.contains(where: { $0.id == id }) else { return }
         try await apiClient.restoreCipher(id: id)
         // Looked up again, as in `deleteItem`: the cache can have changed while the request ran.
@@ -658,6 +699,18 @@ actor VaultRepositoryImpl: VaultRepository {
     /// Replaces the `attachments` array for the item identified by `cipherId` in the
     /// in-memory store without triggering a full re-sync.
     func updateAttachments(_ attachments: [Attachment], for cipherId: String) async {
+        // Non-throwing for its caller: the queue itself cannot fail, so an error here is not
+        // expected; it is logged and dropped.
+        do {
+            try await serialised([cipherId]) { [self] in
+                await performUpdateAttachments(attachments, for: cipherId)
+            }
+        } catch {
+            logger.error("updateAttachments: queued write failed — id=\(cipherId, privacy: .public) \(ErrorLog.describe(error), privacy: .public)")
+        }
+    }
+
+    private func performUpdateAttachments(_ attachments: [Attachment], for cipherId: String) async {
         guard let idx = items.firstIndex(where: { $0.id == cipherId }) else {
             logger.error("updateAttachments: cipher not found in cache — id=\(cipherId, privacy: .public)")
             return
@@ -793,12 +846,26 @@ actor VaultRepositoryImpl: VaultRepository {
     // MARK: - Move to folder
 
     func moveItemToFolder(itemId: String, folderId: String?) async throws {
+        try await serialised([itemId]) { [self] in
+            try await performMoveItemToFolder(itemId: itemId, folderId: folderId)
+        }
+    }
+
+    private func performMoveItemToFolder(itemId: String, folderId: String?) async throws {
         guard let old = items.first(where: { $0.id == itemId }) else { return }
         try await sendPartial(itemId: itemId, folderId: folderId, favorite: old.isFavorite)
         logger.info("Item moved to folder: \(itemId, privacy: .public)")
     }
 
+    /// Waits for the running writes of every item in `itemIds` and then moves them in one request;
+    /// it never fails because one of them is being written.
     func moveItemsToFolder(itemIds: [String], folderId: String?) async throws {
+        try await serialised(itemIds) { [self] in
+            try await performMoveItemsToFolder(itemIds: itemIds, folderId: folderId)
+        }
+    }
+
+    private func performMoveItemsToFolder(itemIds: [String], folderId: String?) async throws {
         try await apiClient.moveCiphersToFolder(ids: itemIds, folderId: folderId)
         for i in items.indices where itemIds.contains(items[i].id) {
             items[i] = items[i].with(folderId: folderId)
@@ -815,6 +882,12 @@ actor VaultRepositoryImpl: VaultRepository {
     /// partial request carries no item data, so it cannot drop fields Prizm does not model, needs
     /// no key, and works on read-only org items (fix-favorite-and-folder-partial-updates, D1).
     func setFavorite(itemId: String, isFavorite: Bool) async throws -> VaultItem {
+        try await serialised([itemId]) { [self] in
+            try await performSetFavorite(itemId: itemId, isFavorite: isFavorite)
+        }
+    }
+
+    private func performSetFavorite(itemId: String, isFavorite: Bool) async throws -> VaultItem {
         guard let old = items.first(where: { $0.id == itemId }) else {
             throw VaultError.itemNotFound(itemId)
         }
@@ -927,6 +1000,9 @@ actor VaultRepositoryImpl: VaultRepository {
     ///   inside it would wait for its own tail and never return.
     /// - The work runs in an unstructured task: cancelling the caller does not stop a write that has
     ///   started (a sent request cannot be recalled), it only stops the caller waiting for it.
+    /// - Queued: `update`, `deleteItem`, `restoreItem`, `permanentDeleteItem`, `permanentDeleteItems`,
+    ///   `setFavorite`, `moveItemToFolder`, `moveItemsToFolder` and `updateAttachments`. Not queued:
+    ///   `create` (a new id nothing else can be writing) and the folder and collection methods.
     /// - Not covered: the attachment upload and delete requests run in `AttachmentRepositoryImpl`
     ///   before `updateAttachments` and are outside this queue. One window's edit sheet is modal, so
     ///   they cannot overlap an edit of the same item there.
