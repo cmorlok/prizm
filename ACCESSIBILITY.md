@@ -44,7 +44,7 @@ Prizm is a native macOS SwiftUI application. It inherits platform accessibility 
 | 3.1.1 Language of Page | Supports | App language is determined by macOS system language settings. |
 | 3.2.1 On Focus | Supports | No context changes on focus. |
 | 3.2.2 On Input | Supports | No unexpected context changes on input. Search filtering is expected behaviour. |
-| 3.3.1 Error Identification | Supports | Errors are identified in text. VoiceOver announcements are posted for error banners. |
+| 3.3.1 Error Identification | Supports | Errors are identified in text. VoiceOver announcements are posted for error banners. The edit sheet's conflict banner announces its message, then offers the reload button right after it; the decorative warning icon, spinner and checkmark are hidden from VoiceOver. |
 | 3.3.2 Labels or Instructions | Supports | All form fields have visible labels. |
 | 4.1.1 Parsing | Not Applicable | Not applicable to native applications. |
 | 4.1.2 Name, Role, Value | Supports | All interactive controls expose name, role, and value to the accessibility API. Stateful controls (favorite star) expose current value. |
@@ -70,7 +70,7 @@ Prizm is a native macOS SwiftUI application. It inherits platform accessibility 
 | 3.3.3 Error Suggestion | Supports | Error messages include corrective suggestions where an actionable fix is known (e.g. "Check your network connection", "Make sure to include https://"). |
 | 3.3.4 Error Prevention (Legal, Financial, Data) | Supports | Destructive actions (delete, permanent delete) require confirmation dialogs. |
 | 1.4.1 Use of Color (verification codes) | Supports | In the last 5 seconds a code's countdown ring thickens and its number turns bold as well as changing color, so the cue is not color alone. |
-| 4.1.3 Status Messages | Supports | Error banners and sync status changes are announced to VoiceOver via `AccessibilityNotification.Announcement`. |
+| 4.1.3 Status Messages | Supports | Error banners and sync status changes are announced to VoiceOver via `AccessibilityNotification.Announcement`. In the edit sheet's conflict banner the message and the sync result ("Synced" or the sync error) are posted through AppKit (`NSAccessibility.post` with an announcement request), the message at high priority and the status at low priority, because macOS VoiceOver ignores the priority of SwiftUI's announcement; the reload ("Reloaded the latest version.") keeps `AccessibilityNotification.Announcement`. "Syncing…" is not announced, so it does not cut off the message. |
 
 ---
 

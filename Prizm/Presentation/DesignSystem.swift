@@ -109,6 +109,10 @@ enum Spacing {
     /// Vertical padding inside status banners.
     static let bannerVertical: CGFloat = 8
 
+    /// Gap between the parts of a banner: icon and message, message and action row, and the
+    /// controls within that row (the edit sheet's error and conflict banner).
+    static let bannerContentGap: CGFloat = 8
+
     /// Inner padding for read-only display fields (e.g. the email chip on UnlockView).
     static let readOnlyField: CGFloat = 6
 

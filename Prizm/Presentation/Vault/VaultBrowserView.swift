@@ -291,7 +291,9 @@ struct VaultBrowserView: View {
             if !isActive { isSearchFieldFocused = false }
         }
         .onChange(of: viewModel.syncErrorMessage) { _, newMessage in
-            if let message = newMessage {
+            // A sync error from the conflict resync is announced by the edit sheet's status
+            // line; the banner here still shows it, but VoiceOver should hear it once.
+            if let message = newMessage, !viewModel.syncErrorFromConflictResync {
                 AccessibilityNotification.Announcement(message).post()
             }
         }

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // MARK: - ItemEditView
@@ -30,19 +31,8 @@ struct ItemEditView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Error banner — shown when a save fails; dismisses on retry.
-            if let error = viewModel.saveError {
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.yellow)
-                    Text(error)
-                        .font(Typography.fieldValue)
-                    Spacer()
-                }
-                .padding(12)
-                .background(Color.red.opacity(Opacity.errorBanner(contrast)))
-                .accessibilityIdentifier(AccessibilityID.Edit.errorBanner)
-            }
+            // Error banner — shown when a save fails or the item changed elsewhere.
+            saveErrorBanner
 
             // Name field — always the first editable field regardless of item type (spec §3.1).
             VStack(alignment: .leading, spacing: 4) {
@@ -128,7 +118,8 @@ struct ItemEditView: View {
             typeEditForm
 
             // Delete button — shown only when editing an existing item (not during creation).
-            if viewModel.isEditing, onDelete != nil {
+            // Hidden once the item is gone: there is nothing left on the server to delete.
+            if viewModel.isEditing, onDelete != nil, !viewModel.isItemGone {
                 Button("Delete Item") {
                     showingDeleteAlert = true
                 }
@@ -155,6 +146,9 @@ struct ItemEditView: View {
                     viewModel.save()
                 }
                 .disabled(!viewModel.canSave)
+                // While a conflict blocks Save, say why for VoiceOver and the pointer.
+                .accessibilityHint(viewModel.saveBlockedHint ?? "")
+                .help(viewModel.saveBlockedHint ?? "")
                 // ⌘S triggers save while this sheet is open and the form is valid (spec §6.1).
                 .keyboardShortcut("s", modifiers: .command)
                 .accessibilityIdentifier(AccessibilityID.Edit.saveButton)
@@ -186,13 +180,115 @@ struct ItemEditView: View {
         } message: {
             Text("\"\(viewModel.draft.name)\" will be moved to Trash.")
         }
-        // Dismiss the sheet when the ViewModel signals it (save success or discard).
-        // The banner alone is not read out; announce a save failure (§VIII).
-        .onChange(of: viewModel.saveError) { _, error in
-            if let error { AccessibilityNotification.Announcement(error).post() }
+        // The banner alone is not read out, so announce what changes in it (§VIII). The observed
+        // value is the displayed message, not `saveError`: the item-gone note replaces the
+        // conflict message without passing through `saveError`. The sync after a conflict often
+        // ends while the message is still being read, and a later announcement at default
+        // priority cuts off an earlier one, so the message goes out at high priority (never
+        // interrupted) and the status below at low priority (queued until the message is read).
+        .onChange(of: viewModel.bannerMessage) { _, message in
+            if let message { Self.announce(message, priority: .high) }
         }
+        // "Synced" or the sync error. Nil while syncing, so "Syncing…" never cuts off the message.
+        .onChange(of: viewModel.conflictStatusAnnouncement) { _, status in
+            if let status { Self.announce(status, priority: .low) }
+        }
+        // A reload refills the fields without any visible event for VoiceOver.
+        .onChange(of: viewModel.reloadCount) { _, _ in
+            AccessibilityNotification.Announcement(ItemEditViewModel.reloadAnnouncement).post()
+        }
+        // Dismiss the sheet when the ViewModel signals it (save success or discard).
         .onChange(of: viewModel.isDismissed) { _, dismissed in
             if dismissed { isPresented = false }
+        }
+    }
+
+    // MARK: - Announcements
+
+    /// Posts through AppKit because macOS VoiceOver ignores the priority that SwiftUI's
+    /// `AccessibilityNotification.Announcement` carries in its attributed string.
+    private static func announce(_ text: String, priority: NSAccessibilityPriorityLevel) {
+        NSAccessibility.post(
+            element: NSApp as Any,
+            notification: .announcementRequested,
+            userInfo: [.announcement: text, .priority: priority.rawValue]
+        )
+    }
+
+    // MARK: - Error banner
+
+    /// The banner above the form. Generic errors show only the message row; a conflict adds an
+    /// action row below it with the reload (or Close) button first and the sync status after it,
+    /// so the visual order equals the VoiceOver order. Nothing has a fixed height: the banner
+    /// grows with wrapped text and the text size.
+    @ViewBuilder
+    private var saveErrorBanner: some View {
+        if let message = viewModel.bannerMessage {
+            VStack(alignment: .leading, spacing: Spacing.bannerContentGap) {
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.bannerContentGap) {
+                    // The message says it all; the icon is decoration.
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.yellow)
+                        .accessibilityHidden(true)
+                    Text(message)
+                        .font(Typography.fieldValue)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                }
+
+                if let title = viewModel.conflictActionTitle {
+                    HStack(spacing: Spacing.bannerContentGap) {
+                        // Plain bordered, not prominent or destructive: reload discards typed text,
+                        // so it must not look like the primary action, and red text on the red
+                        // banner is hard to read. No shortcut and not the default action.
+                        Button(title) {
+                            viewModel.performConflictAction()
+                        }
+                        .buttonStyle(.bordered)
+                        .fixedSize()
+                        .disabled(!viewModel.isConflictActionEnabled)
+                        .accessibilityHint(viewModel.conflictActionHint ?? "")
+                        .accessibilityIdentifier(
+                            viewModel.isItemGone
+                                ? AccessibilityID.Edit.conflictCloseButton
+                                : AccessibilityID.Edit.conflictReloadButton
+                        )
+
+                        // Progress and success are in the status text; the symbols only decorate it.
+                        switch viewModel.conflict {
+                        case .syncing:
+                            ProgressView()
+                                .controlSize(.small)
+                                .accessibilityHidden(true)
+                        case .synced:
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
+                        case .none, .syncFailed, .itemGone:
+                            EmptyView()
+                        }
+
+                        if let status = viewModel.conflictStatusText {
+                            // Lower priority than the button: the status wraps before the button truncates.
+                            Text(status)
+                                .font(Typography.bannerText)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .layoutPriority(-1)
+                                .accessibilityIdentifier(AccessibilityID.Edit.conflictStatus)
+                        }
+
+                        Spacer()
+                    }
+                }
+            }
+            .padding(.horizontal, Spacing.bannerHorizontal)
+            .padding(.vertical, Spacing.bannerVertical)
+            .background(Color.red.opacity(Opacity.errorBanner(contrast)))
+            // Keep message, button and status as separate elements; merged, the button would be
+            // unreachable for VoiceOver.
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(AccessibilityID.Edit.errorBanner)
         }
     }
 
