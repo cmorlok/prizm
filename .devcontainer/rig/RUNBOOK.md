@@ -68,6 +68,21 @@ scripts/host/vaultwarden.sh flag on    # or: flag off
 Clients read flags when they log in: log the extension or web vault out and in again after a
 change. `pm-19148-innovation-archive` (archiving) is always sent by Vaultwarden and needs no flag.
 
+## Slow cipher updates (lock during save)
+
+To lock the app while a save is still in flight, edge can slow the answer to `PUT /api/ciphers/{id}`.
+The server stores the edit at once; only the answer to the client trickles:
+```bash
+scripts/host/vaultwarden.sh delay on 200   # RATE in bytes per second, default 200
+scripts/host/vaultwarden.sh status         # shows "delay PUT /api/ciphers answers: on (200 B/s)"
+scripts/host/vaultwarden.sh delay off      # turn it off after the check
+```
+- GET, POST and every other path are never throttled, so refreshes keep their 10 s timeout.
+- It is off by default: an empty `dev-vault/nginx/delay/` directory means off, as for the feature flag.
+- `nginx.conf` is mounted into edge as a single file. After a checkout that changes it, recreate
+  edge (`down edge`, then `up 1.37.4`); `delay on` and `delay off` only need the reload they do.
+- The switch lives on the branch `chore/rig-delay` until its pull request is merged into `develop`.
+
 ## Fixture account
 
 `prizm-fixture@example.com`, PBKDF2 with the default 600000 iterations. The password is in

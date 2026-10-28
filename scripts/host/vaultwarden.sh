@@ -6,6 +6,7 @@
 #   scripts/host/vaultwarden.sh status                  # services, upstream, flag, cert, server version
 #   scripts/host/vaultwarden.sh cert [--force]          # create the localhost leaf, trust it for SSL
 #   scripts/host/vaultwarden.sh flag <on|off>           # cipher-key-encryption in /api/config
+#   scripts/host/vaultwarden.sh delay <on [RATE]|off>   # slow PUT /api/ciphers answers (bytes/s)
 #   scripts/host/vaultwarden.sh snapshot <version> <label>   # consistent copy of a data dir
 #   scripts/host/vaultwarden.sh restore <label> <version>    # replace a data dir with a snapshot
 #   scripts/host/vaultwarden.sh keyed <version>         # which ciphers have their own key
@@ -20,7 +21,7 @@ set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
-usage() { sed -n '2,18p' "${BASH_SOURCE[0]}"; }
+usage() { sed -n '2,19p' "${BASH_SOURCE[0]}"; }
 
 vault="${PRIZM_REPO_ROOT}/dev-vault"
 compose_file="${PRIZM_REPO_ROOT}/.devcontainer/compose.yaml"
@@ -28,6 +29,8 @@ san_config="${PRIZM_REPO_ROOT}/.devcontainer/rig/openssl-san.cnf"
 crt="${vault}/certs/vw.crt"
 key="${vault}/certs/vw.key"
 flag_file_name="cipher-key-encryption.conf"
+delay_file_name="cipher-put-answer.conf"
+default_delay_rate=200
 login_keychain="${HOME}/Library/Keychains/login.keychain-db"
 
 # --- pure helpers (covered by selftest) ---------------------------------------------------------
@@ -73,6 +76,14 @@ flag_line() {
   printf "sub_filter '%s' '%s';\n" '"featureStates":{' '"featureStates":{"cipher-key-encryption":true,'
 }
 
+# The edge throttles the answer to PUT /api/ciphers/{id} to RATE bytes per second (limit_rate), so a
+# cipher update that is already stored on the server stays "in flight" for the client. See nginx.conf.
+# shellcheck disable=SC2016 # $rig_put_rate is an nginx variable, not a shell one
+delay_line() { printf 'set $rig_put_rate %s;\n' "$1"; }
+
+# valid_rate N: a positive integer without leading zeros (0 would mean "no limit" to nginx).
+valid_rate() { [[ "${1:-}" =~ ^[1-9][0-9]*$ ]]; }
+
 # --- docker helpers ---------------------------------------------------------------------------
 
 project() {
@@ -115,7 +126,7 @@ cmd_up() {
   require_version "${version}"
   service="$(service_for "${version}")"
   [[ -f "${crt}" && -f "${key}" ]] || die "no rig certificate. Run: scripts/host/vaultwarden.sh cert"
-  mkdir -p "${vault}/${version}" "${vault}/nginx/flag" "${vault}/logs"
+  mkdir -p "${vault}/${version}" "${vault}/nginx/flag" "${vault}/nginx/delay" "${vault}/logs"
   upstream_line "${version}" > "${vault}/nginx/upstream.conf"
   if is_running edge; then edge_was_running=1; fi
   start_services "${service}" edge
@@ -134,7 +145,7 @@ cmd_down() {
 }
 
 cmd_status() {
-  local svc upstream="none" flag="off" config
+  local svc upstream="none" flag="off" delay="off" config
   log "Rig services (project $(project))"
   for svc in vaultwarden-1-37-4 vaultwarden-1-37-3 edge; do
     if is_running "${svc}"; then echo "  ${svc}: running"; else echo "  ${svc}: stopped"; fi
@@ -143,8 +154,13 @@ cmd_status() {
     upstream="$(sed -n 's/.*http:\/\/\([^;]*\);.*/\1/p' "${vault}/nginx/upstream.conf")"
   fi
   [[ -f "${vault}/nginx/flag/${flag_file_name}" ]] && flag="on"
+  if [[ -f "${vault}/nginx/delay/${delay_file_name}" ]]; then
+    # shellcheck disable=SC2016 # the pattern matches the literal nginx variable name
+    delay="on ($(sed -n 's/^set \$rig_put_rate \([0-9]*\);$/\1/p' "${vault}/nginx/delay/${delay_file_name}") B/s)"
+  fi
   echo "  edge upstream: ${upstream}"
   echo "  flag cipher-key-encryption: ${flag}"
+  echo "  delay PUT /api/ciphers answers: ${delay}"
   if [[ -f "${crt}" ]]; then
     echo "  cert: $(openssl x509 -in "${crt}" -noout -subject -enddate | tr '\n' ' ')"
     openssl x509 -in "${crt}" -noout -checkend 2592000 >/dev/null \
@@ -215,6 +231,26 @@ cmd_flag() {
   esac
   reload_edge
   log "Flag cipher-key-encryption: $1 (clients read flags at login: log out and in again)"
+}
+
+# Same shape as cmd_flag: an empty delay/ directory is off, a file in it switches the throttle on.
+cmd_delay() {
+  local rate="${2:-${default_delay_rate}}"
+  mkdir -p "${vault}/nginx/delay"
+  case "${1:-}" in
+    on)
+      valid_rate "${rate}" || die "delay on needs a positive whole number of bytes per second, got '${rate}'"
+      delay_line "${rate}" > "${vault}/nginx/delay/${delay_file_name}"
+      ;;
+    off) rm -f "${vault}/nginx/delay/${delay_file_name}" ;;
+    *) die "delay needs on [RATE] or off" ;;
+  esac
+  reload_edge
+  if [[ "$1" == on ]]; then
+    log "Delay on: answers to PUT /api/ciphers/{id} trickle at ${rate} bytes per second. Turn it off after the check: delay off"
+  else
+    log "Delay off"
+  fi
 }
 
 # Copies a stopped data dir: Vaultwarden runs SQLite in WAL mode, so a copy of a running database
@@ -319,6 +355,14 @@ cmd_selftest() {
   flag_line > "${tmp}/flag.conf"
   printf '%s\n' "sub_filter '\"featureStates\":{' '\"featureStates\":{\"cipher-key-encryption\":true,';" > "${tmp}/flag.expected"
   cmp -s "${tmp}/flag.conf" "${tmp}/flag.expected" || fail "flag file rendering"
+  delay_line 200 > "${tmp}/delay.conf"
+  # shellcheck disable=SC2016 # expected file contents, nothing to expand
+  printf '%s\n' 'set $rig_put_rate 200;' > "${tmp}/delay.expected"
+  cmp -s "${tmp}/delay.conf" "${tmp}/delay.expected" || fail "delay file rendering"
+  valid_rate 200 || fail "rate 200 accepted"
+  for v in 0 -1 abc "" 1.5 007; do
+    if valid_rate "${v}"; then fail "rate '${v}' rejected"; fi
+  done
   if command -v openssl >/dev/null; then
     if openssl req -x509 -newkey rsa:2048 -sha256 -days 365 -nodes -config "${san_config}" \
          -keyout "${tmp}/vw.key" -out "${tmp}/vw.crt" >/dev/null 2>&1; then
@@ -351,6 +395,7 @@ case "${cmd}" in
   status) cmd_status ;;
   cert) cmd_cert "$@" ;;
   flag) cmd_flag "$@" ;;
+  delay) cmd_delay "$@" ;;
   snapshot) cmd_snapshot "$@" ;;
   restore) cmd_restore "$@" ;;
   keyed) cmd_keyed "$@" ;;
