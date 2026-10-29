@@ -27,7 +27,8 @@ Estimates are ideal engineer-days. Write a failing test first for each task (§I
 
 ## 5. Verify and document (0.5 d)
 
-- [ ] 5.1 Manual check with a clipboard manager that honours nspasteboard.org (for example Maccy): generator copies do not appear in its history.
+- [x] 5.1 Manual check with a clipboard manager that honours nspasteboard.org (for example Maccy): generator copies do not appear in its history.
+  Checked by hand 2026-10-29 with Maccy on a build of the fork's `develop`: ordinary copies appear in Maccy; neither the generator's copy nor a password copied from the detail view does. The Settings picker "Clear clipboard" lists Never, 10 s, 20 s, 30 s, 1 min, 2 min and 5 min with 30 s as default, and with 10 s a copied password is gone from the clipboard after about 10 seconds.
 - [x] 5.2 Mandatory security review: no secret retained by the service beyond the pasteboard itself; all copy paths use the service.
   Done by the review subagent; see Results.
 - [x] 5.3 SECURITY.md (clipboard section), CHANGELOG "Fixed: generated passwords are hidden from clipboard history and cleared after closing the sheet"; "Added: clipboard clear delay setting; the clipboard is cleared on lock and quit".

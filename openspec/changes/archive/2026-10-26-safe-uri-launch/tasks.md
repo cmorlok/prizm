@@ -20,6 +20,7 @@ Estimates are ideal engineer-days. Write a failing test first for each task (§I
 - [x] 3.2 CHANGELOG "Fixed": "Open in browser" now opens only web and other safe link types, as in official Bitwarden apps, and works for addresses saved without `http://`.
 - [x] 3.3 `openspec validate safe-uri-launch --type change --strict`.
 - [ ] 3.4 By hand, with VoiceOver or the Accessibility Inspector (XCUITest cannot read hints on macOS): the open button reads "Open Website" with the hint "Opens in browser"; the website value keeps "Copies Website to clipboard".
+  Checked by hand 2026-10-29: the open button reads "Open Website" with the hint "Opens in browser". Still open: on the website value VoiceOver read `https://webauthn.io` while the screen showed `https://keyless.example.com`; the hint of the value was not reported. It happened right after viewing the passkey login (first URI `https://webauthn.io/`) and then selecting the other item. Looks like the stale-value bug that `fix-ui-journey-findings` worked around for selectable texts, now seen on the Websites rows (follow-up, not a regression of this change).
 
 ## Results (2026-10-26)
 
