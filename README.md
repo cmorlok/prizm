@@ -61,7 +61,7 @@ Prizm exists to give macOS users a native, auditable, trustworthy interface to t
 - macOS 26 or later
 - A self-hosted [Vaultwarden](https://github.com/dani-garcia/vaultwarden) or [Bitwarden](https://bitwarden.com/) server
 
-Tested against Vaultwarden 1.35.4. Older versions may work but are not validated.
+Tested against Vaultwarden 1.37.4 and 1.37.3. The login fallback for older servers was checked on 1.35.4. Older versions may work but are not validated.
 
 ### Homebrew (recommended)
 

@@ -38,6 +38,11 @@
 - Spec, `openspec/specs/org-vault-items/spec.md:19`: "Org items SHALL be excluded from folder
   selections (personal folders are not org collections)". Scenario at `:31-34`.
 
+**Live check (2026-10-26, Vaultwarden 1.37.4, task 1.1).** With two members of one org, an org item
+filed into the first member's folder (with Prizm's drag and drop, not the browser extension) showed
+that folder's id in the first member's sync and null in the second member's. The official server is
+source-reviewed, not tested.
+
 ## Goals / Non-Goals
 
 **Goals**

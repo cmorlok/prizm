@@ -79,6 +79,13 @@ Sources: `$SRC` checkouts of 2026-10-23 (clients, server) and Vaultwarden tag 1.
 - `RawCollection` decodes only `id`, `organizationId`, `name` (`Prizm/Data/Network/Models/SyncResponse.swift:112-135`).
   `RawOrganization` decodes `id`, `name`, `key`, `type` (`SyncResponse.swift:73-102`).
 
+**Live check (2026-10-26, Vaultwarden 1.37.4, task 1.1).** The details answer has the keys
+`assigned`, `defaultUserCollectionEmail`, `externalId`, `groups` (each with `id`, `readOnly`,
+`hidePasswords` and `manage`), `hidePasswords`, `id`, `manage`, `name`, `object`
+(`"collectionAccessDetails"`), `organizationId`, `readOnly`, `type` and `users`. A PUT with that body
+and a new name kept the users and groups. Bitwarden self-hosted was not tested (source-reviewed only);
+Vaultwarden 1.32.x, which has no `manage`, was not checked.
+
 ## Goals / Non-Goals
 
 **Goals**

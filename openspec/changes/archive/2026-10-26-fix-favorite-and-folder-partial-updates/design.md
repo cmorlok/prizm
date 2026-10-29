@@ -38,6 +38,12 @@ Sources: `$SRC` checkouts of 2026-10-23 (clients, sdk-internal, ios, server) and
   `moveItemToFolder` (`:513-524`), `moveItemsToFolder` (`:526-538`). `deleteItem`, `restoreItem`
   and `updateAttachments` already pass all fields (`:357-422`).
 
+**Live check (2026-10-26, Vaultwarden 1.37.4, task 3.1).** Toggling favorite on an item with a
+passkey created in the browser extension kept the passkey (one credential, key value intact).
+Toggling favorite on a read-only org item as the second member succeeded and stayed that member's own.
+The cipher's `revisionDate` in `/sync` was unchanged after both calls. Bitwarden self-hosted was not
+tested.
+
 ## Goals / Non-Goals
 
 **Goals**

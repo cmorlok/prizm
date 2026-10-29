@@ -30,7 +30,8 @@ dependencies.
 
 ## 5. Release (0.25 d)
 
-- [ ] 5.1 Interop check: create a card in Prizm with an Amex number and expiry "03" / "27"; the web vault shows the Amex brand and 03 / 2027. Create a login without a website; the web vault shows no website row.
+- [x] 5.1 Interop check: create a card in Prizm with an Amex number and expiry "03" / "27"; the web vault shows the Amex brand and 03 / 2027. Create a login without a website; the web vault shows no website row.
+  Checked 2026-10-26 on Vaultwarden 1.37.3 (Prizm could not save items on 1.37.4 yet, `encryptedFor`): the web vault shows the Amex brand and 03 / 2027; the login without a website was saved with `uris: []` and shows no website row.
 - [x] 5.2 CHANGELOG "Changed": card brand and expiry are now chosen from lists and saved in the same format as Bitwarden apps; the brand is detected from the card number. "Fixed": new logins no longer get an empty website entry.
 - [x] 5.3 `openspec validate card-field-normalisation --type change --strict`.
 

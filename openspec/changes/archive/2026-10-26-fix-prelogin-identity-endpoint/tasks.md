@@ -19,9 +19,12 @@ no dependencies. Ship it as a patch release before any other change that needs a
 
 ## 3. Release (0.25–0.5 d)
 
-- [ ] 3.1 Interop check on the rig: sign in on Vaultwarden 1.37.4 with a PBKDF2 account. Then sign out and sign in again.
-- [ ] 3.2 Interop check of the fallback: sign in on Vaultwarden 1.35.4 (a throw-away container next to the rig). If that is not possible, record that tasks 1.3 and 1.5 cover it.
-- [ ] 3.3 README: update "Tested against Vaultwarden …" to the versions checked in 3.1 and 3.2.
+- [x] 3.1 Interop check on the rig: sign in on Vaultwarden 1.37.4 with a PBKDF2 account. Then sign out and sign in again.
+  Checked 2026-10-26: sign in, sign out and sign in again on 1.37.4; `prelogin/password` answered 200.
+- [x] 3.2 Interop check of the fallback: sign in on Vaultwarden 1.35.4 (a throw-away container next to the rig). If that is not possible, record that tasks 1.3 and 1.5 cover it.
+  Checked 2026-10-26 on a throw-away 1.35.4 container: `prelogin/password` answered 404, then `identity/accounts/prelogin` answered 200, so the fallback works. A full sign-in was not done (no account was registered there); tasks 1.3 and 1.5 cover the rest.
+- [x] 3.3 README: update "Tested against Vaultwarden …" to the versions checked in 3.1 and 3.2.
+  The README now names 1.37.4 and 1.37.3, and 1.35.4 for the login fallback only.
 - [x] 3.4 CHANGELOG "Fixed": signing in works again on Vaultwarden 1.37.4 and on current Bitwarden self-hosted servers (prelogin now uses the identity service). Older servers keep working.
 - [x] 3.5 Add the `LegacyPreloginEndpoint` row to the "Legacy adapters" table in `openspec/changes/FIX-ORDER.md` if it is not there.
 - [x] 3.6 `openspec validate fix-prelogin-identity-endpoint --type change --strict`.

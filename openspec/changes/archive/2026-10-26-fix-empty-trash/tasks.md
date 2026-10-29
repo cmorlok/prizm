@@ -5,7 +5,8 @@ dependencies. Task 2.1 (purge guard) comes first and can merge on its own.
 
 ## 1. Confirm server behaviour (0.25 d)
 
-- [ ] 1.1 On the rig (Vaultwarden 1.37.4) and Bitwarden self-hosted if available: `DELETE /api/ciphers` with `{"ids": [...]}` for two trashed personal items and one org item the user may not delete. Record in design.md, Context, the status code and which items remain. Never call `/ciphers/purge`, not even on the rig.
+- [x] 1.1 On the rig (Vaultwarden 1.37.4) and Bitwarden self-hosted if available: `DELETE /api/ciphers` with `{"ids": [...]}` for two trashed personal items and one org item the user may not delete. Record in design.md, Context, the status code and which items remain. Never call `/ciphers/purge`, not even on the rig.
+  Checked 2026-10-26 on Vaultwarden 1.37.4; the result is recorded in design.md, Context. Bitwarden self-hosted: not tested.
 
 ## 2. API call and purge guard (0.5 d)
 
