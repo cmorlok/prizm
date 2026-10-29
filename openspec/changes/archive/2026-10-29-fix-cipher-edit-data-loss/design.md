@@ -623,9 +623,63 @@ testing. The Vaultwarden cells were filled from tasks 1.2–1.5.
 
 **D0 blocker status:** yes. Today's Prizm lists the two unkeyed items and silently drops all four keyed ones, with no error shown (tested 2026-10-26, `sha256:efb3cde9…`, Prizm before this change). D0 ships either way (D0 above).
 
-**Live verification:** a table with one row per manual check (pass or fail, date, Vaultwarden
-digest, the client that made the competing edits, the tree hash of `Prizm/` that was tested) is
-added when the change is archived; task 5.4 lists the checks and their results.
+## Live verification
+
+Prizm's `Prizm/` tree at the tip of this PR is `12158c6979df5c75c8b4b9331b01336d767704d7`, and every row below was run on a build of
+exactly that tree. The table lists what was run, with the date, the server image and the
+browser extension version for each check, and claims nothing beyond that.
+
+**Verified against Vaultwarden 1.37.4, smoke-tested on 1.37.3, the official Bitwarden server source-reviewed, not tested.**
+
+- `vaultwarden/server:1.37.4@sha256:efb3cde962015fcc036b2ea625242248611943b27212ebf4392841fb30fad055`
+- `vaultwarden/server:1.37.3@sha256:1587c45feaa479f1f5e8af3b00eded36bff77bcf1880cf8dbf0541706dd470e0`
+
+How to read the table:
+
+- Prizm itself was driven by UI journeys of the app on a Mac.
+- The "other client" of the competing edits, and the field-by-field comparison of what the server stored, came from a **second API
+  client** that sends full updates shaped like an official client's and reads the full sync back, decrypted. It was not a browser
+  extension and not a web vault page, so the "Browser extension" column says "none" for every row. The extension and the web vault
+  pages were used in the earlier checks of the Server behavior table, not in this run.
+- All items belong to a fixture account on a test server, never to real data.
+
+| Check | What was checked | Result | Date | Vaultwarden | Browser extension |
+|---|---|---|---|---|---|
+| A1 | Full UI test suite of the repository (97 tests) | 75 passed, 21 skipped, 1 failed. The failing test is `testSettingsGearHasLabel`; it also fails on the PR base and depends on the window size | 2026-10-29 | none (no server) | none |
+| A2 | VoiceOver reads why Edit is disabled (advisory) | **not run** | 2026-10-29 | none | none |
+| L01 | Passkey login: edit notes; passkey, history, both websites, attachment intact | pass | 2026-10-29 | 1.37.4 `sha256:efb3cde9…` | none (second client) |
+| L02 | Archived item: edit notes; stays archived | pass | 2026-10-29 | 1.37.4 `sha256:efb3cde9…` | none (second client) |
+| L03 | SSH key: edit notes; private key, public key, fingerprint unchanged | pass | 2026-10-29 | 1.37.4 `sha256:efb3cde9…` | none (second client) |
+| L04 | Trash, restore, edit: no conflict | pass | 2026-10-29 | 1.37.4 `sha256:efb3cde9…` | none |
+| L05 | Favorite, edit: no conflict | pass | 2026-10-29 | 1.37.4 `sha256:efb3cde9…` | none |
+| L06 | Move to a folder, edit: no conflict (drag by hand, rest automated) | pass | 2026-10-29 | 1.37.4 `sha256:efb3cde9…` | none |
+| L07 | Drag move of an item, edit: no conflict (drag by hand, rest automated; single item) | pass | 2026-10-29 | 1.37.4 `sha256:efb3cde9…` | none |
+| L08 | Add an attachment, edit: no conflict | pass | 2026-10-29 | 1.37.4 `sha256:efb3cde9…` | none |
+| L09 | Delete an attachment, edit: no conflict | pass | 2026-10-29 | 1.37.4 `sha256:efb3cde9…` | none |
+| L10 | Organisation item: change collection, edit again; organisation and collection kept | pass | 2026-10-29 | 1.37.4 `sha256:efb3cde9…` | none |
+| L11 | Organisation item: edit, drag to a folder, edit again; organisation and collection kept (drag by hand, rest automated) | pass | 2026-10-29 | 1.37.4 `sha256:efb3cde9…` | none |
+| L12 | Organisation item without its own key: edit twice; organisation and collection kept | pass | 2026-10-29 | 1.37.4 `sha256:efb3cde9…` | none |
+| L13 | Competing edit by another client: save refused with the conflict message, other edit kept, reload and save succeed | pass | 2026-10-29 | 1.37.4 `sha256:efb3cde9…` | none (second client) |
+| L14 | Second competing edit on another item: refused, reload shows it, next save succeeds | pass | 2026-10-29 | 1.37.4 `sha256:efb3cde9…` | none (second client) |
+| L15 | Lock while a slowed-down save is in flight: old or new version, never a mix | pass | 2026-10-29 | 1.37.4 `sha256:efb3cde9…` | none |
+| L16 | Lock and unlock; every earlier edit present in the second client's sync, all items listed | pass | 2026-10-29 | 1.37.4 `sha256:efb3cde9…` | none (second client) |
+| L17 | Smoke check on 1.37.3: passkey login edit, everything intact | pass | 2026-10-29 | 1.37.3 `sha256:1587c45f…` | none (second client) |
+| L18 | Smoke check on 1.37.3: conflict detected, reload and save succeed | pass | 2026-10-29 | 1.37.3 `sha256:1587c45f…` | none (second client) |
+| L19 | Remote edit made before a favorite, no sync in between: the next edit still shows the conflict (refused by Prizm itself, no request sent) | pass | 2026-10-29 | 1.37.4 `sha256:efb3cde9…` | none (second client) |
+
+Notes:
+
+- Request check over the whole run: 25 Prizm updates (22 on 1.37.4, 3 on 1.37.3), all carrying the user id and a real revision date;
+  two refused updates on 1.37.4 and one on 1.37.3, each followed by a successful update of the same item; no 422; each item with its
+  own key kept one unchanged key; no create request.
+- "Intact" in L01 to L03, L16 and L17 means the full decrypted sync of the second client, compared field by field, including the
+  attachment (downloaded, authenticated and decrypted).
+- A1: with a very large main window the settings button sits in the toolbar overflow, which is why the one failing test fails; the
+  same failure happens on the PR base, so this change did not cause it.
+
+**Not run:** VoiceOver announcing the conflict or reading the hint of the disabled Edit button (A2; the visible note in the detail pane
+is the reason shown), opening the attachment in the browser extension, and any check with the browser extension or the web vault pages
+in this run. These stay listed in Known gaps.
 
 ## Risks / Trade-offs
 

@@ -132,6 +132,6 @@ so no commit in the series makes those operations look like conflicts.
   Not run: whether VoiceOver announces the conflict, and whether it reads the accessibility hint of
   the disabled Edit button of a blocked item (the note in the detail pane is the visible reason and
   the gap stays in Known gaps); whether the extension opens the attachment. The results are listed
-  in the "Live verification" table of design.md, which is added when the change is archived.
+  in the "Live verification" section of design.md.
 - [x] 5.5 No cell of "Server behavior" in design.md is left to fill; check that no text claims more than was tested (the change, the CHANGELOG lines and the PR text).
 - [x] 5.6 `openspec validate fix-cipher-edit-data-loss --type change --strict` and `/opsx:verify`.

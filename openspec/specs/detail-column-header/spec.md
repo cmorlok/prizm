@@ -8,7 +8,7 @@ Show contextual actions for the selected item in the detail pane toolbar.
 The detail column SHALL display contextual action buttons in the toolbar. Button visibility depends on the current state:
 
 **Active item selected (not trash):**
-- `[Edit]` button via `ToolbarItem(placement: .primaryAction)` — opens the edit sheet for the selected item; disabled while the edit sheet is already open. SHALL carry `.keyboardShortcut("e", modifiers: .command)` and `AccessibilityID.Edit.editButton`.
+- `[Edit]` button via `ToolbarItem(placement: .primaryAction)` — opens the edit sheet for the selected item; disabled while the edit sheet is already open and while the selected item cannot be edited (it carries an edit-block reason, `vault-item-edit-roundtrip`). SHALL carry `.keyboardShortcut("e", modifiers: .command)` and `AccessibilityID.Edit.editButton`.
 - `[Delete]` button via `ToolbarItem(placement: .destructiveAction)` — triggers a confirmation alert before moving the item to Trash. The confirmation alert state SHALL live in `VaultBrowserView`.
 
 **Trashed item selected:**
@@ -25,6 +25,10 @@ The detail column SHALL display contextual action buttons in the toolbar. Button
 #### Scenario: Edit disabled while sheet is open
 - **WHEN** the edit sheet is currently open
 - **THEN** the [Edit] button is disabled
+
+#### Scenario: Edit disabled for an item that cannot be edited
+- **WHEN** an active item that cannot be edited is selected
+- **THEN** the [Edit] button is disabled, and the detail pane shows why
 
 #### Scenario: Edit button carries ⌘E shortcut
 - **WHEN** the user presses ⌘E with an active item selected and the edit sheet closed
