@@ -76,7 +76,12 @@ actor MockPrizmCryptoService: PrizmCryptoService {
         _isUnlocked = false
     }
 
+    /// Runs inside `currentKeys()`, the first await of a save after its own token check, so a test can
+    /// lock the vault exactly there (a synchronous hook: `RawCipherStore.invalidate()` is enough).
+    nonisolated(unsafe) var whileReadingKeys: (@Sendable () -> Void)?
+
     func currentKeys() throws -> CryptoKeys {
+        whileReadingKeys?()
         guard _isUnlocked else { throw PrizmCryptoServiceError.vaultLocked }
         return stubbedVaultKeys
     }

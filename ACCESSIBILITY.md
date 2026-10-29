@@ -44,7 +44,7 @@ Prizm is a native macOS SwiftUI application. It inherits platform accessibility 
 | 3.1.1 Language of Page | Supports | App language is determined by macOS system language settings. |
 | 3.2.1 On Focus | Supports | No context changes on focus. |
 | 3.2.2 On Input | Supports | No unexpected context changes on input. Search filtering is expected behaviour. |
-| 3.3.1 Error Identification | Supports | Errors are identified in text. VoiceOver announcements are posted for error banners. |
+| 3.3.1 Error Identification | Supports | Errors are identified in text. VoiceOver announcements are posted for error banners. The edit sheet's conflict banner announces its message, then offers the reload button right after it; the decorative warning icon, spinner and checkmark are hidden from VoiceOver. |
 | 3.3.2 Labels or Instructions | Supports | All form fields have visible labels. |
 | 4.1.1 Parsing | Not Applicable | Not applicable to native applications. |
 | 4.1.2 Name, Role, Value | Supports | All interactive controls expose name, role, and value to the accessibility API. Stateful controls (favorite star) expose current value. |
@@ -70,7 +70,7 @@ Prizm is a native macOS SwiftUI application. It inherits platform accessibility 
 | 3.3.3 Error Suggestion | Supports | Error messages include corrective suggestions where an actionable fix is known (e.g. "Check your network connection", "Make sure to include https://"). |
 | 3.3.4 Error Prevention (Legal, Financial, Data) | Supports | Destructive actions (delete, permanent delete) require confirmation dialogs. |
 | 1.4.1 Use of Color (verification codes) | Supports | In the last 5 seconds a code's countdown ring thickens and its number turns bold as well as changing color, so the cue is not color alone. |
-| 4.1.3 Status Messages | Supports | Error banners and sync status changes are announced to VoiceOver via `AccessibilityNotification.Announcement`. |
+| 4.1.3 Status Messages | Supports | Error banners and sync status changes are announced to VoiceOver via `AccessibilityNotification.Announcement`. In the edit sheet's conflict banner the message and the sync result ("Synced" or the sync error) are posted through AppKit (`NSAccessibility.post` with an announcement request), the message at high priority and the status at low priority, because macOS VoiceOver ignores the priority of SwiftUI's announcement; the reload ("Reloaded the latest version.") keeps `AccessibilityNotification.Announcement`. "Syncing…" is not announced, so it does not cut off the message. |
 
 ---
 
@@ -78,6 +78,7 @@ Prizm is a native macOS SwiftUI application. It inherits platform accessibility 
 
 - **Verification code semantics** — Each code is one VoiceOver element with the label "Verification code for <item>" and a value of the digits (read individually) plus seconds remaining. The value updates silently as the code rotates (no announcement, to avoid flooding VoiceOver), so users must re-focus the element to hear the new code. The countdown ring animation is not yet adjusted for Reduce Motion.
 1. **Drag-and-drop lacks keyboard alternative** (2.1.1) — Folder drag-and-drop operations cannot be performed via keyboard alone. Items can be moved to folders via the edit form as a workaround.
+2. **The Edit button of an item Prizm cannot edit is disabled** (2.1.1, 4.1.2) — Prizm refuses to edit an item shape it cannot write back without losing data. The toolbar Edit button of such an item is disabled, so it cannot be reached with the keyboard and shows no hover help (observed by hand). The reason is shown as a note in the detail pane and is also set as the button's accessibility hint; that VoiceOver reads the hint of a disabled button has not been confirmed.
 
 ---
 

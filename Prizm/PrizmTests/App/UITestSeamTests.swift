@@ -130,5 +130,138 @@ final class UITestSeamTests: XCTestCase {
         }
         XCTAssertEqual(Set(withSeeds.map(\.id)), ["alpha", "beta", "delta", "zeta"])
     }
+
+    func test_blockedItem_isASecureNoteThatCannotBeEdited() {
+        let blocked = UITestFixtures.blockedItem
+
+        XCTAssertEqual(blocked.editBlock, .unsupportedFormat)
+        guard case .secureNote = blocked.content else { return XCTFail("a blocked fixture is a secure note") }
+        // No TOTP seed and no other fixture's id: the Codes list and the other journeys stay unchanged.
+        // The flag is off in unit tests, so `items` holds only the other fixtures.
+        let otherIds = Set((UITestFixtures.items + [UITestFixtures.orgItemInFolder]).map(\.id))
+        XCTAssertFalse(otherIds.contains(blocked.id))
+    }
+
+    // MARK: - Stored server records
+
+    func test_rawRecords_oneMappableRecordPerFixtureItem() throws {
+        let items = UITestFixtures.items + [UITestFixtures.orgItemInFolder]
+
+        let records = UITestFixtures.rawRecords(for: items)
+
+        XCTAssertEqual(records.map(\.id), items.map(\.id))
+        let mapper = CipherMapper()
+        for (item, record) in zip(items, records) {
+            let mapped = try mapper.map(
+                raw: record, vaultKeys: UITestFixtures.vaultKeys, orgKeys: UITestFixtures.orgKeys).item
+            XCTAssertEqual(mapped.name, item.name, "record of \(item.id)")
+            XCTAssertEqual(mapped.organizationId, item.organizationId)
+        }
+        XCTAssertEqual(records.first { $0.id == "omega" }?.organizationId, "org-acme")
+        // The org record is built under the organization key: without that key it is not readable.
+        let omega = try XCTUnwrap(records.first { $0.id == "omega" })
+        XCTAssertThrowsError(try mapper.map(raw: omega, vaultKeys: UITestFixtures.vaultKeys, orgKeys: [:]))
+    }
+    func test_rawRecords_carryTheItemsRevision() throws {
+        let items = UITestFixtures.items
+        let records = UITestFixtures.rawRecords(for: items)
+
+        XCTAssertEqual(records.count, items.count)
+        let serverShape = try NSRegularExpression(pattern: #"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$"#)
+        for (item, record) in zip(items, records) {
+            let revision = try XCTUnwrap(record.revisionDate, "record of \(item.id) has no revisionDate")
+            XCTAssertEqual(serverShape.numberOfMatches(in: revision, range: NSRange(revision.startIndex..., in: revision)), 1,
+                           "record of \(item.id) has revisionDate \(revision)")
+            let parsed = try XCTUnwrap(CipherMapper.parseRevisionDate(revision))
+            XCTAssertTrue(CipherMapper.sameRevision(parsed, item.revisionDate), "record of \(item.id)")
+            XCTAssertEqual(item.revisionDate, Date(timeIntervalSince1970: 1_700_000_000))
+        }
+    }
+
+    // MARK: - Conflict scenarios
+
+    func test_conflictScenario_parsesTheLaunchArgument() {
+        XCTAssertNil(UITestFixtures.conflictScenario(from: ["Prizm", "--ui-test-vault"]))
+        XCTAssertEqual(UITestFixtures.conflictScenario(from: ["--ui-test-conflict=synced"]), .synced)
+        XCTAssertEqual(UITestFixtures.conflictScenario(from: ["--ui-test-conflict=sync-fails-once"]), .syncFailsOnce)
+        XCTAssertEqual(UITestFixtures.conflictScenario(from: ["--ui-test-conflict=gone"]), .gone)
+        XCTAssertNil(UITestFixtures.conflictScenario(from: ["--ui-test-conflict=bogus"]))
+        XCTAssertNil(UITestFixtures.conflictScenario(from: ["--ui-test-conflict="]))
+    }
+
+    func test_conflictEditUseCase_throwsConflict() async {
+        let useCase = UITestConflictEditUseCase()
+        let draft = DraftVaultItem(UITestFixtures.items[0])
+
+        do {
+            _ = try await useCase.execute(draft: draft)
+            XCTFail("Expected VaultError.conflict")
+        } catch VaultError.conflict {
+            // expected
+        } catch {
+            XCTFail("Expected VaultError.conflict, got \(error)")
+        }
+    }
+
+    /// A vault holding the fixture items, as the UI-test vault does at launch.
+    private func populatedVault() async -> VaultRepositoryImpl {
+        let vault = await RepositoryFixtures.vaultRepository(
+            apiClient: MockPrizmAPIClient(), crypto: MockPrizmCryptoService())
+        await vault.populate(items: UITestFixtures.items, folders: UITestFixtures.folders,
+                             organizations: UITestFixtures.organizations,
+                             collections: UITestFixtures.collections, syncedAt: Date(timeIntervalSince1970: 0))
+        return vault
+    }
+
+    private func assertNoteIsChanged(in vault: VaultRepositoryImpl, file: StaticString = #filePath, line: UInt = #line) async throws {
+        let note = try await vault.itemDetail(id: UITestFixtures.conflictItemId)
+        XCTAssertEqual(note.name, UITestFixtures.changedConflictItem.name, file: file, line: line)
+        guard case .secureNote(let content) = note.content else { return XCTFail("a secure note", file: file, line: line) }
+        XCTAssertEqual(content.notes, "Changed on another device.", file: file, line: line)
+    }
+
+    func test_conflictSync_synced_changesTheItem() async throws {
+        let vault = await populatedVault()
+        let sync = UITestConflictSyncUseCase(vault: vault, scenario: .synced)
+
+        _ = try await sync.execute(progress: { _ in })
+
+        try await assertNoteIsChanged(in: vault)
+        // `allItems()` leaves out trashed items, which the fixtures include.
+        let count = try await vault.allItems().count
+        XCTAssertEqual(count, UITestFixtures.items.filter { !$0.isDeleted }.count, "only the one item changes")
+    }
+
+    func test_conflictSync_failsOnceThenChangesTheItem() async throws {
+        let vault = await populatedVault()
+        let sync = UITestConflictSyncUseCase(vault: vault, scenario: .syncFailsOnce)
+
+        do {
+            _ = try await sync.execute(progress: { _ in })
+            XCTFail("Expected SyncError.networkUnavailable")
+        } catch let error as SyncError {
+            XCTAssertEqual(error, .networkUnavailable)
+        }
+        let before = try await vault.itemDetail(id: UITestFixtures.conflictItemId)
+        XCTAssertNotEqual(before.name, UITestFixtures.changedConflictItem.name, "the failed sync changes nothing")
+
+        _ = try await sync.execute(progress: { _ in })
+
+        try await assertNoteIsChanged(in: vault)
+    }
+
+    func test_conflictSync_gone_removesTheItem() async throws {
+        let vault = await populatedVault()
+        let sync = UITestConflictSyncUseCase(vault: vault, scenario: .gone)
+
+        _ = try await sync.execute(progress: { _ in })
+
+        do {
+            _ = try await vault.itemDetail(id: UITestFixtures.conflictItemId)
+            XCTFail("Expected the item to be gone")
+        } catch VaultError.itemNotFound {
+            // expected
+        }
+    }
 }
 #endif

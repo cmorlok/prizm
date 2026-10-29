@@ -19,12 +19,15 @@ final class VaultRepositoryImplTests: XCTestCase {
     private var sut: VaultRepositoryImpl!
     private var mockAPI: MockPrizmAPIClient!
     private var mockCrypto: MockPrizmCryptoService!
+    private var recordStore: RawCipherStore!
 
     override func setUp() async throws {
         try await super.setUp()
         mockAPI    = MockPrizmAPIClient()
         mockCrypto = MockPrizmCryptoService()
-        sut        = VaultRepositoryImpl(apiClient: mockAPI, crypto: mockCrypto)
+        recordStore = RawCipherStore()
+        sut        = await RepositoryFixtures.vaultRepository(
+            apiClient: mockAPI, crypto: mockCrypto, recordStore: recordStore)
     }
 
     // MARK: - Helpers
@@ -41,7 +44,7 @@ final class VaultRepositoryImplTests: XCTestCase {
             isFavorite: isFavorite,
             isDeleted: isDeleted,
             creationDate: Date(),
-            revisionDate: Date(),
+            revisionDate: RepositoryFixtures.revisionDate,
             content: .login(LoginContent(
                 username: nil, password: nil, uris: [], totp: nil,
                 notes: nil, customFields: []
@@ -60,7 +63,7 @@ final class VaultRepositoryImplTests: XCTestCase {
             isFavorite: isFavorite,
             isDeleted: false,
             creationDate: Date(),
-            revisionDate: Date(),
+            revisionDate: RepositoryFixtures.revisionDate,
             content: .card(CardContent(
                 cardholderName: nil, brand: nil, number: nil,
                 expMonth: nil, expYear: nil, code: nil,
@@ -76,7 +79,7 @@ final class VaultRepositoryImplTests: XCTestCase {
             isFavorite: false,
             isDeleted: false,
             creationDate: Date(),
-            revisionDate: Date(),
+            revisionDate: RepositoryFixtures.revisionDate,
             content: .secureNote(SecureNoteContent(notes: nil, customFields: []))
         )
     }
@@ -286,7 +289,7 @@ final class VaultRepositoryImplTests: XCTestCase {
         let col    = OrgCollection(id: colId, organizationId: orgId, name: "Dev")
         let item   = VaultItem(
             id: "i1", name: "Org Item", isFavorite: false, isDeleted: false,
-            creationDate: Date(), revisionDate: Date(),
+            creationDate: Date(), revisionDate: RepositoryFixtures.revisionDate,
             content: .login(LoginContent(username: nil, password: nil, uris: [], totp: nil, notes: nil, customFields: [])),
             organizationId: orgId, collectionIds: [colId]
         )
@@ -335,6 +338,8 @@ final class VaultRepositoryImplTests: XCTestCase {
     func testUpdate_success_replacesItemInCacheAndReturnsUpdatedItem() async throws {
         let original = makeLogin(id: "item-1", name: "Original Name")
         await sut.populate(items: [original], folders: [], organizations: [], collections: [], syncedAt: Date())
+        // A save is built over the server's stored record, encrypted under the keys the crypto returns.
+        try await RepositoryFixtures.seedRecords(for: [original], in: recordStore, vaultKeys: mockCrypto.stubbedVaultKeys)
 
         // Vault must be unlocked to provide keys to the mapper.
         await mockCrypto.unlockWith(keys: CryptoKeys(
@@ -371,6 +376,7 @@ final class VaultRepositoryImplTests: XCTestCase {
     func testUpdate_apiError_throws() async throws {
         let original = makeLogin(id: "item-3", name: "Name")
         await sut.populate(items: [original], folders: [], organizations: [], collections: [], syncedAt: Date())
+        try await RepositoryFixtures.seedRecords(for: [original], in: recordStore, vaultKeys: mockCrypto.stubbedVaultKeys)
 
         await mockCrypto.unlockWith(keys: CryptoKeys(
             encryptionKey: Data(repeating: 0xDE, count: 32),
@@ -396,7 +402,7 @@ final class VaultRepositoryImplTests: XCTestCase {
     private func makeLogin(id: String, name: String, totp: String?, isDeleted: Bool = false) -> VaultItem {
         VaultItem(
             id: id, name: name, isFavorite: false, isDeleted: isDeleted,
-            creationDate: Date(), revisionDate: Date(),
+            creationDate: Date(), revisionDate: RepositoryFixtures.revisionDate,
             content: .login(LoginContent(
                 username: "user-\(id)", password: nil, uris: [LoginURI(uri: "https://\(id).example.com", matchType: nil)],
                 totp: totp, notes: nil, customFields: []

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Fix: editing an item in Prizm no longer deletes data that other Bitwarden apps added to it:
+  passkeys, password history, the archived state and an SSH key's fingerprint now stay on the item.
+- Fix: items that other Bitwarden apps encrypted with their own key no longer disappear from
+  Prizm. They can be read and edited, and keep their key.
+- Fix: saving an edit that is based on an outdated copy is rejected instead of overwriting a newer
+  change made in another app. Prizm tells you the item changed, offers to reload it, and you make
+  your change again.
+- Fix: creating and editing items works on Vaultwarden 1.37.4, which answered "Server error 422."
+  Items that earlier Prizm versions already damaged cannot be repaired. Password history is kept
+  on edit, but Prizm does not yet add the old password to it.
 - Fix: clicking the favorite star twice quickly left the item starred. Repeated clicks are now
   applied in order, and the item ends in the state of the last click.
 - Fix: locking Prizm (⌘L, sleep, screensaver) while it unlocked, signed in or synced right after

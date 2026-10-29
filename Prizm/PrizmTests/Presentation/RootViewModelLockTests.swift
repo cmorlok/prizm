@@ -160,6 +160,27 @@ final class RootViewModelLockTests: XCTestCase {
         XCTAssertNil(sut.selectedLogin, "Copy commands must have no login to copy from", file: file, line: line)
     }
 
+    // MARK: - Item > Edit is disabled for an item that cannot be edited
+
+    func testItemMenuEdit_isDisabledForAnItemThatCannotBeEdited() async throws {
+        let browser = try await openVaultBrowser()
+        let blocked = VaultItem(
+            id: "blocked-1", name: "Blocked", isFavorite: false, isDeleted: false,
+            creationDate: .now, revisionDate: .now,
+            content: .login(LoginContent(username: "bob", password: "pw", uris: [], totp: nil,
+                                         notes: nil, customFields: [])),
+            editBlock: .unsupportedFormat
+        )
+
+        browser.itemSelection = blocked
+        try await waitUntil { !self.sut.menuBarCanEdit }
+        XCTAssertFalse(sut.menuBarCanEdit, "Item > Edit (and its shortcut) must be disabled for a blocked item")
+
+        browser.itemSelection = secretItem
+        try await waitUntil { self.sut.menuBarCanEdit }
+        XCTAssertTrue(sut.menuBarCanEdit, "A normal item can be edited again")
+    }
+
     func testLockVault_clearsVaultBrowserState() async throws {
         mockAuth.stubbedStoredAccount = stubAccount
         let browser = try await openVaultBrowser()
@@ -188,6 +209,18 @@ final class RootViewModelLockTests: XCTestCase {
         assertVaultBrowserCleared(browser)
         XCTAssertEqual(browser.sidebarSelection, .allItems,
                        "The next account must not start in the previous account's folder")
+    }
+
+    /// Sign-out must reach `VaultRepository.clearVault()`, the hook that drops the profile id for
+    /// `encryptedFor` (and everything else the session held).
+    func testSignOut_clearsTheVaultRepository() async throws {
+        mockAuth.stubbedStoredAccount = stubAccount
+        sut.screen = .vault
+
+        sut.signOut()
+        try await waitUntil { if case .login = self.sut.screen { return true }; return false }
+
+        XCTAssertTrue(mockVault.clearVaultCalled)
     }
 
     func testLockVault_clearsACopiedSecret() async throws {
@@ -553,7 +586,8 @@ final class MockRootDependencies: RootViewModelDependencies {
             renameCollection: StubRenameCollection(),
             deleteCollection: StubDeleteCollection(),
             syncTimestamp:    syncRepo,
-            getLastSyncDate:  GetLastSyncDateUseCaseImpl(repository: syncRepo)
+            getLastSyncDate:  GetLastSyncDateUseCaseImpl(repository: syncRepo),
+            sync:             MockSyncUseCase()
         )
     }
 
@@ -561,6 +595,15 @@ final class MockRootDependencies: RootViewModelDependencies {
         let repo = MockSyncTimestampRepository(storedDate: nil)
         return (repo, GetLastSyncDateUseCaseImpl(repository: repo))
     }
+
+    #if DEBUG
+    /// The items the UI-test seam asked to store records for.
+    private(set) var seededUITestItems: [[VaultItem]] = []
+
+    func seedUITestRecords(for items: [VaultItem]) async {
+        seededUITestItems.append(items)
+    }
+    #endif
 }
 
 // Minimal stubs for VaultBrowserViewModel dependencies.

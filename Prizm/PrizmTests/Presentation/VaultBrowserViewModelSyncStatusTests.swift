@@ -36,7 +36,8 @@ final class VaultBrowserViewModelSyncStatusTests: XCTestCase {
             renameCollection: StubRenameCollection(),
             deleteCollection: StubDeleteCollection(),
             syncTimestamp:    repo,
-            getLastSyncDate:  useCase
+            getLastSyncDate:  useCase,
+            sync:             MockSyncUseCase()
         )
     }
 

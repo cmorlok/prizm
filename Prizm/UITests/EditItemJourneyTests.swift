@@ -238,6 +238,212 @@ final class EditItemJourneyTests: PrizmUITestCase {
         XCTAssertFalse(app.menuItems["Edit"].isEnabled, "Nothing should be editable while the vault is locked")
         app.typeKey(.escape, modifierFlags: [])
     }
+
+    // MARK: - Blocked items
+
+    /// An item Prizm cannot write back without loss shows why, and nothing opens the edit sheet:
+    /// not the toolbar button, not the Item menu, not ⌘E. The test state adds such an item with
+    /// `--ui-test-blocked-item`. Only app-level keys are sent, never a system-wide shortcut.
+    func testBlockedItem_editDisabledWithReason() throws {
+        app.terminate()
+        app.launch(in: UITestLaunch.vault + ["--ui-test-blocked-item"])
+        XCTAssertTrue(app.waitForVaultBrowser(), "Vault browser must be visible")
+
+        let row = app.element(Fixture.row("theta"))
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "The blocked fixture item is listed")
+        row.click()
+
+        let note = app.element(AccessibilityID.Edit.blockedNote)
+        XCTAssertTrue(note.waitForExistence(timeout: 3), "A note says why the item can't be edited")
+        // The note is one container with a text inside; read both, as the label may sit on either.
+        let noteText = ([note.label, note.value as? String ?? ""]
+            + note.descendants(matching: .staticText).allElementsBoundByIndex.map { $0.label })
+            .joined(separator: " ")
+        XCTAssertTrue(noteText.contains("Edit it in the Bitwarden web vault or browser extension."),
+                      "The note names the next step, got: \(noteText)")
+
+        let editButton = app.buttons[AccessibilityID.Edit.editButton]
+        XCTAssertTrue(editButton.waitForExistence(timeout: 3))
+        XCTAssertFalse(editButton.isEnabled, "The toolbar Edit button is disabled for a blocked item")
+
+        let itemMenu = app.menuBars.menuBarItems["Item"]
+        itemMenu.click()
+        XCTAssertTrue(app.menuItems["Edit"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.menuItems["Edit"].isEnabled, "Item > Edit is disabled for a blocked item")
+        app.typeKey(.escape, modifierFlags: [])
+
+        app.typeKey("e", modifierFlags: .command)
+        XCTAssertFalse(app.buttons[AccessibilityID.Edit.saveButton].waitForExistence(timeout: 2),
+                       "⌘E must not open the edit sheet for a blocked item")
+    }
+
+    // MARK: - Conflict flow
+
+    // The test vault has no server. `--ui-test-conflict=<scenario>` scripts what the server would
+    // do: the save of the note is rejected as based on an outdated copy, and the sync that follows
+    // changes the note, fails once and then changes it, or removes it (`App/UITestFixtures.swift`).
+    // The journeys use clicks and typing inside the sheet only, never a system-wide shortcut.
+
+    private static let conflictMessage = "This item was changed on another device."
+    private static let itemGoneMessage = "This item is no longer available."
+    private static let changedName = "Test Note (changed elsewhere)"
+
+    /// An outdated copy is rejected: the banner names the conflict, Save stays blocked but the
+    /// fields stay editable, and once the sync is done, reload refills the sheet with the changed
+    /// item. The sheet stays open while the sync replaces the item in the list behind it.
+    func testConflict_reloadRefillsTheSheet() throws {
+        relaunchOpeningEditSheetOnNote(argument: "--ui-test-conflict=synced")
+        changeNameAndSave()
+
+        let banner = app.element(AccessibilityID.Edit.errorBanner)
+        XCTAssertTrue(banner.waitForExistence(timeout: 5), "The conflict banner should appear")
+        XCTAssertTrue(text(of: banner).contains(Self.conflictMessage),
+                      "The banner names the conflict, got: \(text(of: banner))")
+        XCTAssertFalse(app.buttons[AccessibilityID.Edit.saveButton].isEnabled,
+                       "Save stays blocked until the item is reloaded")
+
+        // The fields stay editable while Save is blocked.
+        let nameField = app.textFields["Name"]
+        nameField.click()
+        nameField.typeText("!")
+        XCTAssertTrue((nameField.value as? String ?? "").hasSuffix("!"), "Typing into the Name field still works")
+
+        let reload = app.buttons[AccessibilityID.Edit.conflictReloadButton]
+        XCTAssertTrue(reload.waitForExistence(timeout: 3), "The banner offers to discard and reload")
+
+        let status = app.element(AccessibilityID.Edit.conflictStatus)
+        XCTAssertTrue(waitForText(of: status, toEqual: "Synced"), "The sync ends with Synced, got: \(text(of: status))")
+        XCTAssertTrue(app.buttons[AccessibilityID.Edit.saveButton].exists,
+                      "The sheet stays open while the sync replaces the item in the list")
+        XCTAssertTrue(reload.isEnabled, "Reload is available once the sync is done")
+
+        reload.click()
+
+        XCTAssertTrue(waitForNonExistence(of: banner), "The banner is gone after the reload")
+        XCTAssertTrue(app.buttons[AccessibilityID.Edit.saveButton].isEnabled, "Save is available again")
+        XCTAssertTrue(waitForText(of: nameField, toEqual: Self.changedName),
+                      "The sheet shows the changed item, got: \(text(of: nameField))")
+    }
+
+    /// A failed sync shows its error in the status line and keeps the input; reload syncs again and,
+    /// once that worked, reloads.
+    func testConflict_syncFailsThenReloadSyncsAgain() throws {
+        relaunchOpeningEditSheetOnNote(argument: "--ui-test-conflict=sync-fails-once")
+        changeNameAndSave()
+
+        let status = app.element(AccessibilityID.Edit.conflictStatus)
+        XCTAssertTrue(waitForText(of: status, toContain: "No internet connection"),
+                      "The sync error is the status, got: \(text(of: status))")
+        let reload = app.buttons[AccessibilityID.Edit.conflictReloadButton]
+        XCTAssertTrue(reload.waitForExistence(timeout: 3))
+        XCTAssertTrue(reload.isEnabled, "Reload is available after a failed sync, so the user can try again")
+        XCTAssertFalse(app.buttons[AccessibilityID.Edit.saveButton].isEnabled, "Save stays blocked")
+
+        reload.click()
+        XCTAssertTrue(waitForText(of: status, toEqual: "Synced"),
+                      "The second sync works, got: \(text(of: status))")
+
+        reload.click()
+        let nameField = app.textFields["Name"]
+        XCTAssertTrue(waitForText(of: nameField, toEqual: Self.changedName),
+                      "The sheet is refilled, got: \(text(of: nameField))")
+        XCTAssertTrue(app.buttons[AccessibilityID.Edit.saveButton].isEnabled, "Save is available again")
+    }
+
+    /// An item the sync no longer has cannot be reloaded: the banner says so and offers Close, Save
+    /// stays blocked, Delete Item is not offered, and Close needs no discard confirmation.
+    func testConflict_itemGoneShowsClose() throws {
+        relaunchOpeningEditSheetOnNote(argument: "--ui-test-conflict=gone")
+        changeNameAndSave()
+
+        let banner = app.element(AccessibilityID.Edit.errorBanner)
+        XCTAssertTrue(banner.waitForExistence(timeout: 5), "The banner should appear")
+        let close = app.buttons[AccessibilityID.Edit.conflictCloseButton]
+        XCTAssertTrue(close.waitForExistence(timeout: 5), "Close replaces the reload button")
+        XCTAssertTrue(text(of: banner).contains(Self.itemGoneMessage),
+                      "The banner says the item is gone, got: \(text(of: banner))")
+        XCTAssertTrue(app.buttons[AccessibilityID.Edit.saveButton].exists,
+                      "The sheet stays open while the sync removes the item from the list")
+        XCTAssertFalse(app.buttons[AccessibilityID.Edit.saveButton].isEnabled, "Save stays blocked")
+        XCTAssertFalse(app.buttons[AccessibilityID.Edit.deleteButton].exists,
+                       "Delete Item is not offered for an item that is gone")
+
+        close.click()
+        XCTAssertTrue(waitForNonExistence(of: app.buttons[AccessibilityID.Edit.saveButton]),
+                      "Close closes the sheet")
+    }
+
+    // MARK: Conflict helpers
+
+    /// Restarts the app with the scripted scenario argument (`setUpWithError` launched the plain vault), then
+    /// opens the edit sheet of the test note.
+    private func relaunchOpeningEditSheetOnNote(argument: String) {
+        app.terminate()
+        app.launch(in: UITestLaunch.vault + [argument])
+        XCTAssertTrue(app.waitForVaultBrowser(), "Vault browser must be visible")
+
+        let row = app.element(Fixture.row(Fixture.note))
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "The test note is listed")
+        row.click()
+
+        let editButton = app.buttons[AccessibilityID.Edit.editButton]
+        XCTAssertTrue(editButton.waitForExistence(timeout: 3))
+        editButton.click()
+        XCTAssertTrue(app.buttons[AccessibilityID.Edit.saveButton].waitForExistence(timeout: 3),
+                      "Edit sheet should be visible")
+    }
+
+    /// Replaces the name and presses Save; the scripted server rejects it as an outdated copy.
+    private func changeNameAndSave() {
+        let nameField = app.textFields["Name"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 3))
+        nameField.tripleClick()
+        nameField.typeText("My edit")
+
+        let saveButton = app.buttons[AccessibilityID.Edit.saveButton]
+        XCTAssertTrue(saveButton.isEnabled, "Save should be enabled after a change")
+        saveButton.click()
+    }
+
+    /// Every string an element shows, one entry each: its label and value, and the label and value
+    /// of the static texts inside. The text may sit on the element or on a child, depending on how
+    /// SwiftUI exposes it. On macOS a static text often carries its string as the value and leaves
+    /// the label empty.
+    private func texts(of element: XCUIElement) -> [String] {
+        guard element.exists else { return [] }
+        let children = element.descendants(matching: .staticText).allElementsBoundByIndex
+            .flatMap { [$0.label, $0.value as? String ?? ""] }
+        return [element.label, element.value as? String ?? ""] + children
+    }
+
+    /// The same strings as one line, for `contains` checks and failure messages.
+    private func text(of element: XCUIElement) -> String {
+        texts(of: element).joined(separator: " ")
+    }
+
+    /// Polls instead of sleeping: returns as soon as `condition` holds, false after `timeout`.
+    private func waitUntil(timeout: TimeInterval = 5, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        return condition()
+    }
+
+    private func waitForText(of element: XCUIElement, toEqual expected: String, timeout: TimeInterval = 5) -> Bool {
+        // Whole-string match against each shown string, so the status may be wrapped in a container
+        // and a longer text ("Synced just now") is still not "Synced".
+        waitUntil(timeout: timeout) { texts(of: element).contains(expected) }
+    }
+
+    private func waitForText(of element: XCUIElement, toContain fragment: String, timeout: TimeInterval = 5) -> Bool {
+        waitUntil(timeout: timeout) { text(of: element).contains(fragment) }
+    }
+
+    private func waitForNonExistence(of element: XCUIElement, timeout: TimeInterval = 5) -> Bool {
+        waitUntil(timeout: timeout) { !element.exists }
+    }
 }
 
 // MARK: - XCUIElement convenience

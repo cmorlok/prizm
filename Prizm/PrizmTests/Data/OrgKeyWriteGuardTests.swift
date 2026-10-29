@@ -17,12 +17,12 @@ final class OrgKeyWriteGuardTests: XCTestCase {
 
     private let personalItem = VaultItem(
         id: "personal", name: "Mine", isFavorite: false, isDeleted: false,
-        creationDate: Date(), revisionDate: Date(),
+        creationDate: Date(), revisionDate: RepositoryFixtures.revisionDate,
         content: .secureNote(SecureNoteContent(notes: nil, customFields: []))
     )
     private let orgItem = VaultItem(
         id: "shared", name: "Shared", isFavorite: false, isDeleted: false,
-        creationDate: Date(), revisionDate: Date(),
+        creationDate: Date(), revisionDate: RepositoryFixtures.revisionDate,
         content: .secureNote(SecureNoteContent(notes: nil, customFields: [])),
         organizationId: "org-1", collectionIds: ["col-a"]
     )
@@ -32,10 +32,16 @@ final class OrgKeyWriteGuardTests: XCTestCase {
         mockAPI = MockPrizmAPIClient()
         mockCrypto = MockPrizmCryptoService()
         orgKeyCache = OrgKeyCache()
-        sut = VaultRepositoryImpl(apiClient: mockAPI, crypto: mockCrypto, orgKeyCache: orgKeyCache)
+        let store = RawCipherStore()
+        sut = await RepositoryFixtures.vaultRepository(
+            apiClient: mockAPI, crypto: mockCrypto, orgKeyCache: orgKeyCache, recordStore: store)
         await mockCrypto.unlockWith(keys: vaultKeys)
         mockCrypto.stubbedVaultKeys = vaultKeys  // unlockWith(keys:) does not set the returned keys
         await sut.populate(items: [personalItem, orgItem], folders: [], organizations: [], collections: [], syncedAt: Date())
+        // A full save is built over the server's stored record. The org record is encrypted under the
+        // org key even in tests where the cache has no org key: that is the case they check.
+        try await RepositoryFixtures.seedRecords(
+            for: [personalItem, orgItem], in: store, vaultKeys: vaultKeys, orgKeys: ["org-1": orgKeys])
     }
 
     private func assertOrgKeyUnavailable(_ error: Error, file: StaticString = #filePath, line: UInt = #line) {
@@ -153,7 +159,7 @@ final class SyncOrgKeySwapTests: XCTestCase {
         mockAPI = MockPrizmAPIClient()
         mockCrypto = MockPrizmCryptoService()
         orgKeyCache = OrgKeyCache()
-        sut = SyncRepositoryImpl(apiClient: mockAPI, crypto: mockCrypto, vaultRepository: MockVaultRepository(),
+        sut = await RepositoryFixtures.syncRepository(apiClient: mockAPI, crypto: mockCrypto, vaultRepository: MockVaultRepository(),
                                  vaultKeyCache: VaultKeyCache(), orgKeyCache: orgKeyCache)
         await mockCrypto.unlockWith(keys: CryptoKeys(encryptionKey: Data(count: 32), macKey: Data(count: 32)))
         mockCrypto.stubbedDecryptList = []
@@ -247,7 +253,7 @@ final class SyncOrgKeySwapTests: XCTestCase {
 
     func testSync_orgWhoseKeyFails_isNotListed() async throws {
         let repository = MockVaultRepository()
-        sut = SyncRepositoryImpl(apiClient: mockAPI, crypto: mockCrypto, vaultRepository: repository,
+        sut = await RepositoryFixtures.syncRepository(apiClient: mockAPI, crypto: mockCrypto, vaultRepository: repository,
                                  vaultKeyCache: VaultKeyCache(), orgKeyCache: orgKeyCache)
         mockAPI.syncResponse = syncResponse(organizations: [
             RawOrganization(id: "org-1", name: "One", key: "2.k1", type: 2),

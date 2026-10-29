@@ -10,6 +10,7 @@ final class PartialUpdateTests: XCTestCase {
     private var mockAPI: MockPrizmAPIClient!
     private var mockCrypto: MockPrizmCryptoService!
     private var orgKeyCache: OrgKeyCache!
+    private var recordStore: RawCipherStore!
 
     private let vaultKeys = CryptoKeys(encryptionKey: Data(repeating: 0x11, count: 32), macKey: Data(repeating: 0x22, count: 32))
     private let orgKeys = CryptoKeys(encryptionKey: Data(repeating: 0x33, count: 32), macKey: Data(repeating: 0x44, count: 32))
@@ -33,7 +34,9 @@ final class PartialUpdateTests: XCTestCase {
         mockAPI = MockPrizmAPIClient()
         mockCrypto = MockPrizmCryptoService()
         orgKeyCache = OrgKeyCache()
-        sut = VaultRepositoryImpl(apiClient: mockAPI, crypto: mockCrypto, orgKeyCache: orgKeyCache)
+        recordStore = RawCipherStore()
+        sut = await RepositoryFixtures.vaultRepository(
+            apiClient: mockAPI, crypto: mockCrypto, orgKeyCache: orgKeyCache, recordStore: recordStore)
         await sut.populate(items: [orgItem], folders: [Folder(id: "old-folder", name: "Old"), Folder(id: "work", name: "Work")],
                            organizations: [], collections: [], syncedAt: Date())
     }
@@ -73,6 +76,9 @@ final class PartialUpdateTests: XCTestCase {
         await mockCrypto.unlockWith(keys: vaultKeys)
         mockCrypto.stubbedVaultKeys = vaultKeys  // unlockWith(keys:) does not set the returned keys
         await orgKeyCache.store(key: orgKeys, for: "org-1")
+        // The full save below is built over the server's stored record of the item.
+        try await RepositoryFixtures.seedRecords(
+            for: [orgItem], in: recordStore, vaultKeys: vaultKeys, orgKeys: ["org-1": orgKeys])
         try await sut.moveItemToFolder(itemId: orgItem.id, folderId: "work")
 
         var draft = DraftVaultItem(try await cached())
@@ -85,6 +91,141 @@ final class PartialUpdateTests: XCTestCase {
         XCTAssertEqual(String(data: try name.decrypt(keys: orgKeys), encoding: .utf8), "Renamed",
                        "The item must be encrypted with the organization key")
         XCTAssertThrowsError(try name.decrypt(keys: vaultKeys), "Not with the personal vault key")
+    }
+
+    // MARK: - Move, then edit: single and bulk moves, org key and collections stay intact
+
+    /// What the stored server record holds for `orgItem` before any move: a move changes the cache
+    /// (and the server's per-user folder) but never this record, so a save built over it must take the
+    /// folder from the draft and the organization key and collections from the item.
+    private func prepareFullSaves() async throws {
+        await mockCrypto.unlockWith(keys: vaultKeys)
+        mockCrypto.stubbedVaultKeys = vaultKeys  // unlockWith(keys:) does not set the returned keys
+        await orgKeyCache.store(key: orgKeys, for: "org-1")
+        try await RepositoryFixtures.seedRecords(
+            for: [orgItem], in: recordStore, vaultKeys: vaultKeys, orgKeys: ["org-1": orgKeys])
+        // A save that follows another one is built over the first one's answer, which has a revision.
+        RepositoryFixtures.answerUpdatesWithRevision(of: mockAPI, revision)
+        let stored = await recordStore.record(for: orgItem.id)
+        XCTAssertEqual(stored?.folderId, "old-folder", "the stored record holds the folder from before the move")
+    }
+
+    /// Renames the cached item (as the edit sheet would) and saves it.
+    @discardableResult
+    private func rename(to name: String) async throws -> RawCipher {
+        var draft = DraftVaultItem(try await cached())
+        draft.name = name
+        _ = try await sut.update(draft)
+        return try XCTUnwrap(mockAPI.lastUpdatedCipher)
+    }
+
+    private func assertOrgSave(
+        _ sent: RawCipher, name: String, folderId: String?, file: StaticString = #filePath, line: UInt = #line
+    ) throws {
+        XCTAssertEqual(sent.organizationId, "org-1", file: file, line: line)
+        let encName = try EncString(string: sent.name)
+        XCTAssertEqual(String(data: try encName.decrypt(keys: orgKeys), encoding: .utf8), name,
+                       "encrypted with the organization key", file: file, line: line)
+        XCTAssertThrowsError(try encName.decrypt(keys: vaultKeys), "not with the vault key", file: file, line: line)
+        XCTAssertEqual(mockAPI.lastUpdatedCipherCollections?.id, orgItem.id, file: file, line: line)
+        XCTAssertEqual(mockAPI.lastUpdatedCipherCollections?.collectionIds, ["col-a"],
+                       "the original collections", file: file, line: line)
+        XCTAssertEqual(sent.folderId, folderId, "the draft's folder, not the stored record's", file: file, line: line)
+    }
+
+    func testSingleMoveThenUpdate_sendsOriginalCollectionsAndTheDraftFolder() async throws {
+        try await prepareFullSaves()
+        try await sut.moveItemToFolder(itemId: orgItem.id, folderId: "work")
+
+        let sent = try await rename(to: "Renamed")
+
+        try assertOrgSave(sent, name: "Renamed", folderId: "work")
+        XCTAssertEqual(mockAPI.partialUpdates.count, 1, "the move went through /partial")
+    }
+
+    func testBulkMoveThenUpdate_usesTheOrgKeyAndOriginalCollections() async throws {
+        try await prepareFullSaves()
+        try await sut.moveItemsToFolder(itemIds: [orgItem.id], folderId: "work")
+        XCTAssertEqual(mockAPI.moveCalls.first?.ids, [orgItem.id], "the drag-and-drop path")
+
+        let sent = try await rename(to: "Renamed")
+
+        try assertOrgSave(sent, name: "Renamed", folderId: "work")
+    }
+
+    func testMoveOutOfEveryFolderThenUpdate_keepsOrganizationAndCollections() async throws {
+        try await prepareFullSaves()
+        try await sut.moveItemsToFolder(itemIds: [orgItem.id], folderId: nil)
+
+        let sent = try await rename(to: "Renamed")
+
+        try assertOrgSave(sent, name: "Renamed", folderId: nil)
+        XCTAssertNil(try encodedFolderId(sent), "no folder on the wire")
+    }
+
+    func testSingleMoveOutOfEveryFolderThenUpdate_keepsOrganizationAndCollections() async throws {
+        try await prepareFullSaves()
+        try await sut.moveItemToFolder(itemId: orgItem.id, folderId: nil)
+
+        let sent = try await rename(to: "Renamed")
+
+        try assertOrgSave(sent, name: "Renamed", folderId: nil)
+        XCTAssertNil(try encodedFolderId(sent), "no folder on the wire")
+    }
+
+    func testUpdateThenBulkMove_endsWithOrganizationCollectionsAndFolder() async throws {
+        try await prepareFullSaves()
+        let first = try await rename(to: "First")
+        try assertOrgSave(first, name: "First", folderId: "old-folder")
+
+        try await sut.moveItemsToFolder(itemIds: [orgItem.id], folderId: "work")
+        let second = try await rename(to: "Second")
+
+        try assertOrgSave(second, name: "Second", folderId: "work")
+    }
+
+    func testKeyedFixtureOrgLogin_bulkMoveThenUpdate_usesItsOwnKey() async throws {
+        let golden = try await GoldenVault.load()
+        let stored = golden.cipher(id: GoldenVault.orgLoginId)
+        let mapper = CipherMapper()
+        let item = try mapper.map(raw: stored, vaultKeys: golden.vaultKeys, orgKeys: golden.orgKeys).item
+        let originalCollections = item.collectionIds
+        XCTAssertFalse(originalCollections.isEmpty)
+
+        await mockCrypto.unlockWith(keys: golden.vaultKeys)
+        mockCrypto.stubbedVaultKeys = golden.vaultKeys
+        await orgKeyCache.replaceAll(with: golden.orgKeys)
+        let token = await recordStore.currentGeneration()
+        await recordStore.upsert(stored, ifCurrent: token)
+        await sut.populate(items: [item], folders: [Folder(id: "work", name: "Work")], organizations: [],
+                           collections: [], syncedAt: Date())
+        try await sut.moveItemsToFolder(itemIds: [item.id], folderId: "work")
+
+        var draft = DraftVaultItem(try await sut.itemDetail(id: item.id))
+        draft.name = "Renamed org login"
+        _ = try await sut.update(draft)
+
+        let sent = try XCTUnwrap(mockAPI.lastUpdatedCipher)
+        XCTAssertNotNil(stored.key)
+        XCTAssertEqual(sent.key, stored.key, "the item key is sent as stored")
+        XCTAssertEqual(sent.organizationId, GoldenVault.orgId)
+        XCTAssertEqual(sent.folderId, "work")
+        XCTAssertEqual(mockAPI.lastUpdatedCipherCollections?.collectionIds, originalCollections)
+        let orgKey = try XCTUnwrap(golden.orgKeys[GoldenVault.orgId])
+        let itemKeys = try mapper.effectiveKeys(for: stored, activeKeys: orgKey)
+        let encName = try EncString(string: sent.name)
+        XCTAssertEqual(String(data: try encName.decrypt(keys: itemKeys), encoding: .utf8), "Renamed org login")
+        XCTAssertThrowsError(try encName.decrypt(keys: orgKey), "not under the organization key")
+        XCTAssertThrowsError(try encName.decrypt(keys: golden.vaultKeys), "not under the vault key")
+    }
+
+    /// `folderId` of the request as it is sent: nil when absent or null.
+    private func encodedFolderId(_ cipher: RawCipher) throws -> String? {
+        guard case .object(let members) = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(cipher)) else {
+            throw CocoaError(.coderInvalidValue)
+        }
+        if case .string(let id)? = members["folderId"] { return id }
+        return nil
     }
 
     // MARK: - 2.1 / 2.2 Favorite via /partial

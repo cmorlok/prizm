@@ -12,13 +12,13 @@ final class OrgItemsInFoldersTests: XCTestCase {
 
     private let orgItem = VaultItem(
         id: "org-item", name: "Shared", isFavorite: false, isDeleted: false,
-        creationDate: Date(), revisionDate: Date(),
+        creationDate: Date(), revisionDate: RepositoryFixtures.revisionDate,
         content: .secureNote(SecureNoteContent(notes: nil, customFields: [])),
         folderId: "f1", organizationId: "org-1", collectionIds: ["col-a"]
     )
     private let personalItem = VaultItem(
         id: "personal", name: "Mine", isFavorite: false, isDeleted: false,
-        creationDate: Date(), revisionDate: Date(),
+        creationDate: Date(), revisionDate: RepositoryFixtures.revisionDate,
         content: .secureNote(SecureNoteContent(notes: nil, customFields: [])),
         folderId: "f1"
     )
@@ -32,11 +32,16 @@ final class OrgItemsInFoldersTests: XCTestCase {
         crypto.stubbedVaultKeys = vaultKeys  // unlockWith(keys:) does not set the returned keys
         let orgKeyCache = OrgKeyCache()
         await orgKeyCache.replaceAll(with: ["org-1": orgKeys])
-        sut = VaultRepositoryImpl(apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache)
+        let store = RawCipherStore()
+        sut = await RepositoryFixtures.vaultRepository(
+            apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache, recordStore: store)
         await sut.populate(items: [orgItem, personalItem],
                            folders: [Folder(id: "f1", name: "Work"), Folder(id: "f2", name: "Home")],
                            organizations: [], collections: [OrgCollection(id: "col-a", organizationId: "org-1", name: "A")],
                            syncedAt: Date())
+        // A full save is built over the server's stored record, encrypted under these keys.
+        try await RepositoryFixtures.seedRecords(
+            for: [orgItem, personalItem], in: store, vaultKeys: vaultKeys, orgKeys: ["org-1": orgKeys])
     }
 
     // MARK: - 2.1 Folder list and count include org items

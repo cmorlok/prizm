@@ -15,6 +15,8 @@ final class MockVaultRepository: VaultRepository {
     private(set) var populatedOrganizations: [Organization] = []
     private(set) var populatedCollections: [OrgCollection] = []
     private(set) var clearVaultCalled: Bool = false
+    /// The session token of the last `populate` (nil after the seam variant without one).
+    private(set) var lastPopulateSession: VaultSessionToken?
 
     // MARK: - update(_:) stubbing
 
@@ -26,7 +28,18 @@ final class MockVaultRepository: VaultRepository {
     // MARK: - VaultRepository (write side)
 
     func populate(items: [VaultItem], folders: [Folder], organizations: [Organization],
+                  collections: [OrgCollection], syncedAt: Date, session: VaultSessionToken) async {
+        lastPopulateSession    = session
+        populatedItems         = items
+        populatedFolders       = folders
+        populatedOrganizations = organizations
+        populatedCollections   = collections
+    }
+
+    /// The test seam without a token; records no session.
+    func populate(items: [VaultItem], folders: [Folder], organizations: [Organization],
                   collections: [OrgCollection], syncedAt: Date) async {
+        lastPopulateSession    = nil
         populatedItems         = items
         populatedFolders       = folders
         populatedOrganizations = organizations
@@ -43,7 +56,14 @@ final class MockVaultRepository: VaultRepository {
 
     // MARK: - VaultRepository (read side)
 
-    func allItems() async throws -> [VaultItem] { populatedItems }
+    /// How often `allItems()` was called. The vault browser reads it only to refresh the selected
+    /// item, so a test can wait for that refresh instead of sleeping.
+    private(set) var allItemsCallCount = 0
+
+    func allItems() async throws -> [VaultItem] {
+        allItemsCallCount += 1
+        return populatedItems
+    }
 
     func folders() async throws -> [Folder] { populatedFolders }
 

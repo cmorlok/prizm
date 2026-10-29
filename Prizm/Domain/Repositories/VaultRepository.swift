@@ -29,8 +29,21 @@ protocol VaultRepository: AnyObject, Sendable {
 
     /// Replaces the in-memory vault store and rebuilds all read indexes.
     /// Called by `SyncRepositoryImpl` after a successful sync.
+    ///
+    /// `session` is the token the sync read when it started. A token that is stale, because the
+    /// vault was cleared since (lock or sign-out), or that the record store never handed out, makes
+    /// the call a no-op: a sync result must not put decrypted items back into a vault that was just
+    /// emptied. There is no way to skip the check.
+    func populate(items: [VaultItem], folders: [Folder], organizations: [Organization],
+                  collections: [OrgCollection], syncedAt: Date, session: VaultSessionToken) async
+
+    #if DEBUG
+    /// Test seam only (the UI-test vault and unit tests): `populate` under the session that is
+    /// current at the call. A token read right before the write fences nothing, so this variant is
+    /// compiled out of Release builds and no shipping caller can pick it instead of the checked one.
     func populate(items: [VaultItem], folders: [Folder], organizations: [Organization],
                   collections: [OrgCollection], syncedAt: Date) async
+    #endif
 
     /// All organizations the user belongs to, sorted alphabetically by name.
     func organizations() async throws -> [Organization]
@@ -70,7 +83,9 @@ protocol VaultRepository: AnyObject, Sendable {
     func create(_ draft: DraftVaultItem) async throws -> VaultItem
 
     /// Replaces the `attachments` array for the vault item identified by `cipherId`,
-    /// patching the in-memory cache without a full re-sync.
+    /// patching the in-memory cache without a full re-sync. It also refreshes the item's stored
+    /// server record and cached revision (one request for the item): an attachment change can
+    /// change the revision on the server, and the next edit must start from the new one.
     func updateAttachments(_ attachments: [Attachment], for cipherId: String) async
 
     // MARK: - Folder CRUD
@@ -92,6 +107,33 @@ protocol VaultRepository: AnyObject, Sendable {
     func renameCollection(id: String, organizationId: String, name: String) async throws -> OrgCollection
     func deleteCollection(id: String, organizationId: String) async throws
 
+}
+
+// MARK: - Session token
+
+/// An opaque marker of one unlocked session of the record store, compared with `==`.
+///
+/// What it guarantees: a token equals only copies of itself. The Data layer's `RawCipherStore` holds
+/// the current token and replaces it with a new one on every lock or sign-out, so a token read
+/// before a lock is never current again, and a token built anywhere else (`VaultSessionToken()`) is
+/// never current at all: no caller can make a current token without asking the store for it.
+/// What it does not guarantee: that the caller read it at the start of its operation. A token read
+/// right before the write it guards is always current and fences nothing.
+///
+/// Why it lives in Domain: `populate` carries it, and the protocol cannot name a Data type.
+/// It holds no secret and no key material.
+nonisolated struct VaultSessionToken: Equatable, Sendable {
+    /// The token is the identity of this object: two separately created markers are never the same.
+    nonisolated private final class Marker: Sendable {}
+
+    private let marker = Marker()
+
+    /// A new token, unequal to every token created before it.
+    init() {}
+
+    static func == (lhs: VaultSessionToken, rhs: VaultSessionToken) -> Bool {
+        lhs.marker === rhs.marker
+    }
 }
 
 // MARK: - Errors
@@ -120,6 +162,31 @@ nonisolated enum VaultError: Error, LocalizedError {
     /// The user's organization-user id in the sync profile is present but unreadable, so a new
     /// collection cannot be assigned to its creator.
     case organizationMembershipUnreadable
+    /// The user id from the last sync is not known, so a create or full update was not sent: the
+    /// server rejects a save without it (Vaultwarden 1.37.4, HTTP 422).
+    case profileIdUnavailable
+    /// A full save of an item Prizm cannot write back was refused before anything was encrypted or
+    /// sent. Folder and favorite changes of the same item are not affected.
+    case itemNotEditable(EditBlockReason)
+    /// Prizm holds no server record for the item, or the draft's organization differs from the stored
+    /// record's, so a save has nothing safe to be built over. Nothing was encrypted or sent.
+    case itemRecordUnavailable
+    /// The item's own key could not be unwrapped, or the key check on the stored name failed, so
+    /// Prizm does not know which key the server expects. Nothing was encrypted or sent.
+    case itemKeyUnavailable
+    /// The stored server record of the item has no revision Prizm can read (missing, empty, not a
+    /// date, or the epoch). Nothing was encrypted or sent: without a readable revision neither the
+    /// local check nor the server's can protect the edit, and Vaultwarden skips its check on a
+    /// revision it cannot parse.
+    case itemRevisionUnavailable
+    /// The server rejected the update because Prizm's copy is out of date, or the local check found
+    /// that the stored record changed since the edit sheet opened. Nothing was saved and nothing is
+    /// retried: the user reloads the item and makes the change again. The message names neither the
+    /// server's wording nor "revision" or "conflict".
+    case conflict
+    /// An organization item's update was saved, but its collection change was not. The edit sheet
+    /// keeps the draft, so the user can try again.
+    case collectionChangeNotSaved
 
     var errorDescription: String? {
         switch self {
@@ -137,6 +204,20 @@ nonisolated enum VaultError: Error, LocalizedError {
             return "Couldn't create the collection. Your membership in this organization could not be read."
         case .organizationKeyUnavailable:
             return "This item's organization can't be accessed right now. Lock and unlock Prizm, then try again."
+        case .profileIdUnavailable:
+            return "Prizm couldn't confirm which account this item belongs to. Lock and unlock Prizm, then try again."
+        case .itemNotEditable(let reason):
+            return reason.userMessage
+        case .itemRecordUnavailable:
+            return "Prizm couldn't load this item's latest saved version. Lock and unlock the vault, then try again."
+        case .itemKeyUnavailable:
+            return "Prizm couldn't load the encryption key for this item. Lock and unlock the vault, then try again."
+        case .itemRevisionUnavailable:
+            return "Prizm couldn't confirm which version of this item you are editing. Lock and unlock the vault, then try again."
+        case .conflict:
+            return "This item was changed on another device. Your changes were not saved. Reload to see the latest version, then make your changes again."
+        case .collectionChangeNotSaved:
+            return "Your changes were saved, but the collection change failed. Try again."
         }
     }
 }

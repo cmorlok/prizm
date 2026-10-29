@@ -17,7 +17,7 @@ final class SyncRepositoryImplTests: XCTestCase {
         mockAPI    = MockPrizmAPIClient()
         mockCrypto = MockPrizmCryptoService()
         mockVault  = MockVaultRepository()
-        sut = SyncRepositoryImpl(
+        sut = await RepositoryFixtures.syncRepository(
             apiClient:       mockAPI,
             crypto:          mockCrypto,
             vaultRepository: mockVault,
@@ -165,6 +165,33 @@ final class SyncRepositoryImplTests: XCTestCase {
         // Collections may be 0 if collection name decryption fails with stub keys;
         // we just verify the populate() was called (org was processed).
         XCTAssertGreaterThanOrEqual(mockVault.populatedOrganizations.count, 0)
+    }
+
+    /// A keyed organization item whose own key does not unwrap is dropped and counted, as a personal
+    /// one is (spec "A keyed item whose key does not unwrap"); the count was only logged for
+    /// organization items.
+    func testSync_countsAnOrgItemThatDoesNotDecrypt() async throws {
+        let orgCipher = RawCipher(
+            id: "org-cipher-1", organizationId: "org-1", folderId: nil, type: 2, name: "2.name==",
+            notes: nil, favorite: false, reprompt: nil, deletedDate: nil, creationDate: nil,
+            revisionDate: nil, login: nil, card: nil, identity: nil, secureNote: nil, sshKey: nil,
+            fields: [], key: "2.notAKey==", collectionIds: ["col-1"], attachments: nil
+        )
+        mockAPI.syncResponse = SyncResponse(
+            profile: RawProfile(id: "pid", email: "test@example.com", name: nil,
+                                key: "2.encKey==", privateKey: "2.encPrivKey=="),
+            ciphers: [orgCipher],
+            folders: [],
+            organizations: [RawOrganization(id: "org-1", name: "Acme Corp", key: "2.stubEncKey==", type: 3)],
+            collections: []
+        )
+        mockCrypto.stubbedDecryptList = []
+        mockCrypto.stubbedFailedCount = 0
+
+        let result = try await sut.sync(progress: { _ in })
+
+        XCTAssertEqual(result.failedDecryptionCount, 1, "The organization item that cannot be read is counted")
+        XCTAssertTrue(mockVault.populatedItems.isEmpty, "and not listed")
     }
 
     // MARK: - Helpers

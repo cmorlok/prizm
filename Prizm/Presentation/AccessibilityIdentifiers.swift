@@ -130,6 +130,15 @@ nonisolated enum AccessibilityID {
         static let deleteButton  = "edit.button.delete"
         /// The inline error banner shown on save failure.
         static let errorBanner   = "edit.errorBanner"
+        /// The "Discard my changes and reload" button in the conflict banner (syncing, synced and
+        /// sync-failed states). Separate from the Close id so a journey knows which state it reached.
+        static let conflictReloadButton = "edit.button.conflictReload"
+        /// The "Close" button in the conflict banner once the item is gone.
+        static let conflictCloseButton  = "edit.button.conflictClose"
+        /// The status line next to the conflict button ("Syncing…", "Synced" or the sync error).
+        static let conflictStatus       = "edit.conflictStatus"
+        /// The note in ItemDetailView that says why Edit is disabled for an item.
+        static let blockedNote   = "edit.blockedNote"
     }
 
     // MARK: - Trash (delete-restore-items)

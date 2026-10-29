@@ -65,7 +65,7 @@ final class EmptyTrashRepositoryTests: XCTestCase {
 
     func testPermanentDeleteItems_sendsOnlyTrashedIdsInChunksOf500() async throws {
         let api = MockPrizmAPIClient()
-        let sut = VaultRepositoryImpl(apiClient: api, crypto: MockPrizmCryptoService())
+        let sut = await RepositoryFixtures.vaultRepository(apiClient: api, crypto: MockPrizmCryptoService())
         let trashed = (0..<1_200).map { item("t\($0)", deleted: true) }
         let active = (0..<10).map { item("a\($0)", deleted: false) }
         await sut.populate(items: trashed + active, folders: [], organizations: [], collections: [], syncedAt: Date())
@@ -83,7 +83,7 @@ final class EmptyTrashRepositoryTests: XCTestCase {
     func testPermanentDeleteItems_failingChunk_othersStillGoThrough() async throws {
         let api = MockPrizmAPIClient()
         api.bulkDeleteFailsOnCall = 1
-        let sut = VaultRepositoryImpl(apiClient: api, crypto: MockPrizmCryptoService())
+        let sut = await RepositoryFixtures.vaultRepository(apiClient: api, crypto: MockPrizmCryptoService())
         let trashed = (0..<1_200).map { item("t\($0)", deleted: true) }
         await sut.populate(items: trashed, folders: [], organizations: [], collections: [], syncedAt: Date())
 
@@ -359,7 +359,8 @@ private func makeEmptyTrashTestViewModel(emptyTrash: any EmptyTrashUseCase,
         renameCollection: RenameCollectionUseCaseImpl(repository: vault),
         deleteCollection: DeleteCollectionUseCaseImpl(repository: vault),
         syncTimestamp:    syncRepo,
-        getLastSyncDate:  GetLastSyncDateUseCaseImpl(repository: syncRepo)
+        getLastSyncDate:  GetLastSyncDateUseCaseImpl(repository: syncRepo),
+        sync:             MockSyncUseCase()
     )
 }
 
@@ -380,7 +381,7 @@ final class SyncAfterLockTests: XCTestCase {
             ciphers: [], folders: [], organizations: [], collections: []
         )
         api.whileFetchingSync = { await crypto.lockVault() }
-        let sync = SyncRepositoryImpl(apiClient: api, crypto: crypto, vaultRepository: vault,
+        let sync = await RepositoryFixtures.syncRepository(apiClient: api, crypto: crypto, vaultRepository: vault,
                                       vaultKeyCache: VaultKeyCache(), orgKeyCache: OrgKeyCache())
 
         do {

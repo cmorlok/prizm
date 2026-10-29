@@ -27,6 +27,16 @@ final class AppContainer: ObservableObject {
     /// (Constitution §III).
     let orgKeyCache: OrgKeyCache
 
+    #if DEBUG
+    /// The one record store, also held here so the UI-test seam can fill it (`seedUITestRecords`).
+    private let uiTestRecordStore: RawCipherStore
+    /// Scripted save and sync for `--ui-test-conflict=`; nil in every other launch, which uses the
+    /// real use cases. The seeded vault has no server, so these let UI journeys reach the conflict
+    /// banner.
+    private let uiTestConflictEdit: (any EditVaultItemUseCase)?
+    private let uiTestConflictSync: (any SyncUseCase)?
+    #endif
+
     // MARK: - Domain repositories (Data implementations)
 
     let authRepository: AuthRepositoryImpl
@@ -95,7 +105,11 @@ final class AppContainer: ObservableObject {
         #endif
         let keyCache      = VaultKeyCache()
         let orgKeyCache   = OrgKeyCache()
-        let vault         = VaultRepositoryImpl(apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache)
+        // One holder for both repositories: sync fills it, saves read it.
+        let profileIds    = ProfileIdCache()
+        // Exactly one store: sync fills it, `clearVault()` (lock and sign-out) empties it.
+        let recordStore   = RawCipherStore()
+        let vault         = VaultRepositoryImpl(apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache, profileIds: profileIds, recordStore: recordStore)
         let vaultKeyService = VaultKeyServiceImpl(cache: keyCache, crypto: crypto)
 
         let auth = AuthRepositoryImpl(
@@ -111,7 +125,9 @@ final class AppContainer: ObservableObject {
             crypto:          crypto,
             vaultRepository: vault,
             vaultKeyCache:   keyCache,
-            orgKeyCache:     orgKeyCache
+            orgKeyCache:     orgKeyCache,
+            profileIds: profileIds,
+            recordStore: recordStore
         )
 
         let attachmentRepo = AttachmentRepositoryImpl(
@@ -131,6 +147,16 @@ final class AppContainer: ObservableObject {
         self.keychain        = keychain
         self.biometricKeychain = biometricKeychain
         self.vaultStore      = vault
+        #if DEBUG
+        self.uiTestRecordStore = recordStore
+        if UITestFixtures.isEnabled, let scenario = UITestFixtures.conflictScenario {
+            self.uiTestConflictEdit = UITestConflictEditUseCase()
+            self.uiTestConflictSync = UITestConflictSyncUseCase(vault: vault, scenario: scenario)
+        } else {
+            self.uiTestConflictEdit = nil
+            self.uiTestConflictSync = nil
+        }
+        #endif
         self.faviconLoader   = FaviconLoader()
         self.vaultKeyCache   = keyCache
         self.orgKeyCache     = orgKeyCache
@@ -166,6 +192,16 @@ final class AppContainer: ObservableObject {
         self.tempFileManager           = AttachmentTempFileManager()
     }
 
+    #if DEBUG
+    /// Stores one server record per fixture item in the record store, built under the DEBUG-only
+    /// fixture keys (`UITestFixtures.vaultKeys`, `orgKeys`). The seam calls this right after it
+    /// populates the vault, so saves in the UI-test vault have a record to save over.
+    func seedUITestRecords(for items: [VaultItem]) async {
+        let token = await uiTestRecordStore.currentGeneration()
+        await uiTestRecordStore.replaceAll(UITestFixtures.rawRecords(for: items), ifCurrent: token)
+    }
+    #endif
+
     // MARK: - Factories
 
     /// Returns a fresh `SyncTimestampRepository` and matching `GetLastSyncDateUseCase`
@@ -196,7 +232,12 @@ final class AppContainer: ObservableObject {
 
     /// Creates a `VaultBrowserViewModel` backed by the live vault store.
     func makeVaultBrowserViewModel() -> VaultBrowserViewModel {
-        VaultBrowserViewModel(
+        #if DEBUG
+        let sync: any SyncUseCase = uiTestConflictSync ?? syncUseCase
+        #else
+        let sync: any SyncUseCase = syncUseCase
+        #endif
+        return VaultBrowserViewModel(
             vault:            vaultStore,
             search:           searchVaultUseCase,
             delete:           deleteVaultItemUseCase,
@@ -213,7 +254,8 @@ final class AppContainer: ObservableObject {
             renameCollection: renameCollectionUseCase,
             deleteCollection: deleteCollectionUseCase,
             syncTimestamp:    syncTimestampRepository,
-            getLastSyncDate:  getLastSyncDateUseCase
+            getLastSyncDate:  getLastSyncDateUseCase,
+            sync:             sync
         )
     }
 
@@ -225,8 +267,13 @@ final class AppContainer: ObservableObject {
                                folders: [Folder] = [],
                                organizations: [Organization] = [],
                                collections: [OrgCollection] = []) -> ItemEditViewModel {
-        ItemEditViewModel(item: item, useCase: editVaultItemUseCase,
-                          folders: folders, organizations: organizations, collections: collections)
+        #if DEBUG
+        let useCase: any EditVaultItemUseCase = uiTestConflictEdit ?? editVaultItemUseCase
+        #else
+        let useCase: any EditVaultItemUseCase = editVaultItemUseCase
+        #endif
+        return ItemEditViewModel(item: item, useCase: useCase,
+                                 folders: folders, organizations: organizations, collections: collections)
     }
 
     /// Creates an `ItemEditViewModel` in create mode for the given item type.

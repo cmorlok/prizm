@@ -51,6 +51,125 @@ enum UITestFixtures {
         defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
     }
 
+    // MARK: - Stored server records
+
+    /// Keys the seeded records are encrypted under. DEBUG-only and obviously fake: they protect
+    /// nothing, exist so a saving journey in the seeded vault has a server record to save over, and
+    /// are never compiled into a Release build. Nothing unlocks the crypto service with them yet; see
+    /// the note at the seeding call in `RootViewModel`.
+    static let vaultKeys = CryptoKeys(
+        encryptionKey: Data(repeating: 0x5A, count: 32),
+        macKey:        Data(repeating: 0xA5, count: 32)
+    )
+    /// Organization keys by organization id; `org-acme` is the organization of `orgItemInFolder`.
+    static let orgKeys: [String: CryptoKeys] = [
+        "org-acme": CryptoKeys(
+            encryptionKey: Data(repeating: 0x3C, count: 32),
+            macKey:        Data(repeating: 0xC3, count: 32)
+        )
+    ]
+
+    /// One server record per item, built with the create-path mapper under `vaultKeys`, or under the
+    /// item's organization key for an organization item, so each maps back to the same item. Saves
+    /// in the seeded vault are built over these records.
+    static func rawRecords(for items: [VaultItem]) -> [RawCipher] {
+        let mapper = CipherMapper()
+        // Encrypting fixed values with fixed keys cannot fail, and an organization item without a
+        // key here would be a mistake in this fixture: both trap in this DEBUG seam (like
+        // `keychain(for:)`) instead of silently seeding a record under the wrong key.
+        return items.map { item in
+            let keys: CryptoKeys
+            if let organizationId = item.organizationId {
+                keys = orgKeys[organizationId]!
+            } else {
+                keys = vaultKeys
+            }
+            let record = try! mapper.toNewRawCipher(DraftVaultItem(item), encryptedWith: keys, encryptedFor: "ui-test-seed")
+            // The UI-test vault's records follow the same rule as the server's: each carries its
+            // item's revision, which the save path relies on to compare revisions. Re-encoding a
+            // fixed record cannot fail, so a failure traps in this DEBUG seam, like the other
+            // fixture builders.
+            return try! withRevision(record, serverRevisionString(for: item.revisionDate))
+        }
+    }
+
+    /// `date` the way Vaultwarden 1.37.4 writes revisions: ISO-8601 UTC with six fractional digits
+    /// and `Z`. The sixth digit is always zero because the app compares revisions at millisecond
+    /// resolution. The count is rounded because a decimal millisecond can be inexact in a `Double`:
+    /// a date built from the reference date, as the ISO-8601 parser does, can land a hair below the
+    /// whole millisecond (`1_793_008_800.0019999`), and truncating it would write `.001999Z`.
+    ///
+    /// The one definition of the stamped format: the unit tests' `RepositoryFixtures` use it too, so
+    /// the UI-test vault and the unit tests cannot drift apart on what the revision pre-check parses.
+    nonisolated static func serverRevisionString(for date: Date) -> String {
+        let milliseconds = Int64((date.timeIntervalSince1970 * 1000).rounded())
+        let wholeSeconds = Int64((Double(milliseconds) / 1000).rounded(.down))
+        let fraction = milliseconds - wholeSeconds * 1000
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let seconds = formatter.string(from: Date(timeIntervalSince1970: Double(wholeSeconds)))
+        // Drop the formatter's trailing "Z" and put the fraction in front of it.
+        return String(seconds.dropLast()) + "." + String(format: "%03d", fraction) + "000Z"
+    }
+
+    /// `record` with another `revisionDate`. The create path writes none and the wire model has no
+    /// setter, so the record is re-made through its JSON. Shared with the unit tests' fixtures, which
+    /// report a failure instead of trapping.
+    nonisolated static func withRevision(_ record: RawCipher, _ revision: String) throws -> RawCipher {
+        let data = try JSONEncoder().encode(record)
+        guard var json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: [], debugDescription: "Record \(record.id) did not encode to a JSON object"))
+        }
+        json["revisionDate"] = revision
+        return try JSONDecoder().decode(RawCipher.self, from: JSONSerialization.data(withJSONObject: json))
+    }
+
+    // MARK: - Conflict scenarios
+
+    /// How the UI-test vault answers a save of the edited note, chosen by `--ui-test-conflict=<value>`.
+    ///
+    /// The seeded vault has no server, so journeys that save are skipped. In every scenario Save
+    /// reports that the item changed elsewhere; the scenario decides what the sync that follows finds.
+    enum ConflictScenario: String, Equatable {
+        /// The sync works and the note has changed (banner: "Synced", reload enabled).
+        case synced
+        /// The first sync fails, then the next one works like `synced` (banner shows the sync error).
+        case syncFailsOnce = "sync-fails-once"
+        /// The sync works and the note is gone (banner: item gone, Close).
+        case gone
+    }
+
+    /// The value of `--ui-test-conflict=`, or nil when it is absent or not a known scenario.
+    static func conflictScenario(from arguments: [String]) -> ConflictScenario? {
+        let prefix = "--ui-test-conflict="
+        guard let argument = arguments.first(where: { $0.hasPrefix(prefix) }) else { return nil }
+        return ConflictScenario(rawValue: String(argument.dropFirst(prefix.count)))
+    }
+
+    static var conflictScenario: ConflictScenario? { conflictScenario(from: CommandLine.arguments) }
+
+    /// The item the scenarios change or remove: the secure note "Test Note".
+    static let conflictItemId = "note1"
+
+    /// `conflictItemId` as another device left it: other name and notes, later revision.
+    static var changedConflictItem: VaultItem {
+        VaultItem(
+            id: conflictItemId, name: "Test Note (changed elsewhere)", isFavorite: false, isDeleted: false,
+            creationDate: Date(timeIntervalSince1970: 1_700_000_000),
+            revisionDate: Date(timeIntervalSince1970: 1_700_000_060),
+            content: .secureNote(SecureNoteContent(notes: "Changed on another device.", customFields: []))
+        )
+    }
+
+    /// The fixture items as the server holds them after the conflicting change.
+    static func itemsAfterConflict(_ scenario: ConflictScenario) -> [VaultItem] {
+        items.compactMap { item in
+            guard item.id == conflictItemId else { return item }
+            return scenario == .gone ? nil : changedConflictItem
+        }
+    }
+
     // MARK: - Fixture account
 
     static let accountUserId = "uitest-user"
@@ -88,6 +207,10 @@ enum UITestFixtures {
     /// journeys walk through is unchanged.
     static var withOrgFolders: Bool { CommandLine.arguments.contains("--ui-test-org-folders") }
 
+    /// `--ui-test-blocked-item`: adds an item Prizm cannot edit, for the journey that checks the
+    /// disabled Edit button and its note. Off by default so the other journeys' lists stay unchanged.
+    static var withBlockedItem: Bool { CommandLine.arguments.contains("--ui-test-blocked-item") }
+
     static var folders: [Folder] { withOrgFolders ? [Folder(id: "work", name: "Work")] : [] }
     static var organizations: [Organization] {
         withOrgFolders ? [Organization(id: "org-acme", name: "Acme", role: .user, membershipId: .known("m-uitest"))] : []
@@ -97,7 +220,7 @@ enum UITestFixtures {
     }
 
     static var items: [VaultItem] {
-        let all = seededItems + (withOrgFolders ? [orgItemInFolder] : [])
+        let all = seededItems + (withOrgFolders ? [orgItemInFolder] : []) + (withBlockedItem ? [blockedItem] : [])
         guard withoutSeeds else { return all }
         return all.map { item in
             guard case .login = item.content else { return item }
@@ -141,13 +264,27 @@ enum UITestFixtures {
         ]
     }
 
-    private static var orgItemInFolder: VaultItem {
+    /// The organization item `--ui-test-org-folders` adds. Internal so the seam tests can build the
+    /// records of a vault that has it.
+    static var orgItemInFolder: VaultItem {
         VaultItem(
             id: "omega", name: "Omega Shared", isFavorite: false, isDeleted: false,
             creationDate: Date(timeIntervalSince1970: 1_700_000_000),
             revisionDate: Date(timeIntervalSince1970: 1_700_000_000),
             content: .secureNote(SecureNoteContent(notes: "shared", customFields: [])),
             folderId: "work", organizationId: "org-acme", collectionIds: ["col-shared"]
+        )
+    }
+
+    /// The item `--ui-test-blocked-item` adds: a secure note with no TOTP seed, flagged as stored in
+    /// a format Prizm cannot write back. Internal so the seam tests can check it.
+    static var blockedItem: VaultItem {
+        VaultItem(
+            id: "theta", name: "Theta Blocked", isFavorite: false, isDeleted: false,
+            creationDate: Date(timeIntervalSince1970: 1_700_000_000),
+            revisionDate: Date(timeIntervalSince1970: 1_700_000_000),
+            content: .secureNote(SecureNoteContent(notes: "Kept in a format Prizm cannot edit.", customFields: [])),
+            editBlock: .unsupportedFormat
         )
     }
 
@@ -171,6 +308,43 @@ enum UITestFixtures {
             revisionDate: Date(timeIntervalSince1970: 1_700_000_000),
             content: content, attachments: attachments
         )
+    }
+}
+
+// MARK: - Scripted use cases for the conflict scenarios
+
+/// A save that always fails with `VaultError.conflict`, so a journey can reach the conflict banner
+/// without a server. Used only with `--ui-test-conflict=` (see `UITestFixtures.ConflictScenario`);
+/// nothing here exists in Release builds.
+final class UITestConflictEditUseCase: EditVaultItemUseCase {
+    func execute(draft: DraftVaultItem) async throws -> VaultItem {
+        throw VaultError.conflict
+    }
+}
+
+/// The sync that follows a scripted conflict: instead of fetching, it puts the vault in the state
+/// the scenario describes (the note changed or removed), or fails once first.
+final class UITestConflictSyncUseCase: SyncUseCase {
+    private let vault: any VaultRepository
+    private let scenario: UITestFixtures.ConflictScenario
+    private var hasFailed = false
+
+    init(vault: any VaultRepository, scenario: UITestFixtures.ConflictScenario) {
+        self.vault = vault
+        self.scenario = scenario
+    }
+
+    func execute(progress: @Sendable @escaping (String) -> Void) async throws -> SyncResult {
+        if scenario == .syncFailsOnce, !hasFailed {
+            hasFailed = true
+            throw SyncError.networkUnavailable
+        }
+        let items = UITestFixtures.itemsAfterConflict(scenario)
+        let now = Date()
+        await vault.populate(items: items, folders: UITestFixtures.folders,
+                             organizations: UITestFixtures.organizations,
+                             collections: UITestFixtures.collections, syncedAt: now)
+        return SyncResult(syncedAt: now, totalCiphers: items.count, failedDecryptionCount: 0)
     }
 }
 #endif

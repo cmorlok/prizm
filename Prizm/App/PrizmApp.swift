@@ -176,6 +176,9 @@ struct PrizmApp: App {
                     // Wire the list-pane refresh callback to the shared VaultBrowserViewModel.
                     // Ignores a save that completes after the vault locked.
                     vm.onSaveSuccess = vaultBrowserVM.saveHandler()
+                    // The resync and the lookup run in the vault browser; the sheet gets no use case.
+                    vm.onConflict = { await vaultBrowserVM.resyncAfterConflict() }
+                    vm.latestItem = { await vaultBrowserVM.latestItem(id: $0) }
                     return vm
                 },
                 makeCreateViewModel: { [vaultBrowserVM = rootVM.vaultBrowserVM] type, contextId in
@@ -231,6 +234,10 @@ protocol RootViewModelDependencies: AnyObject {
     /// Returns a fresh sync timestamp repository and use case scoped to the given email.
     /// Called after login/unlock to re-scope to the correct account before the first sync.
     func makeSyncTimestampDependencies(for email: String) -> (repository: any SyncTimestampRepository, useCase: any GetLastSyncDateUseCase)
+    #if DEBUG
+    /// XCUITest seam: stores a server record for each fixture item next to the populated vault.
+    func seedUITestRecords(for items: [VaultItem]) async
+    #endif
 }
 
 extension AppContainer: RootViewModelDependencies {
@@ -319,6 +326,11 @@ final class RootViewModel: ObservableObject {
                     organizations: UITestFixtures.organizations,
                     collections: UITestFixtures.collections, syncedAt: Date()
                 )
+                // Saves in the UI-test vault are built over a stored server record, so seed one per
+                // item. The seam does not unlock the crypto service and has no server, so saving
+                // journeys stay skipped until a UI test backend unlocks with
+                // `UITestFixtures.vaultKeys`.
+                await container.seedUITestRecords(for: UITestFixtures.items)
                 self.transitionToVault(caller: "UITestFixtures")
 
                 // Optional: open straight on the Codes list with an item selected (screenshots).
@@ -359,7 +371,7 @@ final class RootViewModel: ObservableObject {
             .sink { [weak self] state in self?.handleUnlockFlow(state) }
             .store(in: &cancellables)
 
-        // canEdit: item selected AND edit sheet not yet open.
+        // canEdit: item selected, editable (no edit block), and edit sheet not yet open.
         // canSave: edit sheet is open.
         // Both are derived by watching editSheetOpen and itemSelection independently.
         // `for await` on @Published.values avoids Combine callbacks (CLAUDE.md async/await rule).
@@ -367,13 +379,15 @@ final class RootViewModel: ObservableObject {
             for await open in vaultBrowserVM.$editSheetOpen.values {
                 guard let self else { break }
                 self.menuBarCanSave = open
-                self.menuBarCanEdit = vaultBrowserVM.itemSelection != nil && !open
+                let selection = vaultBrowserVM.itemSelection
+                self.menuBarCanEdit = selection != nil && selection?.editBlock == nil && !open
             }
         }
         Task { [weak self, vaultBrowserVM] in
             for await selection in vaultBrowserVM.$itemSelection.values {
                 guard let self else { break }
-                self.menuBarCanEdit = selection != nil && !vaultBrowserVM.editSheetOpen
+                self.menuBarCanEdit = selection != nil && selection?.editBlock == nil
+                    && !vaultBrowserVM.editSheetOpen
                 if case .login(let login) = selection?.content {
                     self.selectedLogin = login
                 } else {

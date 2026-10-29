@@ -27,7 +27,7 @@ final class CollectionAccessTests: XCTestCase {
         let orgKeyCache = OrgKeyCache()
         await orgKeyCache.replaceAll(with: ["org-1": orgKeys])
         await crypto.unlockWith(keys: CryptoKeys(encryptionKey: Data(repeating: 0x11, count: 32), macKey: Data(repeating: 0x22, count: 32)))
-        sut = VaultRepositoryImpl(apiClient: mockAPI, crypto: crypto, orgKeyCache: orgKeyCache)
+        sut = await RepositoryFixtures.vaultRepository(apiClient: mockAPI, crypto: crypto, orgKeyCache: orgKeyCache)
         await sut.populate(items: [], folders: [],
                            organizations: [Organization(id: "org-1", name: "Acme", role: .admin, membershipId: .known("ou-me"))],
                            collections: [OrgCollection(id: "col-1", organizationId: "org-1", name: "Old")],
@@ -212,7 +212,7 @@ final class OrganizationMembershipIdTests: XCTestCase {
             organizations: [RawOrganization(id: "org-1", name: "Acme", key: "2.ok", type: 1, organizationUserId: .known("ou-1"))],
             collections: []
         )
-        let sync = SyncRepositoryImpl(apiClient: api, crypto: crypto, vaultRepository: vault,
+        let sync = await RepositoryFixtures.syncRepository(apiClient: api, crypto: crypto, vaultRepository: vault,
                                       vaultKeyCache: VaultKeyCache(), orgKeyCache: OrgKeyCache())
 
         _ = try await sync.sync(progress: { _ in })

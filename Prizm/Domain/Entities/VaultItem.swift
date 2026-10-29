@@ -1,5 +1,44 @@
 import Foundation
 
+/// Why Prizm refuses to edit an item. Set only by the Data layer, from the server record
+/// (`CipherMapper.editBlock(for:)`); Presentation shows its message and never looks at raw shapes.
+nonisolated enum EditBlockReason: Equatable, Hashable, Sendable {
+    /// The server stores this item as an encrypted blob in a format Prizm does not understand
+    /// (its legacy `data` field holds a record with a `format_version`). Saving the typed fields
+    /// would make the official server ignore them or overwrite the blob.
+    case unsupportedFormat
+
+    /// The server sent only part of this item (a non-null `partialData`), so Prizm does not hold
+    /// the whole record and a save would write back less than the server has.
+    case partiallyAvailable
+
+    /// The item's type says it has a login, card, identity or SSH key section, but the server sent
+    /// none, so there is nothing for Prizm to rebuild the item from. Saving would write an empty
+    /// section over whatever the server holds.
+    case unmappable
+
+    /// The item's name is an EncString of the old type 0 (AES-CBC without a MAC, written by early
+    /// Bitwarden clients). Prizm reads it but never writes it back: a save must prove the key
+    /// against the stored name, and a type-0 name proves nothing because nothing authenticates it
+    /// (`CipherMapper.verifyKey`). The item stays readable; only editing is refused.
+    case legacyEncryption
+
+    /// Plain language plus a next step, no jargon. Shown in the detail pane, read by VoiceOver as
+    /// the Edit button's hint, and used as the error text when a save is refused.
+    var userMessage: String {
+        switch self {
+        case .unsupportedFormat:
+            return "This item uses a format Prizm can't edit yet. Edit it in the Bitwarden web vault or browser extension."
+        case .partiallyAvailable:
+            return "Prizm received only part of this item, so it can't be edited here. Edit it in the Bitwarden web vault or browser extension."
+        case .unmappable:
+            return "Some of this item's details are missing, so Prizm can't edit it without losing data. Edit it in the Bitwarden web vault or browser extension."
+        case .legacyEncryption:
+            return "Prizm can't edit this item because it uses an older encryption format. Edit it in the Bitwarden web vault or browser extension."
+        }
+    }
+}
+
 /// A fully-decrypted vault entry. Produced by `CipherMapper` from a `RawCipher`.
 /// Value type — safe to pass across layers without defensive copying.
 nonisolated struct VaultItem: Identifiable, Equatable, Hashable {
@@ -9,9 +48,11 @@ nonisolated struct VaultItem: Identifiable, Equatable, Hashable {
     let name: String
     /// Settable only inside this file, for `with(isFavorite:)`.
     private(set) var isFavorite: Bool
-    let isDeleted: Bool
+    /// Settable only inside this file, for `with(isDeleted:)`.
+    private(set) var isDeleted: Bool
     let creationDate: Date
-    let revisionDate: Date
+    /// Settable only inside this file, for `with(revisionDate:)`.
+    private(set) var revisionDate: Date
     let content: ItemContent
     /// Master-password re-prompt setting mirrored from the Bitwarden wire format.
     /// 0 = disabled (default), 1 = require master password before revealing fields.
@@ -20,17 +61,23 @@ nonisolated struct VaultItem: Identifiable, Equatable, Hashable {
     let reprompt: Int
     /// File attachments belonging to this vault item.
     /// Empty (`[]`) when the server returns no attachments or an explicit `null`.
-    let attachments: [Attachment]
+    /// Settable only inside this file, for `with(attachments:)`.
+    private(set) var attachments: [Attachment]
     /// Non-nil when this item belongs to a Bitwarden organization.
     /// Nil for personal vault items.
     let organizationId: String?
     /// The collections this item is assigned to within its organization.
     /// Empty (`[]`) for personal items and org items not assigned to any collection.
-    let collectionIds: [String]
+    /// Settable only inside this file, for `with(collectionIds:)`.
+    private(set) var collectionIds: [String]
+    /// Non-nil when Prizm must not save this item. Set by the Data layer from the server record, so
+    /// every Edit entry point and the repository can refuse it; nil for an item Prizm can edit.
+    /// Kept by every `with(...)` copy, so a local update never lifts the block.
+    private(set) var editBlock: EditBlockReason?
 
     /// Custom memberwise init with `reprompt` defaulted to 0, `attachments` defaulted to `[]`,
-    /// `organizationId` defaulted to nil, and `collectionIds` defaulted to `[]` so existing
-    /// call sites that pre-date these fields do not need to be updated.
+    /// `organizationId` defaulted to nil, `collectionIds` defaulted to `[]` and `editBlock` defaulted
+    /// to nil so existing call sites that pre-date these fields do not need to be updated.
     init(
         id: String, name: String, isFavorite: Bool, isDeleted: Bool,
         creationDate: Date, revisionDate: Date, content: ItemContent,
@@ -38,7 +85,8 @@ nonisolated struct VaultItem: Identifiable, Equatable, Hashable {
         attachments: [Attachment] = [],
         folderId: String? = nil,
         organizationId: String? = nil,
-        collectionIds: [String] = []
+        collectionIds: [String] = [],
+        editBlock: EditBlockReason? = nil
     ) {
         self.id = id
         self.folderId = folderId
@@ -52,6 +100,7 @@ nonisolated struct VaultItem: Identifiable, Equatable, Hashable {
         self.attachments = attachments
         self.organizationId = organizationId
         self.collectionIds = collectionIds
+        self.editBlock = editBlock
     }
 }
 
@@ -74,6 +123,35 @@ nonisolated extension VaultItem {
     func with(isFavorite: Bool) -> VaultItem {
         var copy = self
         copy.isFavorite = isFavorite
+        return copy
+    }
+
+    /// A copy moved to or out of Trash, with every other field kept (including `editBlock`).
+    func with(isDeleted: Bool) -> VaultItem {
+        var copy = self
+        copy.isDeleted = isDeleted
+        return copy
+    }
+
+    /// A copy with other attachments, with every other field kept (including `editBlock`).
+    func with(attachments: [Attachment]) -> VaultItem {
+        var copy = self
+        copy.attachments = attachments
+        return copy
+    }
+
+    /// A copy with other collections, with every other field kept (including `editBlock`).
+    func with(collectionIds: [String]) -> VaultItem {
+        var copy = self
+        copy.collectionIds = collectionIds
+        return copy
+    }
+
+    /// A copy with the revision the server gave after one of Prizm's own operations, with every
+    /// other field kept (including `editBlock`). The edit sheet's draft starts from this date.
+    func with(revisionDate: Date) -> VaultItem {
+        var copy = self
+        copy.revisionDate = revisionDate
         return copy
     }
 }
