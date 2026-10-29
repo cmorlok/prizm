@@ -16,7 +16,8 @@ Estimates are ideal engineer-days. Write a failing test first for each task (§I
 
 ## 3. Release (0.25 d)
 
-- [ ] 3.1 Rig check on Vaultwarden 1.37.4 behind nginx: login, sync, edit an org item; confirm the org event log shows macOS desktop. Confirm SSH key items still sync.
+- [x] 3.1 Rig check on Vaultwarden 1.37.4 behind nginx: login, sync, edit an org item; confirm the org event log shows macOS desktop. Confirm SSH key items still sync.
+  Checked 2026-10-26: the org event log shows Prizm's logins and collection update and create (1.37.4) and an item edit, event 1101 (1.37.3), all with `deviceType` 7 (macOS desktop). An SSH key item syncs and opens.
 - [x] 3.2 No security review needed (no keys, tokens or crypto touched); note this in the PR.
 - [x] 3.3 CHANGELOG "Changed": Prizm now identifies itself to the server as a macOS desktop client, and its user agent shows the Prizm version.
 - [x] 3.4 `openspec validate client-identification-headers --type change --strict`.

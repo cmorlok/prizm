@@ -5,7 +5,8 @@ dependencies. Task 2.1 (purge guard) comes first and can merge on its own.
 
 ## 1. Confirm server behaviour (0.25 d)
 
-- [ ] 1.1 On the rig (Vaultwarden 1.37.4) and Bitwarden self-hosted if available: `DELETE /api/ciphers` with `{"ids": [...]}` for two trashed personal items and one org item the user may not delete. Record in design.md, Context, the status code and which items remain. Never call `/ciphers/purge`, not even on the rig.
+- [x] 1.1 On the rig (Vaultwarden 1.37.4) and Bitwarden self-hosted if available: `DELETE /api/ciphers` with `{"ids": [...]}` for two trashed personal items and one org item the user may not delete. Record in design.md, Context, the status code and which items remain. Never call `/ciphers/purge`, not even on the rig.
+  Checked 2026-10-26 on Vaultwarden 1.37.4; the result is recorded in design.md, Context. Bitwarden self-hosted: not tested.
 
 ## 2. API call and purge guard (0.5 d)
 
@@ -23,7 +24,8 @@ dependencies. Task 2.1 (purge guard) comes first and can merge on its own.
 
 - [x] 4.1 Failing view-model test: Empty Trash first syncs, then exposes the confirmation with the fresh count; a failed sync shows the D2 message and sends no delete.
 - [x] 4.2 Add the toolbar button and confirmation (design D3) to `TrashView`, using the destructive style. Add `AccessibilityID.Trash.emptyTrashButton`.
-- [ ] 4.3 VoiceOver: button label "Empty Trash"; result announcement (§VIII). XCUITest: trash with two items → Empty Trash → confirm → empty state shown.
+- [x] 4.3 VoiceOver: button label "Empty Trash"; result announcement (§VIII). XCUITest: trash with two items → Empty Trash → confirm → empty state shown.
+  The journey passed on 2026-10-26 (Vaultwarden 1.37.3: two items trashed, Empty Trash, `DELETE` answered 200, trash empty on the server). VoiceOver checked by hand 2026-10-29: the button reads "Empty Trash" and the result is announced.
 
 ## 5. Partial failure (0.25 d)
 

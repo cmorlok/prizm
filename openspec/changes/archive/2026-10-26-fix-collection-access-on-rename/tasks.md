@@ -5,7 +5,8 @@ no hard dependencies and can ship as a patch release on its own.
 
 ## 1. Confirm server behaviour (0.25–0.5 d)
 
-- [ ] 1.1 On the rig (Vaultwarden 1.37.4) and, if available, Bitwarden self-hosted: record in design.md, Context, the exact JSON of `GET /api/organizations/{org}/collections/{id}/details` for a collection with two members and one group, and confirm that a PUT with that body plus a new name leaves access unchanged.
+- [x] 1.1 On the rig (Vaultwarden 1.37.4) and, if available, Bitwarden self-hosted: record in design.md, Context, the exact JSON of `GET /api/organizations/{org}/collections/{id}/details` for a collection with two members and one group, and confirm that a PUT with that body plus a new name leaves access unchanged.
+  Checked 2026-10-26 on Vaultwarden 1.37.4; the shape is recorded in design.md, Context. A PUT with that body and a new name kept users and groups. Bitwarden self-hosted and Vaultwarden 1.32.x (no `manage`): not checked.
 - [x] 1.2 Reproduce today's bug as a fixture-based test: rename with the current code sends `users: []` and `groups: []`. This test is inverted in 3.1.
   Not a separate test: the new tests assert the request contents the old code got wrong (see Results).
 
@@ -32,7 +33,8 @@ no hard dependencies and can ship as a patch release on its own.
 
 ## 5. Release (0.5 d)
 
-- [ ] 5.1 Live check on Vaultwarden 1.37.4: rename a collection shared with a second account, then confirm in that account's web vault that access is unchanged. Create a collection as admin and as a Manager with access to all collections.
+- [x] 5.1 Live check on Vaultwarden 1.37.4: rename a collection shared with a second account, then confirm in that account's web vault that access is unchanged. Create a collection as admin and as a Manager with access to all collections.
+  Checked 2026-10-26 on Vaultwarden 1.37.4. Rename: the second account keeps "Can view" and the group is unchanged. Create as owner: the collection is listed after sync; Vaultwarden drops the owner's `users` entry even when it is sent, so the creator body is covered by the unit test only. Create as Manager: not possible, because Vaultwarden 1.37.4 stores a Manager as Custom (type 4, `createNewCollections` false); the server refuses ("You don't have permission to create collections") and Prizm hides the action.
 - [x] 5.2 Mandatory security review: access lists are resent unchanged, never invented; no names or ids beyond the collection id in logs.
   Done by the review subagent; see Results.
 - [x] 5.3 CHANGELOG "Fixed": renaming a collection no longer removes members' and groups' access; new collections are managed by their creator. Add a note that admins should check the access of collections renamed with earlier Prizm versions.

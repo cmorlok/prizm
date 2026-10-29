@@ -49,6 +49,12 @@ Sources: `$SRC` checkouts of 2026-10-23 (clients, sdk-internal, server) and Vaul
 - No purge code remains (removed in `0a06b74`). A comment still mentions purge in a list of
   "soft-delete, restore, purge" (`PrizmAPIClient.swift:1089`).
 
+**Live check (2026-10-26, Vaultwarden 1.37.4, task 1.1).** `DELETE /api/ciphers` with `{"ids": [...]}`
+for two trashed personal items and one org item the user may not delete answered 400
+"Cipher can't be deleted by user". The items that come before the forbidden one in the server's set
+order were deleted, and how many that was varied between retries (0, then 1, then 1). This matches D4.
+`/ciphers/purge` was not called. Bitwarden self-hosted was not tested.
+
 ## Goals / Non-Goals
 
 **Goals**

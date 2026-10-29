@@ -20,7 +20,8 @@ dependencies; can ship as a patch release before or together with `fix-cipher-ed
 
 ## 3. Server checks (0.25–0.5 d)
 
-- [ ] 3.1 On the rig (Vaultwarden 1.37.4) and Bitwarden self-hosted if available: toggle favorite on an item with a passkey created in the extension; confirm the passkey survives. Toggle favorite on a read-only org item; confirm success. Confirm that the cipher's `revisionDate` in `/sync` is unchanged after both calls. Record the results in design.md, Context.
+- [x] 3.1 On the rig (Vaultwarden 1.37.4) and Bitwarden self-hosted if available: toggle favorite on an item with a passkey created in the extension; confirm the passkey survives. Toggle favorite on a read-only org item; confirm success. Confirm that the cipher's `revisionDate` in `/sync` is unchanged after both calls. Record the results in design.md, Context.
+  Checked 2026-10-26 on Vaultwarden 1.37.4 only; the results are recorded in design.md, Context. Bitwarden self-hosted: not tested.
 
 ## 4. Release (0.25 d)
 

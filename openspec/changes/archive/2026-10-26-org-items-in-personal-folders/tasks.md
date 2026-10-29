@@ -6,12 +6,13 @@ deleting its folder, keeps its organization and collections).
 
 ## 1. Verify (0.25 d)
 
-- [ ] 1.1 On Vaultwarden 1.37.4, with two members of one org, check that:
+- [x] 1.1 On Vaultwarden 1.37.4, with two members of one org, check that:
   - member A files an org item into A's folder in the browser extension
   - A's sync shows that `folderId`
   - B's sync shows B's own value (or null)
 
   Record the result in design.md. Mark the official server "source-reviewed, not tested".
+  Checked 2026-10-26 on Vaultwarden 1.37.4, filing with Prizm's drag and drop instead of the browser extension; the result is recorded in design.md, Context. Official server: source-reviewed, not tested.
 
 ## 2. Folder index (0.25 d)
 

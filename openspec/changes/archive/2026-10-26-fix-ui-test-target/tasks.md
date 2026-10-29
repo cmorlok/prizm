@@ -28,7 +28,8 @@ for the journeys, the UI tests themselves.
 ## 4. Verify (0.25 d)
 
 - [x] 4.1 Run the `PrizmUITests` scheme signed with a non-maintainer team: every test passes or is skipped with a D5 message; none fails. Record the counts (passed, skipped per reason).
-- [ ] 4.2 Run the `PrizmUITests` scheme with a stored Prizm login on the Mac: the login is still there afterwards (D2).
+- [x] 4.2 Run the `PrizmUITests` scheme with a stored Prizm login on the Mac: the login is still there afterwards (D2).
+  Checked by hand 2026-10-29 with a throwaway account (a fixture account on the Vaultwarden rig, signed in and unlocked in the normal app before the run). Full suite on a build of the fork's `develop`: 97 executed, 75 passed, 21 skipped, 1 failed (`AccessibilityLabelTests.testSettingsGearHasLabel`, the known failure of a large window). Afterwards the normal app was closed; relaunched, it was locked, not signed out, and unlocked with the master password.
 - [x] 4.3 Release build: `strings` on the binary finds no `--ui-test-` argument (D6).
 - [x] 4.4 Unit tests (`PrizmTests`) pass.
 - [x] 4.5 Security review: the seam is DEBUG-only and cannot reach the real keychain.
