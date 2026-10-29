@@ -1341,6 +1341,7 @@
 /* Begin XCBuildConfiguration section */
 		28F03A5B293E8452B886A04D /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = FC4A8B1C2F9D34E100123456 /* LocalConfig.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 12;
@@ -1636,6 +1637,7 @@
 		};
 		6C670D685E3E400F44DF31EA /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = FC4A8B1C2F9D34E100123456 /* LocalConfig.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 12;

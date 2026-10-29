@@ -24,6 +24,35 @@ final class PasswordGeneratorJourneyTests: PrizmUITestCase {
         app = nil
     }
 
+    // MARK: - What VoiceOver reads by text range (fix-selectable-text-voiceover)
+
+    /// The preview is a selectable text: a new value must also reach its character data.
+    func testGeneratorPreview_textByRangeFollowsNewValue() throws {
+        try XCTSkipUnless(AccessibilityTextProbe.isAvailable, AccessibilityTextProbe.unavailableMessage)
+        let row = app.element(Fixture.row(Fixture.alpha))
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.click()
+        let editButton = app.buttons["edit.button.edit"]
+        XCTAssertTrue(editButton.waitForExistence(timeout: 5), "The detail pane should offer Edit")
+        editButton.click()
+        let generatorButton = app.buttons["generator.button.trigger"]
+        XCTAssertTrue(generatorButton.waitForExistence(timeout: 5), "The edit sheet should offer the generator")
+        generatorButton.click()
+
+        let preview = app.staticTexts["generator.preview"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 5), "Generator popover should be open")
+        let previewText = preview.displayedText
+        let first = previewText.text
+        app.buttons["generator.button.refresh"].click()
+        XCTAssertTrue(previewText.waitForTextChange(from: first, timeout: 3), "A new value should be shown")
+        AccessibilityTextProbe.assertTexts(of: preview, equal: previewText.text)
+
+        // Nothing is saved: use the value, then discard the edit sheet.
+        app.buttons["generator.button.use"].click()
+        let discardButton = app.buttons["edit.button.discard"]
+        if discardButton.waitForExistence(timeout: 2) { discardButton.click() }
+    }
+
     // MARK: - Task 5.1: Generator popover opens, slider changes preview, Use applies value
 
     func testGeneratorPopover_opensAndAppliesPassword() throws {

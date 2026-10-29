@@ -125,6 +125,53 @@ final class VaultBrowserJourneyTests: PrizmUITestCase {
                        "Accessibility should expose the second item's username")
     }
 
+    /// The Website row is reused when another item is selected; its accessibility value must follow
+    /// (fix-selectable-text-voiceover).
+    func testWebsiteValueFollowsItemChange() {
+        openItem(Fixture.gamma)
+        XCTAssertTrue(app.fieldValue("Website").waitForText("file:///Applications/Calculator.app", timeout: 5))
+
+        openItem(Fixture.kappa)
+        XCTAssertTrue(app.fieldValue("Website").displayedText.waitForText(Fixture.kappaWebsite, timeout: 5),
+                      "The second item's website should be shown")
+        XCTAssertEqual(app.fieldValue("Website").text, Fixture.kappaWebsite,
+                       "Accessibility should expose the second item's website")
+    }
+
+    // MARK: - What VoiceOver reads by text range (fix-selectable-text-voiceover)
+
+    /// A selectable text kept the text it was created with in its character data, which VoiceOver
+    /// also reads, after another item was selected.
+    func testFieldTextsByRangeFollowItemChange() throws {
+        try XCTSkipUnless(AccessibilityTextProbe.isAvailable, AccessibilityTextProbe.unavailableMessage)
+        openItem(Fixture.gamma)
+        XCTAssertTrue(app.fieldValue("Website").waitForText("file:///Applications/Calculator.app", timeout: 5))
+
+        openItem(Fixture.kappa)
+        XCTAssertTrue(app.fieldValue("Website").displayedText.waitForText(Fixture.kappaWebsite, timeout: 5))
+        XCTAssertTrue(app.fieldValue("Username").displayedText.waitForText("user-kappa", timeout: 5))
+        AccessibilityTextProbe.assertTexts(of: app.fieldValue("Website"), equal: Fixture.kappaWebsite)
+        AccessibilityTextProbe.assertTexts(of: app.fieldValue("Username"), equal: "user-kappa")
+    }
+
+    /// The masked field was created with the mask, so its character data kept the mask after
+    /// Reveal; after Hide the password must not remain there.
+    func testRevealedPasswordTextByRange() throws {
+        try XCTSkipUnless(AccessibilityTextProbe.isAvailable, AccessibilityTextProbe.unavailableMessage)
+        openItem(Fixture.alpha)
+        let revealButton = app.revealButton("Password")
+        XCTAssertTrue(revealButton.waitForExistence(timeout: 5))
+        let shown = app.fieldValue("Password").displayedText
+
+        revealButton.click()
+        XCTAssertTrue(shown.waitForText(Fixture.password(of: Fixture.alpha), timeout: 3))
+        AccessibilityTextProbe.assertTexts(of: app.fieldValue("Password"), equal: Fixture.password(of: Fixture.alpha))
+
+        revealButton.click()
+        XCTAssertTrue(shown.waitForText("••••••••", timeout: 3))
+        AccessibilityTextProbe.assertTexts(of: app.fieldValue("Password"), equal: "••••••••")
+    }
+
     // MARK: - Open in browser (safe-uri-launch)
 
     /// Gamma has a `file:` website, which must get no open button, and `example.com/login`, which

@@ -247,6 +247,9 @@ enum UITestFixtures {
             login(id: "kappa", name: "Kappa Login", totp: nil, isFavorite: true, attachments: [
                 Attachment(id: "att1", fileName: "kappa-notes.txt", encryptedKey: "", size: 1024,
                            sizeName: "1 KB", url: nil, isUploadIncomplete: false),
+            ], uris: [
+                // A second item with websites, so switching from Gamma reuses the Website rows.
+                LoginURI(uri: "https://kappa.example.com", matchType: nil),
             ]),
             item(id: "card1", name: "Test Card", content: .card(CardContent(
                 cardholderName: "Test Holder", brand: "Visa", number: "4111111111111111",
