@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fix: the Settings button (gear) had moved into the toolbar's overflow menu, so it was hidden, and
+  VoiceOver users did not find it in the toolbar. It is back next to the sidebar toggle; the
+  sidebar is now at least 220 pt wide.
 - Fix: VoiceOver could read the previous item's value, a value from before an edit, or the dots of
   a revealed password in the item details and the password generator. It now always reads the text
   on screen.
