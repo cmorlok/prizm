@@ -6,8 +6,7 @@ import os.log
 
 /// Errors that can be thrown by `CipherMapper.map(raw:keys:)`.
 nonisolated enum CipherMapperError: Error, Equatable {
-    /// The cipher belongs to an organisation and is intentionally skipped in
-    /// the personal vault view (organizationId != nil).
+    /// The cipher belongs to an organisation whose key is not available, so it is skipped.
     case organisationCipherSkipped
     /// The cipher has an unknown `type` integer.
     case unsupportedCipherType(Int)
@@ -31,7 +30,7 @@ nonisolated enum CipherMapperError: Error, Equatable {
 ///   Swift structs, so the Presentation layer never imports or calls crypto code.
 ///   Decryption failures are surfaced once during sync rather than scattered across the UI.
 /// - Map the raw `type` integer to a typed `ItemContent` enum case.
-/// - Filter out organisation ciphers (`organizationId != nil`) — personal vault only.
+/// - Decrypt organisation ciphers with their organisation's key.
 /// - Map raw `RawField` array to `[CustomField]` domain values.
 ///
 /// **What this class does NOT do**:
