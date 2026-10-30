@@ -35,7 +35,7 @@ The system SHALL encrypt attachment file data using the AES-256-CBC + HMAC-SHA25
 ---
 
 ### Requirement: Attachment key encrypted with cipher key
-The system SHALL encrypt the 64-byte attachment key with the cipher's symmetric key (or the user's vault symmetric key if the cipher has no per-item key) using AES-256-CBC + HMAC-SHA256, producing an EncString. This encrypted attachment key SHALL be stored in the attachment metadata on the server.
+The system SHALL encrypt the 64-byte attachment key with the item's effective key using AES-256-CBC + HMAC-SHA256, producing an EncString: the item's own key if it has one, otherwise the organization key for an organization item, otherwise the user's vault symmetric key (capability `attachment-key-resolution`). The system SHALL NOT use the user's vault symmetric key for an organization item. This encrypted attachment key SHALL be stored in the attachment metadata on the server.
 
 #### Scenario: Encrypted attachment key is stored as EncString type 2
 - **WHEN** an attachment key is wrapped for upload
@@ -44,8 +44,6 @@ The system SHALL encrypt the 64-byte attachment key with the cipher's symmetric 
 #### Scenario: Attachment key can be recovered from encrypted form using cipher key
 - **WHEN** the encrypted attachment key is decrypted with the correct cipher key
 - **THEN** the result SHALL be the original 64-byte attachment key
-
----
 
 ### Requirement: Known-answer tests against published vectors
 The attachment crypto implementation SHALL include known-answer tests (KATs) validating the AES-256-CBC + HMAC-SHA256 scheme against published test vectors. Per §IV of the Constitution, KATs are mandatory for all crypto implementations. The following sources SHALL be used:

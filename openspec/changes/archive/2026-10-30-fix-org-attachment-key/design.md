@@ -131,6 +131,69 @@ Both are shown inline in the attachment sheet or row. Neither falls back to anot
   can't tell them; they only see a file they can't open. → The CHANGELOG entry (task 5.3) names
   the problem, and conversion (D4) fixes it for everyone.
 
+## Review
+
+Independent review on 2026-10-30 (a fresh reviewer, diff fix/026..fix/027, read only): no
+blockers, three should-fix findings and four nits. Fixes: red `20261030T131144Z` (compile), green
+`20261030T131237Z` (1131 unit tests).
+
+- Fixed (S1): org items had no key source in the middle of every sync. The cache was replaced
+  with the personal sources first and got the org sources only after the org pass, so an
+  attachment on an org item failed with "Sync and try again" while a sync ran. The cache is now
+  replaced once, after the org pass (D2).
+- Fixed (S2): a source recorded by `create` could outlive a lock, because the lock could clear
+  the cache before the record arrived. `create` now records only if no lock cleared the cache
+  since its request began (`VaultKeyCache.generation`). This matters once `per-item-key-on-create`
+  records item keys here. Test `testCreateFinishingAfterALock_recordsNoKeySource`.
+- Fixed (S3): the new `vaultKeyCache` parameter of `VaultRepositoryImpl` had a default, so a
+  caller could record into a private cache. It is required now, like its siblings.
+- Fixed (N1): a flagged attachment logged an error on every sync before the second attempt
+  succeeded. The first attempt logs at `.debug`; the mapper logs the outcome.
+- Fixed (N2, N3, N4), wording: D2 no longer says a create entry can't be lost during a sync (it
+  can, together with the item, and the next sync brings both back); the "Org key missing"
+  scenario starts from an item listed by an earlier sync, since an item whose org key fails at
+  sync is not listed at all; spec and task 5.1 name official clients in general, and the rig used
+  the `bw` CLI.
+- Fixed (VoiceOver check 2026-10-30, Christian): the note sat inside the row's `Label`, which
+  VoiceOver reads as one element, so it could not reach the note. The row is no `Label` now; name
+  and size are one element, the note is its own.
+- Open, pre-existing (not introduced here): the sync checks that the vault is unlocked and then
+  writes the key cache in a separate step. A lock between the two leaves the new sources, item
+  keys included, in the cleared cache until the next sync replaces them. The same gap existed for
+  item keys before this change. Moved to the change request `lock-state-machine` (Christian,
+  2026-10-30).
+
+Security review (task 5.2), on the code as it is now:
+
+- **Key selection:** the item's own key, otherwise the org key for an org item, otherwise the
+  vault key, as in SDK `decrypt_cipher_key` and `key_identifier`. Sync records the source of
+  every item, once, after the org pass; a create records the source of the new item. An unknown
+  item throws `cipherKeyUnavailable` and a missing org key throws `organizationKeyUnavailable`;
+  neither falls back to the vault key. In attachment code `currentKeys()` is reached only through
+  `personalKey()`, which only flagged attachments use (download and conversion).
+- **The vault-key attempt in the mapper** runs only for org items without their own key, after
+  the org key failed. It decrypts only the file name; the attachment key stays wrapped until a
+  download. The EncString MAC is checked before decryption, so it cannot produce wrong
+  plaintext, and the key is one the user already holds.
+- **Lock:** `clear()` bumps the cache generation and zeroes each item key in place (taken out of
+  the dictionary first, so copy-on-write cannot leave the original). A create that finishes after
+  a lock records nothing. Org and vault keys are never copied into the cache; they stay in
+  `OrgKeyCache` and the crypto service, which are cleared on lock too. The one gap is the
+  pre-existing sync window above.
+- **Logs:** cipher and attachment IDs, org-ID prefixes and counts only; no key bytes and no file
+  names.
+
+**Archive pass (2026-10-30, `/opsx:verify`).**
+- Fixed: the main spec `attachment-crypto` still said a keyless item's attachment key is wrapped
+  with the vault key. A MODIFIED delta now names the effective key and rules out the vault key for
+  organization items; the proposal lists the capability.
+- Accepted: the second half of "Attachment on a new org item before the next sync" (the file is
+  still listed and opens after the next sync) has no test of its own. After a sync the key source
+  comes from the sync, which is tested for org items without their own key, so the create-time
+  record no longer matters.
+- Accepted: "Org key missing" is tested at the key service; that no request is sent follows from
+  the upload use case asking for the key first.
+
 ## Open Questions
 
 1. How many users have wrongly keyed org attachments? Unknown. The detection in D3 logs a count

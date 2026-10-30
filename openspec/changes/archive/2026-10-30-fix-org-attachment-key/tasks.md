@@ -1,0 +1,37 @@
+# Tasks
+
+Estimates are ideal engineer-days. Write a failing test first for each task (§IV).
+
+## 1. Confirm and reproduce (0.5 d)
+
+- [x] 1.1 Re-read SDK `cipher.rs` (`decrypt_cipher_key`, `key_identifier`, `make_attachment_material`) at the commit used for implementation and update the line references in design.md, Context, if they moved. Done 2026-10-30 at sdk-internal `c1c9b9a5` (2026-10-29, the commit of the SDK vector in fix-attachment-file-format): `decrypt_cipher_key` 835-844, `make_attachment_material` from 854, `Cipher::key_identifier` 1432-1437. The references did not move; Context now names the commit.
+- [x] 1.2 Failing test (regression guard): sync an org item without its own key, then upload an attachment through `UploadAttachmentUseCaseImpl` with a mock API. Assert that the attachment key in the v2 request decrypts with the org key. Fails today (vault key). Done: `OrgAttachmentKeyTests.testUploadToSyncedKeylessOrgItem_wrapsTheAttachmentKeyWithTheOrgKey` (real crypto, golden sync). Red `20261030T092016Z` (compile: no `CipherKeySource`, no `VaultKeyCache.source`), green `20261030T092238Z` (1129 unit tests).
+- [x] 1.3 Failing test: create an org item, upload an attachment before any sync. Same assertion. Done: `OrgAttachmentKeyTests.testCreateOrgItem_recordsTheOrganization_andItsKeyIsTheOrgKey` checks that the create records `.organization` and that the key the upload use case asks for is the org key; the upload itself is the path tested in 1.2. Same red and green runs.
+
+## 2. Key source and resolution (1 d)
+
+- [x] 2.1 Failing tests for `VaultKeyServiceImpl`: `.itemKey`, `.organization` (org key present / missing → `organizationKeyUnavailable`), `.personal`, no entry → `cipherKeyUnavailable`, locked → `vaultLocked`. Done: `VaultKeyServiceImplTests` (10 tests, including the org key read at use time and `personalKey()`). Red `20261030T092016Z`, green `20261030T092238Z`.
+- [x] 2.2 Implement `CipherKeySource`, change `VaultKeyCache` storage, pass `OrgKeyCache` to `VaultKeyServiceImpl` (`AppContainer`). `clear()` still zeroes item keys; extend its test. Done: `VaultKeyCache.swift` (`CipherKeySource`, `populate(sources:)`, `record(_:for:ifGeneration:)`, `clear()` takes each item key out of the dictionary and zeroes it in place); `AppContainer` passes `orgKeyCache` and `keyCache`. Test `VaultKeyCacheTests.test_clear_zeroesItemKeysInPlace`.
+- [x] 2.3 Add `VaultError.cipherKeyUnavailable` with its user message; reuse `.organizationKeyUnavailable` (design D5). Rewrite the `VaultKeyServiceImpl` doc comment with the §VII security notes (goal, rule, source, no fallback). Done: `VaultRepository.swift` ("Prizm doesn't have the key for this item yet. Sync and try again."); doc comment of `VaultKeyServiceImpl` and of `VaultKeyService.cipherKey(for:)`.
+
+## 3. Record sources (0.5 d)
+
+- [x] 3.1 Failing test: after sync, every mapped item has an entry (personal keyless, personal keyed, org keyless, org keyed). Done: `OrgAttachmentKeyTests.testSync_recordsASourceForEveryItem`. Red `20261030T092016Z`, green `20261030T092238Z`.
+- [x] 3.2 Failing test: after `create`, the new ID has `.personal` or `.organization(orgId)`. Done: `testCreatePersonalItem_recordsPersonal`, `testCreateOrgItem_recordsTheOrganization_andItsKeyIsTheOrgKey`; after the review also `testCreateFinishingAfterALock_recordsNoKeySource` (red `20261030T131144Z`, green `20261030T131237Z`, 1131 unit tests).
+- [x] 3.3 Implement D2 in `decryptList`, `SyncRepositoryImpl` and `VaultRepositoryImpl.create`. Tasks 1.2 and 1.3 now pass. Done: `PrizmCryptoService.decryptList` and the org pass add a source for every mapped item; the cache is replaced once after the org pass (review S1); `create` records the source only if no lock cleared the cache since its request (`VaultKeyCache.generation`, review S2). Green `20261030T131237Z`.
+
+## 4. Wrongly keyed attachments (1–1.5 d)
+
+- [x] 4.1 Failing mapper tests: keyless org item, attachment file name under the vault key → kept with `wrappedWithPersonalKey = true`; under neither key → dropped; keyed org item and personal item → no second attempt. Done: `OrgAttachmentKeyTests` (5 mapper tests, real crypto). Red `20261030T092016Z`, green `20261030T092238Z`.
+- [x] 4.2 Failing test: download of a flagged attachment unwraps its key with the vault key and decrypts. Done: `testDownloadOfAFlaggedAttachment_unwrapsItsKeyWithTheVaultKey`.
+- [x] 4.3 Implement D3 (`CipherMapper`, `AttachmentMapper`, `Attachment` flag, `VaultKeyService.personalKey()`, `DownloadAttachmentUseCaseImpl`). Done. After the review the first file-name attempt logs at `.debug`; the mapper logs the outcome (review N1).
+- [x] 4.4 Row warning "Only you can open this file" with VoiceOver label and hint; the "Convert" action comes from `fix-attachment-file-format`. DesignSystem tokens only. Done: `AttachmentRowView.personalKeyNote` (label, hint, identifier, `Typography.utility`). After the VoiceOver check 2026-10-30 the row is no `Label` any more, so VoiceOver reaches the note (Christian checked the same row structure with the "Prizm format" badge; moved here from fix-attachment-file-format at the squash).
+- [x] 4.5 Log one `.info` line per sync with the count of flagged attachments (no names). Done: `SyncRepositoryImpl` ("Attachments wrapped with the personal key on org items: N").
+
+## 5. Release (0.5 d)
+
+- [x] 5.1 Interop check on the rig: Prizm uploads to a keyless org item → a second member opens it in an official client (browser extension, web vault or `bw` CLI, which share the TypeScript client code). A Prizm 1.5.0 upload to an org item appears in Prizm with the warning, opens, and after conversion opens for the second member. Done: rig run `20261030T113852Z` (Vaultwarden 1.37.4, branch `batch/1-ui-run` with all batch branches, `bw` CLI 2026.9.1): `027.5.1.org.upload` + `att.org.prizm-new-org.bin.B` (member B opens Prizm's upload); `027.5.1.org.flags` (`wrappedWithPersonalKey=true`), `027.5.1.org.openLegacy`, `027.5.1.org.convert` + `att.org.prizm150-org.bin.B` (B opens the converted file); `027.5.1.org.openOfficial` (a `bw` upload opens in Prizm). All PASS.
+- [x] 5.2 Mandatory security review: key selection, no fallback paths left (grep for `currentKeys()` in attachment code), no key bytes in logs, zeroing on lock. Done: independent review 2026-10-30; security note in design.md "Review". `currentKeys()` is reached from attachment code only through `VaultKeyServiceImpl.personalKey()`.
+- [x] 5.3 CHANGELOG "Fixed": attachments on organization items are encrypted with the organization key, so other members can open them; attachments that earlier versions saved with the wrong key are shown again and can be converted. Done: "Fix: files you attached in Prizm to an organization item without its own key were encrypted with your personal key, so other members of the organization could not open them, and after the next sync they disappeared from the item in Prizm. Prizm now uses the organization key. Files that earlier versions saved this way show again, marked "Only you can open this file", and open in Prizm." (Converting them is in the fix-attachment-file-format entry, which adds Convert.)
+- [x] 5.4 `openspec validate fix-org-attachment-key --type change --strict`. Done 2026-10-30: valid (with the `attachment-crypto` delta added after `/opsx:verify`); `/opsx:verify`: no critical issues, its warnings are settled in design.md "Review".
+- [x] 5.5 Archive the change (at the end of the batch, in PR order).

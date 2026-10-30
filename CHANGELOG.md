@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fix: files you attached in Prizm to an organization item without its own key were encrypted
+  with your personal key, so other members of the organization could not open them, and after the
+  next sync they disappeared from the item in Prizm. Prizm now uses the organization key. Files
+  that earlier versions saved this way show again, marked "Only you can open this file", and open
+  in Prizm.
 - Fix: opening or saving an attachment failed on Vaultwarden when the last sync was more than about
   a minute ago. Prizm now asks the server for a fresh download link every time.
 - Fix: a failed or cancelled attachment upload no longer leaves a broken attachment entry on the
