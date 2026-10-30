@@ -130,7 +130,7 @@ struct ItemEditView: View {
                 .accessibilityIdentifier(AccessibilityID.Edit.deleteButton)
             }
         }
-        .frame(minWidth: 480, minHeight: 400)
+        .frame(minWidth: 480, minHeight: 400, idealHeight: Spacing.editSheetIdealHeight)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Discard") {
