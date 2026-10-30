@@ -127,4 +127,8 @@ enum Spacing {
 
     /// Horizontal padding on full-screen auth/sync flows (Login, TOTP, Unlock, SyncProgress).
     static let screenHorizontal: CGFloat = 40
+
+    /// Height the edit sheet asks for. Only its form scrolls, and a scroll view asks for almost no
+    /// height, so without it the sheet shrinks to its fixed header (fix-edit-sheet-height, D1).
+    static let editSheetIdealHeight: CGFloat = 800
 }
