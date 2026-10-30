@@ -38,6 +38,9 @@ struct PasswordGeneratorView: View {
 
             // Preview area
             previewArea
+            if let strength = viewModel.strength {
+                StrengthMeterView(strength: strength)
+            }
 
             Divider()
 
@@ -199,5 +202,51 @@ struct PasswordGeneratorView: View {
             .buttonStyle(.borderedProminent)
             .accessibilityIdentifier(AccessibilityID.Generator.useButton)
         }
+    }
+}
+
+// MARK: - Strength meter (generator-strength-meter)
+
+/// The strength of the generator's settings: a colored bar and "Strong · 97 bits". The category is
+/// always named, never shown by color alone (§VIII).
+struct StrengthMeterView: View {
+
+    let strength: GeneratorStrength
+
+    static let tooltip = "Entropy of the generator's settings; the exact value is slightly lower when minimums are set."
+
+    private var color: Color { Self.color(for: strength) }
+
+    /// Red for weak, orange to yellow for OK, green above (design D2).
+    static func color(for strength: GeneratorStrength) -> Color {
+        switch strength.category {
+        case .weak:               return .red
+        case .ok:                 return Color(hue: 0.08 + 0.08 * strength.okProgress, saturation: 0.9, brightness: 0.95)
+        case .strong, .veryStrong: return .green
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.headerGap / 2) {
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.secondary.opacity(0.2))
+                    Capsule().fill(color).frame(width: proxy.size.width * strength.fill)
+                }
+            }
+            .frame(height: Spacing.strengthBarHeight)
+            // The bar only repeats the category in color.
+            .accessibilityHidden(true)
+            // The text is the accessibility element: on macOS a static text exposes its value, a
+            // group made with `.accessibilityElement(children: .ignore)` does not (XCUITest read
+            // an empty value from it).
+            Text(strength.label)
+                .font(Typography.utility)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Strength")
+                .accessibilityValue(strength.accessibilityValue)
+                .accessibilityIdentifier(AccessibilityID.Generator.strength)
+        }
+        .help(Self.tooltip)
     }
 }
