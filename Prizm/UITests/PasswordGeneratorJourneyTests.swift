@@ -115,6 +115,42 @@ final class PasswordGeneratorJourneyTests: PrizmUITestCase {
         if discardButton.waitForExistence(timeout: 2) { discardButton.click() }
     }
 
+    // MARK: - fix-password-generator: symbol sets and minimums
+
+    /// The two symbol sets and the minimum steppers are present and named for VoiceOver. Nothing
+    /// is toggled: the run shares the developer's generator preferences.
+    func testGeneratorPopover_showsSymbolSetsAndMinimums() throws {
+        let sidebarLogins = app.sidebarRow("Login")
+        XCTAssertTrue(sidebarLogins.waitForExistence(timeout: 5))
+        sidebarLogins.click()
+        let firstRow = app.element(Fixture.row(Fixture.alpha))
+        XCTAssertTrue(firstRow.waitForExistence(timeout: 5))
+        firstRow.click()
+        let editButton = app.buttons["edit.button.edit"]
+        XCTAssertTrue(editButton.waitForExistence(timeout: 3))
+        editButton.click()
+        let generatorButton = app.buttons["generator.button.trigger"]
+        XCTAssertTrue(generatorButton.waitForExistence(timeout: 3))
+        generatorButton.click()
+
+        let modePicker = app.descendants(matching: .any)["generator.modePicker"].firstMatch
+        XCTAssertTrue(modePicker.waitForExistence(timeout: 3))
+        modePicker.radioButtons["Password"].firstMatch.click()
+
+        let special = app.descendants(matching: .any)["generator.toggle.symbols"].firstMatch
+        XCTAssertTrue(special.waitForExistence(timeout: 3))
+        XCTAssertEqual(special.label, "Special characters")
+        let extended = app.descendants(matching: .any)["generator.toggle.extendedSymbols"].firstMatch
+        XCTAssertTrue(extended.exists)
+        XCTAssertEqual(extended.label, "Extended special characters")
+        XCTAssertTrue(app.descendants(matching: .any)["generator.minNumbers"].firstMatch.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["generator.minSpecial"].firstMatch.exists)
+
+        app.typeKey(.escape, modifierFlags: [])
+        let discardButton = app.buttons["edit.button.discard"]
+        if discardButton.waitForExistence(timeout: 2) { discardButton.click() }
+    }
+
     // MARK: - Task 5.2: Switch to Passphrase mode, change word count, verify preview
 
     func testGeneratorPopover_passphraseMode_wordCountUpdatesPreview() throws {
@@ -157,7 +193,7 @@ final class PasswordGeneratorJourneyTests: PrizmUITestCase {
                        "Passphrase should contain separator")
         let passphrasePreview = previewText.text
 
-        // Change the word count (3 to 10). The stepper exposes its arrows as increment and
+        // Change the word count (3 to 20). The stepper exposes its arrows as increment and
         // decrement arrows, not as buttons. At the maximum, Increment does nothing, so step down then.
         stepper.incrementArrows.firstMatch.click()
         if !previewText.waitForTextChange(from: passphrasePreview, timeout: 2) {

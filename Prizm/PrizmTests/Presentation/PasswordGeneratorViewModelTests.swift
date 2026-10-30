@@ -72,4 +72,85 @@ final class PasswordGeneratorViewModelTests: XCTestCase {
         XCTAssertFalse(vm.capitalize)
         XCTAssertFalse(vm.includeNumber)
     }
+
+    // MARK: - fix-password-generator
+
+    private func makeVM(generator: PasswordGenerator = PasswordGenerator()) -> PasswordGeneratorViewModel {
+        PasswordGeneratorViewModel(provider: SeededRandomnessProvider(seed: 5), defaults: defaults,
+                                   clipboard: ClipboardServiceImpl(pasteboard: FakePasteboard()),
+                                   generator: generator)
+    }
+
+    func testNewSettingsDefaults() {
+        let vm = makeVM()
+        XCTAssertFalse(vm.includeExtendedSymbols)
+        XCTAssertEqual(vm.minNumbers, 1)
+        XCTAssertEqual(vm.minSpecial, 0)
+    }
+
+    func testMinimumsAboveTheLength_raiseTheShownAndStoredLength() {
+        let vm = makeVM()
+        vm.length = 5
+        vm.minNumbers = 4
+        vm.minSpecial = 4
+        XCTAssertEqual(vm.length, 10, "4 + 4 + one uppercase + one lowercase")
+        XCTAssertEqual(vm.generatedValue.count, 10)
+        XCTAssertEqual(PasswordGeneratorConfig.load(from: defaults).length, 10)
+    }
+
+    func testLastEnabledSet_amongFive() {
+        let vm = makeVM()
+        vm.includeExtendedSymbols = true
+        vm.includeUppercase = false
+        vm.includeLowercase = false
+        vm.includeDigits = false
+        XCTAssertFalse(vm.isLastEnabledSet(.symbols), "special and extended: special is not the last")
+        vm.includeSymbols = false
+        XCTAssertTrue(vm.isLastEnabledSet(.extendedSymbols))
+        XCTAssertFalse(vm.isLastEnabledSet(.symbols), "a disabled set is never locked")
+        vm.includeSymbols = true
+        vm.includeExtendedSymbols = false
+        XCTAssertTrue(vm.isLastEnabledSet(.symbols))
+    }
+
+    func testMinimumSteppers_followTheirSets() {
+        let vm = makeVM()
+        XCTAssertTrue(vm.isMinSpecialEnabled)
+        vm.includeSymbols = false
+        XCTAssertFalse(vm.isMinSpecialEnabled)
+        vm.includeDigits = false
+        XCTAssertFalse(vm.isMinNumbersEnabled)
+    }
+
+    private struct FailingWordList: WordListSource {
+        func words() throws -> [String] { throw PasswordGeneratorError.wordListUnavailable }
+    }
+
+    private struct FailingProvider: RandomnessProvider {
+        struct Failure: Error {}
+        func randomBytes(count: Int) throws -> [UInt8] { throw Failure() }
+    }
+
+    func testRandomSourceFailure_showsItsMessage_andOffersNothing() {
+        let vm = PasswordGeneratorViewModel(provider: FailingProvider(), defaults: defaults,
+                                            clipboard: ClipboardServiceImpl(pasteboard: FakePasteboard()))
+        XCTAssertEqual(vm.errorMessage, "The system's random source failed. Nothing was generated.")
+        XCTAssertEqual(vm.generatedValue, "")
+        XCTAssertFalse(vm.canUse)
+    }
+
+    func testWordListFailure_showsItsMessage_andOffersNothing() {
+        let vm = makeVM(generator: PasswordGenerator(wordListSource: FailingWordList()))
+        vm.mode = .passphrase
+        XCTAssertEqual(vm.errorMessage, "The word list for passphrases couldn't be loaded.")
+        XCTAssertEqual(vm.generatedValue, "")
+        XCTAssertFalse(vm.canUse)
+    }
+
+    /// Spec scenario "Toggle labels show their characters" (the UI test sees only the
+    /// accessibility labels, which replace the visible text).
+    func testToggleTitles_listTheirCharacters() {
+        XCTAssertEqual(PasswordGeneratorView.specialToggleTitle, "Special (!@#$%^&*)")
+        XCTAssertEqual(PasswordGeneratorView.extendedToggleTitle, #"Extended special (()_+-=[]{}|;':",.<>?/)"#)
+    }
 }
