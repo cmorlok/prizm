@@ -328,11 +328,13 @@ actor VaultRepositoryImpl: VaultRepository {
     ///   stored as the item's new record and re-mapped to a `VaultItem`; the in-memory cache is
     ///   patched in place so the UI reflects the latest state without a full re-sync.
     ///
-    /// - Organization items: the collections are sent afterwards with `PUT /collections`, which
-    ///   changes the revision on the official server. The record stored for the item, and the
-    ///   revision of the item returned, are therefore the collections answer's (or a fetch when it
-    ///   holds no cipher), never the item PUT's. The PUT answer still supplies everything else and
-    ///   reports the collections from before the update, so the draft's collections are patched in.
+    /// - Organization items: when the draft's collection set differs from the stored record's, the
+    ///   collections are sent afterwards with `PUT /collections_v2`, which changes the revision on the
+    ///   official server. The record stored for the item, and the revision of the item returned, are
+    ///   then the collections answer's (or a fetch when it holds no cipher), never the item PUT's. The
+    ///   PUT answer still supplies everything else and reports the collections from before the
+    ///   update, so the draft's collections are patched in. An unchanged set sends no collections
+    ///   request (fix-collection-assignment, D5).
     ///
     /// - Partial save: when the item PUT succeeded and the collections request failed, the saved
     ///   item is kept (stored, cached with the collections the PUT answer reports, refreshed with a
@@ -354,8 +356,10 @@ actor VaultRepositoryImpl: VaultRepository {
     ///   nothing is retried.
     /// - Throws: `VaultError.vaultLocked` also when the vault was cleared while the request ran: the
     ///   answer is then dropped unread (nothing decrypted, stored or cached).
+    /// - Throws: `VaultError.savedButAccessLost` when both were saved and the server reports that the
+    ///   user can no longer see the item; it is removed from the cache and the store.
     /// - Throws: `VaultError.collectionChangeNotSaved` when the item was saved and its collection
-    ///   update failed, for any reason (an "out of date" answer to `/collections` included: it is not
+    ///   update failed, for any reason (an "out of date" answer to `/collections_v2` included: it is not
     ///   the item PUT, so it is no conflict).
     /// - Throws: `APIError` on any other network or HTTP failure.
     /// - Throws: `CipherMapperError` if the server's answer to the PUT cannot be mapped. Nothing is
@@ -527,12 +531,24 @@ actor VaultRepositoryImpl: VaultRepository {
         // Keep what the server answered, not what was sent. Refused after a lock by the store too.
         await storeRecord(updatedRaw, ifCurrent: storeGeneration)
 
+        // Only a change is sent (fix-collection-assignment, D5): the stored record holds the
+        // collections the server has, and an unchanged set would only cost a request, an event in
+        // the organization's log, and on Vaultwarden a refusal for members of read-only collections.
+        // The user's change applied to the collections the server holds now (D2a): a sync while
+        // the sheet was open may have brought in another member's change, which Vaultwarden makes
+        // without a new revision.
+        let savedCollectionIds = draft.originalCollectionIds.map {
+            CollectionAssignment.rebased(stored: base.collectionIds, original: $0, edited: draft.collectionIds)
+        } ?? draft.collectionIds
+        let collectionsChanged = draft.organizationId != nil && Set(savedCollectionIds) != Set(base.collectionIds)
+
         // The collections answer is the item's newest record (the official server changes the
-        // revision on this call); nil for a personal item and for an answer without a cipher.
+        // revision on this call); nil without a collection change and for an answer without a cipher.
         var collectionsAnswer: RawCipher?
-        if draft.organizationId != nil {
+        if collectionsChanged {
+            let result: CipherCollectionsResult
             do {
-                collectionsAnswer = try await apiClient.updateCipherCollections(id: draft.id, collectionIds: draft.collectionIds)
+                result = try await apiClient.updateCipherCollections(id: draft.id, collectionIds: requestCollectionIds(savedCollectionIds))
             } catch {
                 guard recordStore.isCurrent(storeGeneration) else {
                     logger.info("Save finished after lock, dropped: \(draft.id, privacy: .public)")
@@ -548,6 +564,20 @@ actor VaultRepositoryImpl: VaultRepository {
                 guard recordStore.isCurrent(storeGeneration) else { throw VaultError.vaultLocked }
                 throw VaultError.collectionChangeNotSaved
             }
+            if result.unavailable {
+                // Both changes are saved, and the user can no longer see the item: it leaves the
+                // cache and the store, as after a sync that no longer lists it.
+                guard recordStore.isCurrent(storeGeneration) else {
+                    logger.info("Save finished after lock, dropped: \(draft.id, privacy: .public)")
+                    throw VaultError.vaultLocked
+                }
+                items.removeAll { $0.id == draft.id }
+                buildIndexes()
+                await removeRecords([draft.id], ifCurrent: storeGeneration)
+                logger.info("Item saved; its collection change ended the user's access: \(draft.id, privacy: .public)")
+                throw VaultError.savedButAccessLost
+            }
+            collectionsAnswer = result.cipher
         }
 
         // Last check before the first write to the item cache: everything below is synchronous.
@@ -557,14 +587,14 @@ actor VaultRepositoryImpl: VaultRepository {
         }
 
         // Patch collectionIds: PUT /api/ciphers/{id} returns pre-update collection state.
-        if draft.organizationId != nil {
-            updatedItem = updatedItem.with(collectionIds: draft.collectionIds)
+        if collectionsChanged {
+            updatedItem = updatedItem.with(collectionIds: savedCollectionIds)
         }
 
         cacheItem(updatedItem)
-        if draft.organizationId != nil {
-            // Stores the collections answer (or a fetch) and moves the cached revision to it. A
-            // personal item keeps what the PUT answered.
+        if collectionsChanged {
+            // Stores the collections answer (or a fetch) and moves the cached revision to it.
+            // Without a collection change the item keeps what the PUT answered.
             await refreshRecord(id: draft.id, from: collectionsAnswer, token: storeGeneration)
             guard recordStore.isCurrent(storeGeneration) else {
                 logger.info("Save finished after lock, dropped: \(draft.id, privacy: .public)")
@@ -574,6 +604,17 @@ actor VaultRepositoryImpl: VaultRepository {
         }
         logger.info("Vault item updated: \(draft.id, privacy: .public)")
         return updatedItem
+    }
+
+    /// The ids of `ids` to send in the collections request, in order: all but the collections the
+    /// last sync lists as read-only for the user. Vaultwarden 1.37.4 refuses the whole request when
+    /// a read-only collection is in it (even an unchanged one) and keeps a read-only assignment that
+    /// is left out; the official server changes only writable assignments (live rig 2026-10-30).
+    /// Unknown ids (a collection whose name did not decrypt) are sent: one may be writable, and
+    /// leaving it out would make the server remove it (fix-collection-assignment, design D2).
+    private func requestCollectionIds(_ ids: [String]) -> [String] {
+        let readOnly = Set(collectionStore.filter(\.readOnly).map(\.id))
+        return ids.filter { !readOnly.contains($0) }
     }
 
     /// Replaces the cached item with the same id, or appends it, and rebuilds the indexes. The

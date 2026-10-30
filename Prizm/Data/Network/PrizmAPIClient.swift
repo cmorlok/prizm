@@ -91,19 +91,23 @@ protocol PrizmAPIClientProtocol: Actor {
     /// Reference: Bitwarden Server API GET /api/ciphers/{id}
     func getCipher(id: String) async throws -> RawCipher
 
-    /// PUT `/api/ciphers/{id}/collections` — updates the collection membership of an org cipher.
+    /// PUT `/api/ciphers/{id}/collections_v2` — sets the collections of an org cipher, as the
+    /// Bitwarden SDK does (`bitwarden-vault/src/cipher/cipher_client/edit.rs`).
     ///
-    /// `PUT /api/ciphers/{id}` does not change collection assignments — this endpoint must be
-    /// called separately whenever `collectionIds` changes. Passing an empty array moves the
-    /// item to the org's Default collection.
+    /// `PUT /api/ciphers/{id}` does not change collection assignments, so this is a separate call.
+    /// The posted list replaces the user's *writable* assignments only: the official server removes
+    /// the item from every writable collection not in the list and leaves read-only ones alone
+    /// (`CollectionCipher_UpdateCollections.sql`). Vaultwarden 1.37.4 fails the whole request when
+    /// the list contains a collection the user cannot write, even an unchanged one, and keeps a
+    /// read-only assignment that is left out (live rig 2026-10-30). So the list leaves out the
+    /// read-only collections, and an empty list unassigns the item from all writable collections;
+    /// it never means "Default collection" (fix-collection-assignment, D2 and D6).
     ///
-    /// Vaultwarden 1.37.4 answers with the cipher (tested), and the official server answers with it
-    /// and changes the item's revision on this call (source-reviewed, not tested), so the answer is
-    /// returned for the caller to keep as the item's record. Nil when the body is empty or not a
-    /// cipher: the call itself succeeded then, and the caller fetches the item instead.
-    ///
-    /// Reference: Bitwarden Server API PUT /api/ciphers/{id}/collections
-    func updateCipherCollections(id: String, collectionIds: [String]) async throws -> RawCipher?
+    /// The answer is `{unavailable, cipher?}`. The official server changes the item's revision on
+    /// this call, so the cipher is returned for the caller to keep as the item's record; nil when
+    /// the answer has none Prizm can read (the change itself succeeded, and the caller fetches the
+    /// item). Servers without `collections_v2` get the same list on `LegacyCipherCollectionsEndpoint`.
+    func updateCipherCollections(id: String, collectionIds: [String]) async throws -> CipherCollectionsResult
 
     /// PUT `/api/ciphers/{id}/delete` — soft-deletes a cipher by moving it to Trash.
     ///
@@ -910,18 +914,31 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
 
     // MARK: - updateCipherCollections
 
-    func updateCipherCollections(id: String, collectionIds: [String]) async throws -> RawCipher? {
+    func updateCipherCollections(id: String, collectionIds: [String]) async throws -> CipherCollectionsResult {
         guard let base = baseURL else { throw APIError.baseURLNotSet }
-        let url = base.appendingPathComponent("api/ciphers/\(id)/collections")
+        do {
+            let request = try collectionsRequest(url: base.appendingPathComponent("api/ciphers/\(id)/collections_v2"),
+                                                 collectionIds: collectionIds)
+            let answer: OptionalCipherDetailsResponse? = try await performOptional(request: request)
+            return CipherCollectionsResult(unavailable: answer?.unavailable ?? false, cipher: answer?.cipher)
+        } catch where LegacyCipherCollectionsEndpoint.isFallback(for: error) {
+            logger.info("updateCipherCollections: the server has no collections_v2 route; using the legacy route")
+            let request = try collectionsRequest(url: base.appendingPathComponent(LegacyCipherCollectionsEndpoint.path(id: id)),
+                                                 collectionIds: collectionIds)
+            let cipher: RawCipher? = try await performOptional(request: request)
+            return CipherCollectionsResult(unavailable: false, cipher: cipher)
+        }
+    }
+
+    private func collectionsRequest(url: URL, collectionIds: [String]) throws -> URLRequest {
         var request = baseRequest(url: url)
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let token = accessToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        let body = ["collectionIds": collectionIds]
-        request.httpBody = try JSONEncoder().encode(body)
-        return try await performOptional(request: request)
+        request.httpBody = try JSONEncoder().encode(["collectionIds": collectionIds])
+        return request
     }
 
     // MARK: - softDeleteCipher

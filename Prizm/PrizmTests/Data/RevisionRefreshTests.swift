@@ -749,7 +749,8 @@ final class RevisionRefreshTests: XCTestCase {
         let (rig, item) = try await StaleWriteRig.makeOrg()
         answerPut(of: rig, revision: Self.r2, collectionIds: [])
         rig.api.updateCipherCollectionsShouldThrow = APIError.httpError(statusCode: 500, body: "")
-        answerFollowUps(of: rig, getRevision: Self.r3)
+        // The refresh reports the collections the server kept, so the retry sends the change again.
+        answerFollowUps(of: rig, getRevision: Self.r3, getCollectionIds: [])
         var draft = StaleWriteRig.renamed(item)
         draft.collectionIds = ["col-a"]
         do {
@@ -815,7 +816,11 @@ final class RevisionRefreshTests: XCTestCase {
     /// stored before the save would hold another client's content, and a refresh that finds changed
     /// content does not take the new revision. Call it after `answerPut`; it runs once the PUT has
     /// been answered.
-    private func answerFollowUps(of rig: StaleWriteRig, collectionsRevision: String? = nil, getRevision: String? = nil) {
+    ///
+    /// `getCollectionIds` sets the collections the fetch reports, for a fetch after a collection
+    /// change that failed: the server still holds the old ones then, not the ones the PUT sent.
+    private func answerFollowUps(of rig: StaleWriteRig, collectionsRevision: String? = nil, getRevision: String? = nil,
+                                 getCollectionIds: [String]? = nil) {
         let api = rig.api
         let answerPut = api.whileUpdatingCipher
         api.whileUpdatingCipher = { [api] in
@@ -824,8 +829,17 @@ final class RevisionRefreshTests: XCTestCase {
             if let collectionsRevision {
                 api.updateCipherCollectionsResponse = try? RepositoryFixtures.withRevision(sent, collectionsRevision)
             }
-            if let getRevision {
-                api.getCipherResponses[sent.id] = try? RepositoryFixtures.withRevision(sent, getRevision)
+            if let getRevision, var answer = try? RepositoryFixtures.withRevision(sent, getRevision) {
+                if let getCollectionIds,
+                   let data = try? JSONEncoder().encode(answer),
+                   var json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+                    json["collectionIds"] = getCollectionIds
+                    if let body = try? JSONSerialization.data(withJSONObject: json),
+                       let decoded = try? JSONDecoder().decode(RawCipher.self, from: body) {
+                        answer = decoded
+                    }
+                }
+                api.getCipherResponses[sent.id] = answer
             }
         }
     }
@@ -1030,14 +1044,15 @@ final class RevisionRefreshWireTests: XCTestCase {
     }
 
     func testUpdateCipherCollections_returnsTheCipherTheServerSent() async throws {
-        StubURLProtocol.responder = { [cipherBody] _ in .status(200, body: cipherBody) }
+        let body = Data(#"{"object":"optionalCipherDetails","unavailable":false,"cipher":"#.utf8) + cipherBody + Data("}".utf8)
+        StubURLProtocol.responder = { _ in .status(200, body: body) }
 
         let answer = try await sut.updateCipherCollections(id: "c1", collectionIds: ["col-a"])
 
-        XCTAssertEqual(answer?.revisionDate, "2026-10-26T10:00:00.123456Z", "The revision string is kept as received")
+        XCTAssertEqual(answer.cipher?.revisionDate, "2026-10-26T10:00:00.123456Z", "The revision string is kept as received")
         let request = try XCTUnwrap(StubURLProtocol.requests.first)
         XCTAssertEqual(request.method, "PUT")
-        XCTAssertEqual(request.url?.path, "/api/ciphers/c1/collections")
+        XCTAssertEqual(request.url?.path, "/api/ciphers/c1/collections_v2")
         XCTAssertEqual(request.jsonBody?["collectionIds"] as? [String], ["col-a"])
     }
 
@@ -1047,7 +1062,8 @@ final class RevisionRefreshWireTests: XCTestCase {
 
             let answer = try await sut.updateCipherCollections(id: "c1", collectionIds: [])
 
-            XCTAssertNil(answer, "A collection update that succeeded is a success whatever the body holds")
+            XCTAssertNil(answer.cipher, "A collection update that succeeded is a success whatever the body holds")
+            XCTAssertFalse(answer.unavailable)
         }
     }
 

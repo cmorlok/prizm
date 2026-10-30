@@ -168,14 +168,17 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     /// cipher (the default, which older tests rely on).
     nonisolated(unsafe) var updateCipherCollectionsResponse: RawCipher?
     nonisolated(unsafe) var updateCipherCollectionsShouldThrow: Error?
+    /// The `unavailable` flag of the answer: the user lost access through the change.
+    nonisolated(unsafe) var updateCipherCollectionsUnavailable = false
 
-    func updateCipherCollections(id: String, collectionIds: [String]) async throws -> RawCipher? {
+    func updateCipherCollections(id: String, collectionIds: [String]) async throws -> CipherCollectionsResult {
         callLog.append("collections \(id)")
         updateCipherCollectionsCallCount += 1
         lastUpdatedCipherCollections = (id, collectionIds)
         await whileUpdatingCollections?()
         if let err = updateCipherCollectionsShouldThrow { throw err }
-        return updateCipherCollectionsResponse
+        return CipherCollectionsResult(unavailable: updateCipherCollectionsUnavailable,
+                                       cipher: updateCipherCollectionsResponse)
     }
 
     // MARK: - Stubs: createCipher

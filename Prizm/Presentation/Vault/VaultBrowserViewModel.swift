@@ -526,6 +526,19 @@ final class VaultBrowserViewModel: ObservableObject {
         }
     }
 
+    /// The handler for an item a save removed from the vault (the user lost access to it): clears
+    /// the selection if it shows that item and refreshes the list. Ignored after a lock, like
+    /// `saveHandler()`.
+    func removalHandler() -> (String) -> Void {
+        let generation = sessionGeneration
+        return { [weak self] id in
+            guard let self, isCurrent(generation) else { return }
+            if itemSelection?.id == id { itemSelection = nil }
+            refreshItems()
+            refreshCounts()
+        }
+    }
+
     /// Updates `itemSelection` so the detail pane reflects the saved values, then
     /// refreshes the item list and sidebar counts so any name change appears immediately.
     private func handleItemSaved(_ updatedItem: VaultItem, startedIn generation: Int) {

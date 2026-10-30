@@ -187,6 +187,9 @@ nonisolated enum VaultError: Error, LocalizedError {
     /// An organization item's update was saved, but its collection change was not. The edit sheet
     /// keeps the draft, so the user can try again.
     case collectionChangeNotSaved
+    /// An organization item and its collection change were saved, and the server reports that the
+    /// user can no longer see the item. It was removed from the local vault (fix-collection-assignment).
+    case savedButAccessLost
 
     var errorDescription: String? {
         switch self {
@@ -218,6 +221,8 @@ nonisolated enum VaultError: Error, LocalizedError {
             return "This item was changed on another device. Your changes were not saved. Reload to see the latest version, then make your changes again."
         case .collectionChangeNotSaved:
             return "Your changes were saved, but the collection change failed. Try again."
+        case .savedButAccessLost:
+            return "Saved. You no longer have access to this item."
         }
     }
 }

@@ -282,7 +282,7 @@ final class ItemEditOrgKeyErrorTests: XCTestCase {
             id: "shared", name: "Shared", isFavorite: false, isDeleted: false,
             creationDate: Date(), revisionDate: Date(),
             content: .secureNote(SecureNoteContent(notes: nil, customFields: [])),
-            organizationId: "org-1"
+            organizationId: "org-1", collectionIds: ["col-1"]
         )
         let sut = ItemEditViewModel(item: item, useCase: FailingEdit())
         sut.draft.name = "Edited name"

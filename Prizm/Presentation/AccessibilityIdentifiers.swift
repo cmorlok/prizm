@@ -139,6 +139,10 @@ nonisolated enum AccessibilityID {
         static let conflictStatus       = "edit.conflictStatus"
         /// The note in ItemDetailView that says why Edit is disabled for an item.
         static let blockedNote   = "edit.blockedNote"
+        /// A collection checkbox in the edit sheet's Collections card, by collection id.
+        static func collectionCheckbox(_ id: String) -> String { "edit.collection.\(id)" }
+        /// The "Choose at least one collection." hint under the Collections card.
+        static let collectionHint = "edit.collectionHint"
     }
 
     // MARK: - Trash (delete-restore-items)

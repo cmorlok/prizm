@@ -131,4 +131,7 @@ enum Spacing {
     /// Height the edit sheet asks for. Only its form scrolls, and a scroll view asks for almost no
     /// height, so without it the sheet shrinks to its fixed header (fix-edit-sheet-height, D1).
     static let editSheetIdealHeight: CGFloat = 800
+    /// Highest the edit sheet's collection checkbox list grows (about five rows) before it scrolls,
+    /// so an organization with many collections cannot push the form out of the sheet.
+    static let collectionListMaxHeight: CGFloat = 170
 }

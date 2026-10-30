@@ -33,7 +33,8 @@ struct StaleWriteRig {
 
     /// A rig with one organization item `o1` cached and stored (revision `RepositoryFixtures.revisionDate`),
     /// and the organization key available.
-    static func makeOrg() async throws -> (StaleWriteRig, VaultItem) {
+    /// The synced collections are `col-a`, `col-b` and `col-c` (writable) plus `readOnlyCollections`.
+    static func makeOrg(collectionIds: [String] = [], readOnlyCollections: [String] = []) async throws -> (StaleWriteRig, VaultItem) {
         let api = MockPrizmAPIClient()
         let crypto = MockPrizmCryptoService()
         await crypto.unlockWith(keys: vaultKeys)
@@ -47,9 +48,11 @@ struct StaleWriteRig {
             id: "o1", name: "Shared", isFavorite: false, isDeleted: false, creationDate: Date(),
             revisionDate: RepositoryFixtures.revisionDate,
             content: .login(LoginContent(username: "u", password: "p", uris: [], totp: nil, notes: nil, customFields: [])),
-            organizationId: orgId)
+            organizationId: orgId, collectionIds: collectionIds)
         try await RepositoryFixtures.seedRecords(for: [item], in: store, vaultKeys: vaultKeys, orgKeys: [orgId: orgKeys])
-        await vault.populate(items: [item], folders: [], organizations: [], collections: [], syncedAt: Date())
+        let collections = ["col-a", "col-b", "col-c"].map { OrgCollection(id: $0, organizationId: orgId, name: $0) }
+            + readOnlyCollections.map { OrgCollection(id: $0, organizationId: orgId, name: $0, readOnly: true) }
+        await vault.populate(items: [item], folders: [], organizations: [], collections: collections, syncedAt: Date())
         return (StaleWriteRig(api: api, store: store, vault: vault), item)
     }
 
