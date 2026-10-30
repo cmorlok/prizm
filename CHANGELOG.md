@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Tests: unit tests no longer read or change the developer's Touch ID setting, and no longer
+  fail at random when run in parallel. When Prizm only hosts the unit tests, it starts signed out
+  with empty in-memory keychains, so it never touches the stored login.
 - Fix: website icons are now loaded from your own server's icon service. Before, Prizm sent the
   website of every login to Bitwarden's icon service (icons.bitwarden.net), whatever server you
   use, and kept the answers in a disk cache. Icons are now kept in memory only and dropped when
