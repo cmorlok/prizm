@@ -283,6 +283,58 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
         return item
     }
 
+    // MARK: - Password history (read on demand — called by GetPasswordHistoryUseCaseImpl)
+
+    /// Decrypts the stored record's password history for the history sheet (openspec change
+    /// `password-history`, design D1).
+    ///
+    /// - Security goal: the history is plaintext only for this call and the sheet that asked for
+    ///   it. The key is derived exactly as a save derives it (`effectiveKeys(for:activeKeys:)` over
+    ///   the stored record, then `verifyKey`), never from `VaultKeyService`, whose cache is filled
+    ///   separately and falls back to the vault key. A lock that lands during the awaits below makes
+    ///   the call throw `vaultLocked` before anything is decrypted.
+    /// - Logging: the item id only.
+    func passwordHistory(itemId: String) async throws -> [PasswordHistoryEntry] {
+        // Read before any await, as `update` does: `clearVault()` bumps it.
+        let token = recordStore.currentGeneration()
+        let vaultKeys: CryptoKeys
+        do {
+            vaultKeys = try await crypto.currentKeys()
+        } catch PrizmCryptoServiceError.vaultLocked {
+            throw VaultError.vaultLocked
+        }
+        guard let base = await recordStore.record(for: itemId) else {
+            guard recordStore.isCurrent(token) else { throw VaultError.vaultLocked }
+            logger.error("Password history unavailable: no stored record for \(itemId, privacy: .public)")
+            throw VaultError.itemRecordUnavailable
+        }
+        let orgKeys = await orgKeyCache.snapshot()
+        let activeKeys: CryptoKeys
+        if let orgId = base.organizationId {
+            guard let orgKey = orgKeys[orgId] else {
+                logger.error("Password history unavailable: no key for the organization of \(itemId, privacy: .public)")
+                throw VaultError.organizationKeyUnavailable
+            }
+            activeKeys = orgKey
+        } else {
+            activeKeys = vaultKeys
+        }
+        let keys: CryptoKeys
+        do {
+            keys = try mapper.effectiveKeys(for: base, activeKeys: activeKeys)
+            try mapper.verifyKey(keys, against: base)
+        } catch {
+            logger.error("Password history unavailable: no usable key for \(itemId, privacy: .public)")
+            throw VaultError.itemKeyUnavailable
+        }
+        // No suspension between this check and the decryption.
+        guard recordStore.isCurrent(token) else {
+            logger.info("Password history dropped, the vault was cleared while it loaded: \(itemId, privacy: .public)")
+            throw VaultError.vaultLocked
+        }
+        return mapper.passwordHistoryEntries(of: base, keys: keys)
+    }
+
     // MARK: - Update (write path — called by EditVaultItemUseCaseImpl)
 
     /// Saves `draft` over the item's last server record: re-encrypts what the user edited, calls

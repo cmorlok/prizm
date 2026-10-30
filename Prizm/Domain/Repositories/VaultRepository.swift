@@ -23,6 +23,14 @@ protocol VaultRepository: AnyObject, Sendable {
     /// Cached item counts keyed by `SidebarSelection`. O(1) — served from a pre-built index.
     func itemCounts() async throws -> [SidebarSelection: Int]
 
+    /// The password history of one item, decrypted from its stored server record only for this call
+    /// (openspec change `password-history`, design D1). Entries in stored order.
+    ///
+    /// - Throws: `VaultError.vaultLocked` (also when the vault locks during the load),
+    ///   `VaultError.itemRecordUnavailable`, `VaultError.organizationKeyUnavailable`,
+    ///   `VaultError.itemKeyUnavailable`.
+    func passwordHistory(itemId: String) async throws -> [PasswordHistoryEntry]
+
     /// Returns the fully-decrypted detail for a single item.
     /// Not cached — re-decrypts on every call (decrypt on demand, per spec).
     func itemDetail(id: String) async throws -> VaultItem
