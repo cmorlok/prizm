@@ -245,44 +245,52 @@ protocol PrizmAPIClientProtocol: Actor {
 
 /// Response from POST `/identity/accounts/prelogin/password` (or the legacy `/identity/accounts/prelogin`).
 ///
-/// Contains the KDF parameters needed to derive the master key locally.
-/// `kdfMemory` and `kdfParallelism` are only present when `kdf == 1` (Argon2id).
-nonisolated struct PreLoginResponse: Codable {
-    let kdf:            Int
-    let kdfIterations:  Int
-    let kdfMemory:      Int?
-    let kdfParallelism: Int?
+/// Contains the KDF settings and salt needed to derive the master key locally. `kdfSettings` is read
+/// first; only when it is absent are the flat `kdf*` fields read, by `LegacyPreloginKdfFields`
+/// (fix-kdf-derivation-and-validation, D5).
+nonisolated struct PreLoginResponse: Decodable {
+    /// The settings to derive with; nil when the server sent none Prizm can use (unknown type,
+    /// no iteration count). Range checks happen in `KdfValidator`.
+    let kdfParams: KdfParams?
+    /// The master password salt, when the server sends one. Vaultwarden 1.37.4 sends null, the
+    /// official server the email; Prizm then uses the email (D3).
+    let salt: String?
 
-    var kdfParams: KdfParams {
-        KdfParams(
-            type:        kdf == 1 ? .argon2id : .pbkdf2,
-            iterations:  kdfIterations,
-            memory:      kdfMemory,
-            parallelism: kdfParallelism
-        )
+    init(kdfParams: KdfParams?, salt: String? = nil) {
+        self.kdfParams = kdfParams
+        self.salt      = salt
     }
 
-    // Vaultwarden/Bitwarden returns camelCase keys matching the property names,
-    // so no custom CodingKeys needed — synthesized conformance handles it.
+    /// The settings as an old server sends them, in the flat fields.
+    init(kdf: Int, kdfIterations: Int, kdfMemory: Int?, kdfParallelism: Int?) {
+        self.init(kdfParams: WireKdfSettings(kdfType: kdf, iterations: kdfIterations,
+                                             memory: kdfMemory, parallelism: kdfParallelism).kdfParams)
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: FirstLetterCaseInsensitiveKey.self)
+        let settings = try c.decodeIfPresent(WireKdfSettings.self, "kdfSettings")
+            ?? LegacyPreloginKdfFields.read(from: c)
+        kdfParams = settings.kdfParams
+        salt      = try c.decodeIfPresent(String.self, "salt")
+    }
 }
 
 /// Response from POST `/connect/token`.
 ///
-/// On success, contains access + refresh tokens and the encrypted vault key.
-/// On a 2FA challenge, `twoFactorProviders` is non-nil and `accessToken` will be empty/absent.
-nonisolated struct TokenResponse: Codable {
+/// On success, contains access + refresh tokens and the encrypted user key. On a 2FA challenge,
+/// `twoFactorProviders` is non-nil and `accessToken` will be empty/absent.
+///
+/// The user key and its KDF settings come from `UserDecryptionOptions.MasterPasswordUnlock`; only
+/// when that is absent are the top-level `Key` and `Kdf*` read, by `LegacyTokenUserKeyFields`
+/// (fix-kdf-derivation-and-validation, D5).
+nonisolated struct TokenResponse: Decodable {
     let accessToken:        String
     let refreshToken:       String?
     let tokenType:          String
     let expiresIn:          Int
-    /// The encrypted user key (EncString). Present on success; used to initialize vault crypto.
-    let key:                String?
-    /// The encrypted RSA private key (EncString). Used for org cipher decryption (not v1).
+    /// The encrypted RSA private key (EncString). Used for org cipher decryption.
     let privateKey:         String?
-    let kdf:                Int?
-    let kdfIterations:      Int?
-    let kdfMemory:          Int?
-    let kdfParallelism:     Int?
     /// Device remember token returned when `twoFactorRemember == true`.
     let twoFactorToken:     String?
     /// Non-nil when the server requires 2FA; lists available provider type numbers.
@@ -290,23 +298,91 @@ nonisolated struct TokenResponse: Codable {
     let userId:             String?
     let email:              String?
     let name:               String?
+    let masterPasswordUnlock: MasterPasswordUnlock?
+    /// Read only when `masterPasswordUnlock` is nil.
+    let legacyUserKey:      LegacyTokenUserKeyFields?
 
-    enum CodingKeys: String, CodingKey {
-        case accessToken        = "access_token"
-        case refreshToken       = "refresh_token"
-        case tokenType          = "token_type"
-        case expiresIn          = "expires_in"
-        case key                = "Key"
-        case privateKey         = "PrivateKey"
-        case kdf                = "Kdf"
-        case kdfIterations      = "KdfIterations"
-        case kdfMemory          = "KdfMemory"
-        case kdfParallelism     = "KdfParallelism"
-        case twoFactorToken     = "TwoFactorToken"
-        case twoFactorProviders = "TwoFactorProviders"
-        case userId             = "UserId"
-        case email              = "Email"
-        case name               = "Name"
+    /// `UserDecryptionOptions.MasterPasswordUnlock`.
+    nonisolated struct MasterPasswordUnlock: Decodable, Equatable {
+        let kdf:                       WireKdfSettings?
+        let masterKeyEncryptedUserKey: String?
+        let salt:                      String?
+
+        init(kdf: WireKdfSettings?, masterKeyEncryptedUserKey: String?, salt: String?) {
+            self.kdf                       = kdf
+            self.masterKeyEncryptedUserKey = masterKeyEncryptedUserKey
+            self.salt                      = salt
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: FirstLetterCaseInsensitiveKey.self)
+            kdf                       = try c.decodeIfPresent(WireKdfSettings.self, "kdf")
+            masterKeyEncryptedUserKey = try c.decodeIfPresent(String.self, "masterKeyEncryptedUserKey")
+            salt                      = try c.decodeIfPresent(String.self, "salt")
+        }
+    }
+
+    /// The user key encrypted with the stretched master key (EncString). Present on success.
+    var key: String? { masterPasswordUnlock?.masterKeyEncryptedUserKey ?? legacyUserKey?.key }
+
+    /// The KDF settings the server reports for the user key, if any. Prizm stores the settings it
+    /// derived with, not these (D6); they are only compared.
+    var kdfSettings: WireKdfSettings? { masterPasswordUnlock?.kdf ?? legacyUserKey?.kdf }
+
+    init(
+        accessToken: String, refreshToken: String?, tokenType: String, expiresIn: Int,
+        privateKey: String?, twoFactorToken: String?, twoFactorProviders: [Int]?,
+        userId: String?, email: String?, name: String?,
+        masterPasswordUnlock: MasterPasswordUnlock?, legacyUserKey: LegacyTokenUserKeyFields?
+    ) {
+        self.accessToken          = accessToken
+        self.refreshToken         = refreshToken
+        self.tokenType            = tokenType
+        self.expiresIn            = expiresIn
+        self.privateKey           = privateKey
+        self.twoFactorToken       = twoFactorToken
+        self.twoFactorProviders   = twoFactorProviders
+        self.userId               = userId
+        self.email                = email
+        self.name                 = name
+        self.masterPasswordUnlock = masterPasswordUnlock
+        self.legacyUserKey        = masterPasswordUnlock == nil ? legacyUserKey : nil
+    }
+
+    /// A response as an old server sends it, with the top-level `Key` and `Kdf*` fields.
+    init(
+        accessToken: String, refreshToken: String?, tokenType: String, expiresIn: Int,
+        key: String?, privateKey: String?,
+        kdf: Int?, kdfIterations: Int?, kdfMemory: Int?, kdfParallelism: Int?,
+        twoFactorToken: String?, twoFactorProviders: [Int]?,
+        userId: String?, email: String?, name: String?
+    ) {
+        self.init(
+            accessToken: accessToken, refreshToken: refreshToken, tokenType: tokenType, expiresIn: expiresIn,
+            privateKey: privateKey, twoFactorToken: twoFactorToken, twoFactorProviders: twoFactorProviders,
+            userId: userId, email: email, name: name, masterPasswordUnlock: nil,
+            legacyUserKey: LegacyTokenUserKeyFields(
+                key: key,
+                kdf: WireKdfSettings(kdfType: kdf, iterations: kdfIterations, memory: kdfMemory, parallelism: kdfParallelism)
+            )
+        )
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: FirstLetterCaseInsensitiveKey.self)
+        accessToken        = try c.decode(String.self, "access_token")
+        refreshToken       = try c.decodeIfPresent(String.self, "refresh_token")
+        tokenType          = try c.decode(String.self, "token_type")
+        expiresIn          = try c.decode(Int.self, "expires_in")
+        privateKey         = try c.decodeIfPresent(String.self, "privateKey")
+        twoFactorToken     = try c.decodeIfPresent(String.self, "twoFactorToken")
+        twoFactorProviders = try c.decodeIfPresent([Int].self, "twoFactorProviders")
+        userId             = try c.decodeIfPresent(String.self, "userId")
+        email              = try c.decodeIfPresent(String.self, "email")
+        name               = try c.decodeIfPresent(String.self, "name")
+        masterPasswordUnlock = try c.nestedContainer("userDecryptionOptions")?
+            .decodeIfPresent(MasterPasswordUnlock.self, "masterPasswordUnlock")
+        legacyUserKey = masterPasswordUnlock == nil ? try LegacyTokenUserKeyFields.read(from: c) : nil
     }
 }
 
@@ -586,7 +662,8 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
 
         let response: PreLoginResponse = try await perform(request: request, expectedFailures: expectedFailures)
         if DebugConfig.isEnabled {
-            logger.debug("[debug] preLogin ← kdf=\(response.kdf, privacy: .public) iterations=\(response.kdfIterations, privacy: .public) memory=\(response.kdfMemory.map(String.init) ?? "nil", privacy: .public) parallelism=\(response.kdfParallelism.map(String.init) ?? "nil", privacy: .public)")
+            // KDF values and the salt stay out of the log (fix-kdf-derivation-and-validation, 6.2).
+            logger.debug("[debug] preLogin ← settings=\(response.kdfParams != nil, privacy: .public) salt=\(response.salt != nil, privacy: .public)")
         }
         return response
     }
@@ -736,7 +813,7 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
             if DebugConfig.isEnabled {
                 // Log which fields are present — never log token values.
                 let hasKey         = tokenResponse.key != nil
-                let hasKdf         = tokenResponse.kdf != nil
+                let hasKdf         = tokenResponse.kdfSettings != nil
                 let hasUserId      = tokenResponse.userId != nil
                 let hasEmail       = tokenResponse.email != nil
                 let has2FA         = tokenResponse.twoFactorProviders != nil

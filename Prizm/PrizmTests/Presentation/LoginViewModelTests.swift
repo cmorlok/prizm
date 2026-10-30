@@ -88,6 +88,32 @@ final class LoginViewModelTests: XCTestCase {
                        "execute must not be called when password is empty")
     }
 
+    // MARK: - Refused KDF settings (fix-kdf-derivation-and-validation, 3.5)
+
+    /// Both KDF refusals are shown in the login error area, with their own text.
+    func testSignIn_refusedKdfSettings_showsTheirMessage() async throws {
+        for error in [AuthError.kdfSettingsTooWeak, .invalidKdfSettings] {
+            mockUseCase.executeError = error
+            sut.serverURL = "https://vault.example.com"
+            sut.email     = "alice@example.com"
+            sut.password  = "SuperSecret1!"
+
+            let exp = expectation(description: "error shown for \(error)")
+            sut.$errorMessage
+                .compactMap { $0 }
+                .filter { $0 == error.errorDescription }
+                .first()
+                .sink { _ in exp.fulfill() }
+                .store(in: &cancellables)
+
+            sut.signIn()
+            await fulfillment(of: [exp], timeout: 2.0)
+            XCTAssertEqual(sut.errorMessage, error.errorDescription)
+            XCTAssertEqual(sut.flowState, .login)
+            cancellables.removeAll()
+        }
+    }
+
     // MARK: - cancelTOTP
 
     /// cancelTOTP() delegates to the use case and resets flow state to .login.

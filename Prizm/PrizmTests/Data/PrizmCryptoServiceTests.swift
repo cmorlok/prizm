@@ -19,11 +19,11 @@ final class PrizmCryptoServiceTests: XCTestCase {
     // MARK: - PBKDF2-SHA256 Key Derivation
 
     /// Derive a 32-byte master key using PBKDF2-SHA256.
-    /// Vector: email="user@bitwarden.com", password="Password1", iterations=600000
+    /// Vector: salt="user@bitwarden.com", password="Password1", iterations=600000
     /// Expected output is the SHA-256 PBKDF2 result (verified against Bitwarden web vault).
     func testPbkdf2MasterKeyLength() async throws {
         let kdf = KdfParams(type: .pbkdf2, iterations: 600_000, memory: nil, parallelism: nil)
-        let masterKey = try await sut.makeMasterKey(password: Data("Password1".utf8), email: "user@bitwarden.com", kdf: kdf)
+        let masterKey = try await sut.makeMasterKey(password: Data("Password1".utf8), salt: "user@bitwarden.com", kdf: kdf)
         // Must be exactly 32 bytes (256-bit)
         XCTAssertEqual(masterKey.count, 32)
     }
@@ -31,16 +31,16 @@ final class PrizmCryptoServiceTests: XCTestCase {
     /// PBKDF2 derivation must be deterministic.
     func testPbkdf2IsDeterministic() async throws {
         let kdf = KdfParams(type: .pbkdf2, iterations: 10_000, memory: nil, parallelism: nil)
-        let k1 = try await sut.makeMasterKey(password: Data("pw".utf8), email: "a@b.com", kdf: kdf)
-        let k2 = try await sut.makeMasterKey(password: Data("pw".utf8), email: "a@b.com", kdf: kdf)
+        let k1 = try await sut.makeMasterKey(password: Data("pw".utf8), salt: "a@b.com", kdf: kdf)
+        let k2 = try await sut.makeMasterKey(password: Data("pw".utf8), salt: "a@b.com", kdf: kdf)
         XCTAssertEqual(k1, k2)
     }
 
     /// Different passwords must produce different keys.
     func testPbkdf2DifferentPasswordsDifferentKeys() async throws {
         let kdf = KdfParams(type: .pbkdf2, iterations: 10_000, memory: nil, parallelism: nil)
-        let k1 = try await sut.makeMasterKey(password: Data("alpha".utf8), email: "x@y.com", kdf: kdf)
-        let k2 = try await sut.makeMasterKey(password: Data("beta".utf8), email: "x@y.com", kdf: kdf)
+        let k1 = try await sut.makeMasterKey(password: Data("alpha".utf8), salt: "x@y.com", kdf: kdf)
+        let k2 = try await sut.makeMasterKey(password: Data("beta".utf8), salt: "x@y.com", kdf: kdf)
         XCTAssertNotEqual(k1, k2)
     }
 

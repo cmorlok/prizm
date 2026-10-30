@@ -85,6 +85,27 @@ final class UnlockViewModelTests: XCTestCase {
         XCTAssertNotNil(sut.errorMessage, "An error message must be shown on failed unlock")
     }
 
+    /// A refused KDF setting is shown in the unlock error area with its own text
+    /// (fix-kdf-derivation-and-validation, 3.5).
+    func testUnlock_refusedKdfSettings_showsTheirMessage() async throws {
+        for error in [AuthError.kdfSettingsTooWeak, .invalidKdfSettings] {
+            mockAuth.unlockWithPasswordError = error
+            sut.password = "SuperSecret1!"
+
+            let exp = expectation(description: "error shown for \(error)")
+            sut.$errorMessage
+                .compactMap { $0 }
+                .filter { $0 == error.errorDescription }
+                .first()
+                .sink { _ in exp.fulfill() }
+                .store(in: &cancellables)
+
+            sut.unlock()
+            await fulfillment(of: [exp], timeout: 2.0)
+            cancellables.removeAll()
+        }
+    }
+
     // MARK: - email property
 
     /// email property returns the stored account's email address.

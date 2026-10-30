@@ -20,8 +20,12 @@ final class MockKeychainService: KeychainService {
 
     // MARK: - KeychainService
 
+    /// Errors `read(key:)` throws for these keys instead of answering.
+    var readErrors: [String: Error] = [:]
+
     func read(key: String) throws -> Data {
         readKeys.append(key)
+        if let error = readErrors[key] { throw error }
         guard let value = store[key] else {
             throw KeychainError.itemNotFound
         }

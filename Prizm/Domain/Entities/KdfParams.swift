@@ -16,11 +16,12 @@ nonisolated struct KdfParams: Codable, Equatable {
     let type: KdfType
 
     /// Iteration count.
-    /// • PBKDF2: minimum 600 000 (Bitwarden default 600 000).
+    /// • PBKDF2: Bitwarden default 600 000; Prizm refuses fewer than 5000 (`KdfValidator`).
     /// • Argon2id: time-cost parameter (Bitwarden default 3).
     let iterations: Int
 
-    /// Memory cost in KiB. Argon2id only; nil for PBKDF2 (Bitwarden default 64 MiB = 65536 KiB).
+    /// Memory cost in MiB, the unit both servers send. Argon2id only; nil for PBKDF2 (Bitwarden
+    /// default 64). Converted to KiB only when deriving (fix-kdf-derivation-and-validation, D1).
     let memory: Int?
 
     /// Degree of parallelism. Argon2id only; nil for PBKDF2 (Bitwarden default 4).

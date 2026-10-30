@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // MARK: - LoginView
@@ -100,7 +101,37 @@ struct LoginView: View {
         .padding(.horizontal, Spacing.screenHorizontal)
         .padding(.bottom, 32)
         .frame(minWidth: 480, minHeight: 400)
-        .onAppear { focusedField = .serverURL }
+        // A refused sign-in shows this screen again after "Signing in…"; focus goes to the password,
+        // not back to the server URL (hand check 2026-10-30, Constitution §VIII).
+        .onAppear {
+            focusedField = viewModel.errorMessage == nil ? .serverURL : .password
+        }
+        // The error is announced once VoiceOver has read the new screen and the focused field: posted
+        // on appear, even at high priority, it was dropped during the screen change (hand check).
+        .task {
+            guard let error = viewModel.errorMessage else { return }
+            try? await Task.sleep(for: Self.errorAnnouncementDelay)
+            if viewModel.errorMessage == error { Self.announce(error) }
+        }
+        .onChange(of: viewModel.errorMessage) { _, error in
+            if let error { Self.announce(error) }
+        }
+    }
+
+    // MARK: - Announcements
+
+    /// Long enough for VoiceOver to finish the screen change (VoiceOver hand check 2026-10-30).
+    private static let errorAnnouncementDelay: Duration = .seconds(1)
+
+    /// Posts through AppKit at high priority: macOS VoiceOver ignores the priority that SwiftUI's
+    /// `AccessibilityNotification.Announcement` carries, and a default one is cut off when focus
+    /// moves (same as `ItemEditView.announce`).
+    private static func announce(_ text: String) {
+        NSAccessibility.post(
+            element: NSApp as Any,
+            notification: .announcementRequested,
+            userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue]
+        )
     }
 
     // MARK: - Private helpers
