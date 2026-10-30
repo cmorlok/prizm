@@ -49,15 +49,8 @@ struct FieldRowView: View {
                     }
                     Text(value ?? "—")
                         .font(Typography.fieldValue.monospaced())
-                        .textSelection(.enabled)
-                        // A selectable Text keeps the text it was created with, in its accessibility
-                        // value and in its character data, which VoiceOver also reads; SwiftUI reuses
-                        // it when another item is selected. The value is set here (also for
-                        // `spokenValue`); the new identity rebuilds the character data
-                        // (fix-ui-journey-findings, fix-selectable-text-voiceover).
-                        .accessibilityValue(spokenValue ?? value ?? "—")
+                        .selectableValueText(value ?? "—", spokenAs: spokenValue)
                         .accessibilityHint(copyHint)
-                        .id(value ?? "—")
                 }
                 Spacer()
                 hoverActions
@@ -69,11 +62,8 @@ struct FieldRowView: View {
                 Text(value ?? "—")
                     .font(Typography.fieldValue.monospaced())
                     .lineLimit(1)
-                    .textSelection(.enabled)
-                    // See the multi-line case above.
-                    .accessibilityValue(spokenValue ?? value ?? "—")
+                    .selectableValueText(value ?? "—", spokenAs: spokenValue)
                     .accessibilityHint(copyHint)
-                    .id(value ?? "—")
                 browserLink
             }
         }

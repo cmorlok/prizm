@@ -42,7 +42,7 @@ enum Fixture {
     /// The only favourite; it also carries the only attachment.
     static let kappa = "kappa"
     /// Kappa's only website. Gamma's first website is `file:///Applications/Calculator.app`.
-    static let kappaWebsite = "https://kappa.example.com"
+    static let kappaWebsite = "kappa.example.com/login"
     static let card = "card1"
     static let identity = "ident1"
     static let note = "note1"
@@ -255,24 +255,35 @@ enum AccessibilityTextProbe {
     static let unavailableMessage = "Needs the accessibility permission for PrizmUITests-Runner "
         + "(System Settings, Privacy & Security, Accessibility); macOS drops it whenever the UI test code changes"
 
-    /// Asserts that every element with character data at the centre of `element` (the element hit
-    /// there and its parent) holds `expected`, and that there is at least one, so it can't pass vacuously.
+    /// Asserts that the value text at the centre of `element` holds `expected` in its character data
+    /// too. Of the element hit there and its parent, only those whose accessibility value is
+    /// `expected` are checked: they are the value texts, so a hover overlay or a container is never
+    /// checked by mistake. At least one must exist, so the assertion can't pass vacuously.
     static func assertTexts(of element: XCUIElement, equal expected: String,
                             file: StaticString = #filePath, line: UInt = #line) {
-        let texts = textsByRange(at: element.frame)
-        XCTAssertFalse(texts.isEmpty, "No element with character data found at \(element.frame)",
+        let texts = textsByRange(at: element.frame, showing: expected)
+        XCTAssertFalse(texts.isEmpty, "No text showing \"\(expected)\" with character data at \(element.frame)",
                        file: file, line: line)
         for text in texts {
             XCTAssertEqual(text, expected, "VoiceOver can read this text by range", file: file, line: line)
         }
     }
 
-    private static func textsByRange(at frame: CGRect) -> [String] {
+    private static func textsByRange(at frame: CGRect, showing shown: String) -> [String] {
         var hit: AXUIElement?
         guard AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(), Float(frame.midX),
                                                Float(frame.midY), &hit) == .success,
               let hit else { return [] }
-        return [hit, parent(of: hit)].compactMap { $0 }.compactMap(textByRange)
+        return [hit, parent(of: hit)].compactMap { $0 }
+            .filter { value(of: $0) == shown }
+            .compactMap(textByRange)
+    }
+
+    private static func value(of element: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value) == .success
+        else { return nil }
+        return value as? String
     }
 
     private static func parent(of element: AXUIElement) -> AXUIElement? {

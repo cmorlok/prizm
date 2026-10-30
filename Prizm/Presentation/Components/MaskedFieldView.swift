@@ -77,14 +77,10 @@ struct MaskedFieldView: View {
         HStack {
             Text(effectiveDisplayValue)
                 .font(Typography.fieldValue.monospaced())
-                .textSelection(.enabled)
-                // A selectable Text keeps the text it was created with, in its accessibility value
-                // and in its character data, so VoiceOver read the dots after Reveal. The value is
-                // set here; the new identity rebuilds the character data, so after Hide the password
-                // does not stay in it either (fix-ui-journey-findings, fix-selectable-text-voiceover).
-                .accessibilityValue(effectiveDisplayValue)
+                // Without it VoiceOver read the dots after Reveal; with it the password does not
+                // stay in the text's character data after Hide either.
+                .selectableValueText(effectiveDisplayValue)
                 .accessibilityIdentifier(AccessibilityID.Masked.value(label))
-                .id(effectiveDisplayValue)
             Button {
                 state = state.toggled()
             } label: {

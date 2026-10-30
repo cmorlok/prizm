@@ -115,13 +115,8 @@ struct PasswordGeneratorView: View {
                 Text(viewModel.generatedValue)
                     .font(Typography.fieldValue.monospaced())
                     .lineLimit(3)
-                    .textSelection(.enabled)
-                    // A selectable Text keeps the text it was created with, in its accessibility
-                    // value and in its character data; the value is set here and the new identity
-                    // rebuilds the character data (fix-ui-journey-findings, fix-selectable-text-voiceover).
-                    .accessibilityValue(viewModel.generatedValue)
+                    .selectableValueText(viewModel.generatedValue)
                     .accessibilityIdentifier(AccessibilityID.Generator.preview)
-                    .id(viewModel.generatedValue)
             }
             Spacer()
             Button {
