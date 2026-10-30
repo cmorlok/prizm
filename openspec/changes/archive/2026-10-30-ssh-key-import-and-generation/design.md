@@ -158,8 +158,8 @@ shows the three fields read-only (the rows `fix-ssh-key-roundtrip` D2 defines fo
 actions: "Generate new key" and "Import key…". Import offers "From clipboard" and "From file…"
 (`fileImporter`, already permitted by the entitlement). A refused import shows its message inline and
 leaves the current key unchanged. Save sends private key, public key and fingerprint together,
-encrypted with the same key rule as every other create (`fix-org-key-required-on-write`,
-`per-item-key-on-create`). The `isCreatable` filter from `fix-ssh-key-roundtrip` is deleted, not
+encrypted with the same key rule as every other create (today `fix-org-key-required-on-write`;
+later `per-item-key-on-create`, not landed yet). The `isCreatable` filter from `fix-ssh-key-roundtrip` is deleted, not
 kept as dead code.
 
 `DraftSSHKeyContent` keeps its three key fields read-only for the edit form and gains one atomic
@@ -207,12 +207,80 @@ RSA, ECDSA, PEM, PKCS#8) are made the same way and by editing bytes.
 - **[Low] The two SSH changes ship far apart,** leaving users without creation for a while. → Ship
   them close together (proposal Dependencies).
 
+## Review
+
+Independent review on 2026-10-30, by a fresh reviewer who read the branch only. No blockers. The
+reviewer re-checked the three accepted vectors with Python. Findings and what was done (review
+fixes test-first: red `20261030T132803Z`, green `20261030T133013Z`):
+- Fixed: the refusals for an unsupported type or format did not name what was found, which the
+  spec requires. `SSHKeyError.unsupportedKeyType` and `.unsupportedFormat` now carry the name
+  (RSA, DSA, ECDSA; PEM, PKCS#8, PuTTY, more than one key). An unknown type is not named, so no
+  input text is shown.
+- Fixed: the truncation test accepted any error for cuts longer than 14 bytes. It now expects
+  `damaged` for every non-empty cut, as the code already did, and D4 says so.
+- Fixed: nothing stopped an SSH create without a fingerprint below the view model. Now
+  `VaultRepositoryImpl.create` refuses a type 5 draft without all three values
+  (`sshKeyIncomplete`) before anything is sent. The check is in the repository, not the mapper,
+  because tests use the mapper's create path to build fixtures with fake keys.
+- Fixed: the comment and D7 claimed that every buffer holding the seed or the decoded key is
+  zeroed. Both now say "best effort": the arrays this code owns are zeroed, but Foundation
+  temporaries, CryptoKit's own copy and Swift strings are not. Capacity is not reserved up front.
+- Fixed: the protocol doc said the private key is kept "as supplied", and D4 mentioned
+  "surrounding text". The doc now describes the new armour, and D4 makes no claim about text
+  around the key.
+- Fixed: a refusal was announced only when its text changed, so the same bad key imported twice
+  was announced once. The sheet now announces on a refusal counter.
+- Fixed: a file-read error was logged with a public `localizedDescription`, which can contain the
+  file path. It now uses `ErrorLog.describe`.
+- Declined: `Spacing.headerGap` (8 pt) is reused as the spacing between the two key buttons. The
+  value fits, and a new token for a single use was not added (§VI).
+- Partly open: accessibility (task 4.4). The rows, buttons and announcement exist, but the UI test
+  finds only the rows and "Generate new key" by label; copy hints and the announcement are not
+  checked. That waits for the pending UI run and Christian's decision (open.md).
+
+**Security (task 5.4).** `SSHKeyServiceImpl` is the only new code that touches key material. It
+imports CryptoKit and Foundation only and lives in the Data layer; the Domain sees strings
+(`SSHKeyMaterial`) and a typed `SSHKeyError`. It adds no dependency and no algorithm of its own:
+Ed25519 and SHA-256 come from CryptoKit, and the code only reads and writes length-prefixed fields.
+
+Clipboard and file input are untrusted:
+- Input over 16 KiB is refused unread, and a file is read to at most 16 KiB + 1 bytes.
+- Every length is checked against the bytes that remain, and a length that runs past the end
+  throws `damaged`. No force-unwrap or unchecked index touches the input; a test cuts a valid key
+  at every byte.
+- The checks run in the order of D4. The last one derives the public key from the seed, so a
+  private and public key that do not belong together are refused. OpenSSH 9.6 does not make this
+  check.
+- Prizm stores a new armour of the checked bytes, not the pasted text.
+
+On write:
+- A create computes the fingerprint from the public key and refuses a draft value that differs.
+  The repository refuses a create without all three values.
+- An edit sends a stored fingerprint back as received, and fills in only a missing or blank one.
+- Hidden or incomplete keys stay blocked (`fix-ssh-key-roundtrip`).
+
+Secrets:
+- No key text reaches a log or an error: `SSHKeyMaterial` prints redacted, errors carry only
+  type names, and the only new log lines name an error type or the refusal.
+- The pasteboard is read only on "From clipboard" and is not cleared. Copies go through the app's
+  concealed, auto-clearing clipboard service.
+- Zeroing is best effort, as described above.
+
+Archive pass and hand check (2026-10-30):
+- Fixed: a failure of the file picker was dropped silently (Constitution §V); it is now logged,
+  shown and announced like a refusal.
+- Fixed: a refused import was shown but not spoken; the closing Import menu cut off the
+  default-priority announcement. It is now posted at high priority through AppKit, as the edit sheet
+  does. Confirmed by Christian with VoiceOver.
+- Open Question 1 decided by Christian: no RSA/ECDSA import for now.
+
 ## Open Questions
 
 1. **RSA and ECDSA unencrypted import as a second stage?** ECDSA P-256/384/521 can be fully checked
    with CryptoKit (derive the public key from the private scalar). RSA can only be checked for
    consistency between the outer and inner public key blobs, because checking the pair needs RSA math
    that Prizm will not hand-roll. Decide at the end of stage 1, from how many users hit the refusal.
+   Decided 2026-10-30 by Christian: no follow-up for now; revisit when users ask.
 2. Should a stored fingerprint that does not match the public key be shown as a warning? Prizm can
    now compute it. Default: no, until a user asks (`fix-ssh-key-roundtrip` Open Question 2).
 3. Empty comment in generated keys, or `user@host`? Default, used: empty.

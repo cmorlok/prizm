@@ -42,7 +42,7 @@ When a synced item has its own wrapped `key`, the system SHALL unwrap it with th
 - **AND** it SHALL be counted as a failed item
 
 ### Requirement: Editing an item preserves server fields Prizm does not edit
-When the user saves an edit, the system SHALL send the item's last server record with only the fields Prizm edits replaced. It SHALL send back unchanged, without decrypting them: `login.fido2Credentials`, `login.autofillOnPageLoad`, `passwordHistory` on every item type, `archivedDate`, `sshKey.keyFingerprint`, and keys Prizm does not model inside `login`, `login.uris[]`, `card`, `identity`, `sshKey` and `fields[]`.
+When the user saves an edit, the system SHALL send the item's last server record with only the fields Prizm edits replaced. It SHALL send back unchanged, without decrypting them: `login.fido2Credentials`, `login.autofillOnPageLoad`, `passwordHistory` on every item type, `archivedDate`, and keys Prizm does not model inside `login`, `login.uris[]`, `card`, `identity`, `sshKey` and `fields[]`. `sshKey.keyFingerprint` goes back as received unless it is missing or blank (`ssh-key-creation`).
 
 #### Scenario: Editing a login keeps its passkey
 - **GIVEN** a login item holding a passkey created by the Bitwarden browser extension

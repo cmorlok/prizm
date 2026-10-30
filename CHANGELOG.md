@@ -2,11 +2,21 @@
 
 ## Unreleased
 
+- Added: SSH keys can be created in Prizm again. A new SSH key starts with a freshly generated
+  Ed25519 key; "Generate new key" makes another, and "Import key…" takes an unencrypted OpenSSH
+  Ed25519 private key from the clipboard or a file. Prizm checks that the private and public key
+  belong together and saves the fingerprint, so the key shows in every Bitwarden app.
+  Passphrase-protected keys, RSA and ECDSA keys, and PEM, PKCS#8 and PuTTY files cannot be
+  imported yet; Prizm says why and what to do.
+- Fix: saving an SSH key that has no fingerprint, such as one created by an earlier Prizm version
+  on the Bitwarden server, now adds the fingerprint computed from its public key.
 - Fix: an SSH key whose private or public key is missing (for example one that Vaultwarden hides)
   can no longer be edited in Prizm, so a save cannot overwrite the key stored on the server. Prizm
   says to repair it in a Bitwarden app.
 - Changed: the private key, public key and fingerprint of an SSH key are read-only in the edit
   sheet, as in the other Bitwarden apps. Name, notes and custom fields stay editable.
+- Known issue: SSH keys created by earlier Prizm versions are hidden on Vaultwarden. Recreate them
+  in Prizm or another Bitwarden app.
 - Removed: creating SSH keys in Prizm, until Prizm can generate or import them. Keys created in
   Prizm had no fingerprint, so Vaultwarden hid them. Create SSH keys in a Bitwarden app for now.
 - Known issue: SSH keys created by earlier Prizm versions are hidden on Vaultwarden and have no

@@ -135,5 +135,5 @@ ssh-keygen -q -t ecdsa -b 256 -m PKCS8 -N "" -C "pkcs8" -f pkcs8
 The edit script rebuilds an unedited key first and checks that it equals the `ssh-keygen` file byte
 for byte, so the edits change only the named field. `ssh-keygen -y` refuses every edited vector
 except `public-key-not-from-seed`: OpenSSH does not check that the public key derives from the seed.
-Prizm does (design D4, check 7).
+Prizm does (design D4, check 9).
 
