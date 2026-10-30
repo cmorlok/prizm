@@ -295,7 +295,8 @@ final class AppContainer: ObservableObject {
         return ItemEditViewModel(
             type: type, useCase: createVaultItemUseCase, folders: folders,
             folderId: folderId, organizationId: orgId, collectionIds: colIds,
-            organizations: organizations, collections: collections
+            organizations: organizations, collections: collections,
+            sshKeys: SSHKeyServiceImpl()
         )
     }
 

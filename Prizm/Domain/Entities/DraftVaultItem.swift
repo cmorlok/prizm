@@ -198,6 +198,15 @@ nonisolated struct DraftSSHKeyContent: Equatable {
         self.notes = source.notes
         self.customFields = source.customFields.map(DraftCustomField.init)
     }
+
+    /// Replaces the three key values at once with a generated or imported key, so they always
+    /// belong together. Used only by the create sheet (`ssh-key-import-and-generation`, design D6).
+    mutating func replace(with material: SSHKeyMaterial) {
+        self = DraftSSHKeyContent(SSHKeyContent(
+            privateKey: material.privateKey, publicKey: material.publicKey,
+            keyFingerprint: material.fingerprint, notes: notes,
+            customFields: customFields.map { CustomField(name: $0.name, value: $0.value, type: $0.type, linkedId: $0.linkedId) }))
+    }
 }
 
 // MARK: - DraftItemContent

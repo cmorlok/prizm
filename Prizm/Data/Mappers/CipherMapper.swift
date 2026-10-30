@@ -16,6 +16,13 @@ nonisolated enum CipherMapperError: Error, Equatable {
     /// save was built over it, so the save cannot be matched with what the server holds. The name is
     /// the field kind only, never a value.
     case storedValueUnreadable(String)
+    /// A new SSH key's fingerprint is not the one computed from its public key; the create is
+    /// refused so a mismatched pair is never sent (ssh-key-import-and-generation, D5).
+    case sshKeyFingerprintMismatch
+    /// A new SSH key lacks its private key, public key or fingerprint; Vaultwarden would hide it
+    /// (ssh-key-import-and-generation, D5). Thrown by `VaultRepositoryImpl.create`: the create sheet
+    /// never offers such a key, this is the backstop.
+    case sshKeyIncomplete
 }
 
 // MARK: - CipherMapper
@@ -685,7 +692,7 @@ nonisolated final class CipherMapper: Sendable {
         case .identity(let c):
             return (4, nil, nil, try toRawIdentity(c, keys: keys, base: base?.identity), nil, nil)
         case .sshKey(let c):
-            return (5, nil, nil, nil, nil, try toRawSSHKey(c, keys: keys, base: base?.sshKey))
+            return (5, nil, nil, nil, nil, try toRawSSHKey(c, keys: keys, base: base?.sshKey, isCreate: base == nil))
         }
     }
 
@@ -821,18 +828,43 @@ nonisolated final class CipherMapper: Sendable {
 
     // MARK: - Private: SSH Key reverse map
 
-    private func toRawSSHKey(_ c: DraftSSHKeyContent, keys: CryptoKeys, base: RawSSHKeyData?) throws -> RawSSHKeyData {
-        // No server derives the fingerprint: Vaultwarden 1.37.4 hides an SSH key sent without one
-        // (`src/db/models/cipher.rs:298-308`), the official server stores what it gets. An edit sends
-        // the stored EncString back as received; the key text cannot be edited
-        // (fix-ssh-key-roundtrip, D2), so it still describes the key. A create sends none: Prizm
-        // offers no SSH key creation until `ssh-key-import-and-generation` computes one.
+    private func toRawSSHKey(_ c: DraftSSHKeyContent, keys: CryptoKeys, base: RawSSHKeyData?,
+                             isCreate: Bool) throws -> RawSSHKeyData {
         RawSSHKeyData(
             privateKey:     try c.privateKey.map  { try encryptString($0, keys: keys) },
             publicKey:      try c.publicKey.map   { try encryptString($0, keys: keys) },
-            keyFingerprint: base?.keyFingerprint,
+            keyFingerprint: try sshKeyFingerprint(c, keys: keys, base: base, isCreate: isCreate),
             extras:         base?.extras ?? [:]
         )
+    }
+
+    /// The `keyFingerprint` to send (ssh-key-import-and-generation, design D5).
+    ///
+    /// No server derives it: Vaultwarden 1.37.4 hides an SSH key sent without one
+    /// (`src/db/models/cipher.rs:298-308`), the official server stores what it gets. So:
+    /// - create: computed from the draft's public key; a draft fingerprint that differs is refused
+    ///   (`sshKeyFingerprintMismatch`), so a mismatched pair is never sent;
+    /// - edit: the stored EncString as received. The key text cannot be edited
+    ///   (fix-ssh-key-roundtrip, D2), so it still describes the key. When the stored one is missing
+    ///   or decrypts to a blank string (keys created by older Prizm versions), the computed one is
+    ///   sent. A stored fingerprint is never replaced, even when it differs (design Open Question 2).
+    /// A public key that does not parse as `<type> <base64>` yields no fingerprint.
+    private func sshKeyFingerprint(_ c: DraftSSHKeyContent, keys: CryptoKeys, base: RawSSHKeyData?,
+                                   isCreate: Bool) throws -> String? {
+        let computed = c.publicKey.flatMap(SSHKeyServiceImpl.fingerprint(forPublicKey:))
+        if isCreate {
+            if let given = c.keyFingerprint, given != computed { throw CipherMapperError.sshKeyFingerprintMismatch }
+            return try computed.map { try encryptString($0, keys: keys) }
+        }
+        if let stored = base?.keyFingerprint, !isBlank(stored, keys: keys) { return stored }
+        return try computed.map { try encryptString($0, keys: keys) }
+    }
+
+    /// True when `encrypted` decrypts under `keys` to an empty or blank string. A value that does not
+    /// decrypt counts as not blank, so it goes back as received rather than being replaced.
+    private func isBlank(_ encrypted: String, keys: CryptoKeys) -> Bool {
+        guard let text = try? decryptRequired(encrypted, field: "keyFingerprint", keys: keys) else { return false }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     // MARK: - Private: Custom fields reverse map

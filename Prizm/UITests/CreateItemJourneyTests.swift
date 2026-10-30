@@ -136,6 +136,39 @@ final class CreateItemJourneyTests: PrizmUITestCase {
         app.typeKey(.escape, modifierFlags: [])
     }
 
+    /// New Item → SSH Key opens with a generated key; "Generate new key" replaces all three values;
+    /// Save is enabled (ssh-key-import-and-generation, task 4.5).
+    func testNewItemMenu_sshKey_generatesAndSaves() throws {
+        let newItemButton = app.menuButtons["create.button.newItem"]
+        XCTAssertTrue(newItemButton.waitForExistence(timeout: 5))
+        newItemButton.click()
+        let sshItem = app.menuItems["SSH Key"]
+        XCTAssertTrue(sshItem.waitForExistence(timeout: 3), "The + menu must offer SSH Key again")
+        sshItem.click()
+
+        let saveButton = app.buttons["edit.button.save"]
+        XCTAssertTrue(saveButton.waitForExistence(timeout: 3), "Choosing SSH Key must open the create sheet")
+        let publicKey = app.fieldValue("Public Key")
+        let fingerprint = app.fieldValue("Fingerprint")
+        XCTAssertTrue(publicKey.waitForExistence(timeout: 3))
+        XCTAssertTrue((publicKey.value as? String ?? "").hasPrefix("ssh-ed25519 "), "a key is generated on open")
+        let firstFingerprint = fingerprint.value as? String ?? ""
+        XCTAssertTrue(firstFingerprint.hasPrefix("SHA256:"))
+
+        app.buttons["Generate new key"].click()
+        let changed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value != %@", firstFingerprint),
+                                                object: fingerprint)
+        XCTAssertEqual(XCTWaiter().wait(for: [changed], timeout: 3), .completed, "a new key replaces the fingerprint")
+
+        // No "c" in the name: XCUITest's typeText drops it in some fields (UI test notes).
+        let nameField = app.textFields["Name"]
+        nameField.click()
+        nameField.typeText("Deploy key")
+        XCTAssertTrue(saveButton.isEnabled, "a named item with a generated key can be saved")
+        // Saving needs a server; the rig check covers it (task 5.3).
+        try UITestPrerequisite.serverWrites()
+    }
+
     // MARK: - Button stable across multiple category switches
 
     /// Visits a non-Login category (Card sidebar item) and returns to Login (All Items),

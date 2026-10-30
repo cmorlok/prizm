@@ -5,14 +5,13 @@ Offer item creation from the content pane toolbar.
 ## Requirements
 
 ### Requirement: Content pane provides new item creation via toolbar button
-The content column SHALL display a `+` button in the toolbar via `ToolbarItem(placement: .primaryAction)`. The button SHALL open a `Menu` listing the item types Prizm can create. Selecting a type opens the create sheet for that type. The button SHALL carry `AccessibilityID.Create.newItemButton`.
+The content column SHALL display a `+` button in the toolbar via `ToolbarItem(placement: .primaryAction)`. The button SHALL open a `Menu` listing all `ItemType` cases. Selecting a type opens the create sheet for that type. The button SHALL carry `AccessibilityID.Create.newItemButton`.
 
 The `+` button SHALL be conditionally rendered (not merely hidden) when `Trash` is selected — it must be absent from the view tree so that the ⌘N keyboard shortcut is also disabled in Trash.
 
 #### Scenario: Plus button opens type menu
 - **WHEN** the user clicks [+] in the content toolbar
-- **THEN** a menu appears listing Login, Card, Identity and Secure Note
-- **AND** SSH Key SHALL NOT be listed until Prizm can generate or import SSH keys (`ssh-key-integrity`)
+- **THEN** a menu appears listing all item types (Login, Card, Identity, Secure Note, SSH Key)
 
 #### Scenario: ⌘N creates Login outside Trash
 - **WHEN** the user presses ⌘N while a non-Trash category is selected

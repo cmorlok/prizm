@@ -185,7 +185,7 @@ final class CipherMapperReverseTests: XCTestCase {
         let original = makeItem(content: .sshKey(SSHKeyContent(
             privateKey: "-----BEGIN OPENSSH PRIVATE KEY-----\nABC\n-----END OPENSSH PRIVATE KEY-----",
             publicKey: "ssh-ed25519 AAAA... user@host",
-            keyFingerprint: "SHA256:abc123",
+            keyFingerprint: nil,
             notes: "Work laptop",
             customFields: []
         )))
@@ -198,9 +198,8 @@ final class CipherMapperReverseTests: XCTestCase {
         XCTAssertEqual(res.privateKey, orig.privateKey)
         XCTAssertEqual(res.publicKey, orig.publicKey)
         XCTAssertEqual(res.notes, orig.notes)
-        // The create path sends no fingerprint: no server derives one, and Prizm creates no SSH keys
-        // until it can compute one (fix-ssh-key-roundtrip, D4). An edit keeps the stored one
-        // (SSHKeyIntegrityTests).
+        // The create path computes the fingerprint from the public key; this one is not a real key,
+        // so there is none (ssh-key-import-and-generation, D5; real keys in SSHKeyIntegrityTests).
         XCTAssertNil(res.keyFingerprint)
     }
 
