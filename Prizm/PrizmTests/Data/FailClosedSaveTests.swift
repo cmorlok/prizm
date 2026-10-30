@@ -163,10 +163,8 @@ final class FailClosedSaveTests: XCTestCase {
     func testStoredNameWithoutMAC_failsTheKeyCheck() async throws {
         let readable = KeyedCipherBuilder.login(id: "t0", name: "Old format", activeKeys: vaultKeys)
         let type0Name = withoutMAC(readable.name)
-        // The type-0 name decrypts fine under the right key, but carries no MAC to verify.
+        // The type-0 name carries no MAC to verify, so it is never decrypted (fix-encstring-validation).
         XCTAssertEqual(try EncString(string: type0Name).encType, .aes256Cbc_B64)
-        XCTAssertEqual(
-            String(data: try EncString(string: type0Name).decrypt(keys: vaultKeys), encoding: .utf8), "Old format")
         let stored = RawCipher(
             id: readable.id, organizationId: nil, folderId: nil, type: 1, name: type0Name, notes: nil,
             favorite: false, reprompt: 0, deletedDate: nil, creationDate: nil, revisionDate: readable.revisionDate,
@@ -194,8 +192,7 @@ final class FailClosedSaveTests: XCTestCase {
     func testItemKeyOfType0_throwsItemKeyUnavailable() async throws {
         let itemKey = KeyedCipherBuilder.randomKeys()
         let readable = KeyedCipherBuilder.login(id: "k0", name: "Keyed", activeKeys: vaultKeys, itemKey: itemKey)
-        // The same wrapped key without its MAC part: it decrypts under the right wrapping key, so
-        // only the type check can refuse it.
+        // The same wrapped key without its MAC part, which carries the right IV and ciphertext.
         let stored = try replacingKey(of: readable, with: withoutMAC(try XCTUnwrap(readable.key)))
         XCTAssertEqual(try EncString(string: try XCTUnwrap(stored.key)).encType, .aes256Cbc_B64)
         await seed(stored)

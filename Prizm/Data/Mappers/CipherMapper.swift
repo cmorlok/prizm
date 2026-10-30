@@ -251,7 +251,8 @@ nonisolated final class CipherMapper: Sendable {
         guard let wrappedKey = raw.key else { return activeKeys }
         do {
             let wrapped = try EncString(string: wrappedKey)
-            // Only type 2 carries a MAC that `decrypt` verifies; see "Intentionally NOT done" above.
+            // `decrypt` refuses everything but type 2 too (fix-encstring-validation); this guard
+            // stays as defence in depth, so the item key never depends on that one check.
             guard wrapped.encType == .aes256Cbc_HmacSha256_B64 else {
                 throw CipherMapperError.fieldDecryptionFailed("key")
             }
@@ -287,8 +288,9 @@ nonisolated final class CipherMapper: Sendable {
     /// - Intentionally NOT done: preserved values (passkeys, password history, SSH fingerprint,
     ///   unknown keys) are never decrypted to validate them, because that would turn a passkey's
     ///   private key into plaintext for no benefit. A type-0 name is refused because it carries no
-    ///   MAC, so it proves nothing about the key; this stays until `fix-encstring-validation` refuses
-    ///   type 0 everywhere. The decrypted name is not logged and not returned.
+    ///   MAC, so it proves nothing about the key; `decrypt` refuses type 0 as well since
+    ///   `fix-encstring-validation`, and this check stays on purpose as defence in depth. The
+    ///   decrypted name is not logged and not returned.
     ///
     /// - Throws: `CipherMapperError.fieldDecryptionFailed("name")` when the name is not a type-2
     ///   EncString, its MAC does not verify, or it does not decrypt under `keys`.
@@ -299,6 +301,7 @@ nonisolated final class CipherMapper: Sendable {
         } catch {
             throw CipherMapperError.fieldDecryptionFailed("name")
         }
+        // Defence in depth: `decrypt` refuses everything but type 2 as well.
         guard name.encType == .aes256Cbc_HmacSha256_B64 else {
             throw CipherMapperError.fieldDecryptionFailed("name")
         }
@@ -352,9 +355,10 @@ nonisolated final class CipherMapper: Sendable {
     /// True when the stored name carries the type prefix `0` (AES-CBC without a MAC). Only the
     /// prefix is read, never the ciphertext, so a malformed type-0 string counts too: it cannot be
     /// saved either. A name without a type prefix is not type 0 and is left to the key check.
+    /// Such a name never decrypts (fix-encstring-validation), so the sync does not list the item;
+    /// this check matters for an item listed earlier whose stored record changed since.
     private func usesLegacyEncryption(_ raw: RawCipher) -> Bool {
-        guard let dot = raw.name.firstIndex(of: ".") else { return false }
-        return Int(raw.name[..<dot]) == EncType.aes256Cbc_B64.rawValue
+        EncString.splitHeader(raw.name)?.type == EncType.aes256Cbc_B64.rawValue
     }
 
     /// True when an SSH key section is absent or null, or its private or public key is absent or an

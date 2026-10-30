@@ -455,6 +455,13 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
             logger.error("Failed to parse encUserKey EncString: \(ErrorLog.describe(error), privacy: .public)")
             throw PrizmCryptoServiceError.invalidEncUserKey
         }
+        // The one place the user key's type is checked (fix-encstring-validation, D1). A type-0
+        // user key is a legacy account, which official clients refuse ("legacyEncryptionUnsupported");
+        // `account-scope-and-unsupported-features` is to give it a named message here.
+        guard enc.encType == .aes256Cbc_HmacSha256_B64 else {
+            logger.error("encUserKey is EncString type \(enc.encType.rawValue, privacy: .public), not 2")
+            throw PrizmCryptoServiceError.invalidEncUserKey
+        }
 
         var keyData: Data
         do {
