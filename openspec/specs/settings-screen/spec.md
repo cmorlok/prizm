@@ -7,7 +7,7 @@ detection, and enable/disable behavior are owned by `biometric-unlock`.
 ## Requirements
 
 ### Requirement: Settings window opens via ⌘, and gear toolbar button
-The system SHALL provide a macOS Settings window using the SwiftUI `Settings` scene, accessible via ⌘, (standard macOS keyboard shortcut) and via a gear icon button in the vault browser toolbar placed next to the search field. The Settings window SHALL open as a separate native macOS window.
+The system SHALL provide a macOS Settings window using the SwiftUI `Settings` scene, accessible via ⌘, (standard macOS keyboard shortcut) and via a gear icon button in the sidebar toolbar of the vault browser, placed next to the sidebar toggle and visible without the toolbar overflow menu. The Settings window SHALL open as a separate native macOS window.
 
 #### Scenario: Settings opens via keyboard shortcut
 - **WHEN** the user presses ⌘, while the vault browser is visible
@@ -20,10 +20,9 @@ The system SHALL provide a macOS Settings window using the SwiftUI `Settings` sc
 
 #### Scenario: Gear button is visible in the vault browser toolbar
 - **GIVEN** the vault is unlocked and the vault browser is shown
-- **WHEN** the detail column toolbar is rendered
-- **THEN** a gear icon button SHALL be visible next to the search field
-
----
+- **WHEN** the sidebar column is at its minimum width
+- **THEN** a gear icon button SHALL be visible in the toolbar next to the sidebar toggle
+- **AND** it SHALL NOT be moved into the "more toolbar items" overflow menu
 
 ### Requirement: Settings window contains the biometric unlock toggle
 The Settings window SHALL display a Security section containing the biometric unlock toggle. The toggle SHALL be visible only when the device supports biometric authentication. The toggle's label and biometry-type detection (Touch ID vs Face ID) are owned by `biometric-unlock`; this requirement only covers the control's presence and visibility in Settings.

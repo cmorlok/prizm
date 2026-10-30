@@ -31,3 +31,20 @@ without the overflow menu.
 - **[Low] The list and detail columns lose up to 30 pt.** On a 1280 pt wide window the detail
   column still has more than 700 pt.
 - **[Low] A future macOS toolbar change can overflow it again.** The UI test catches that.
+
+## Review
+
+Independent review on 2026-10-30 (fresh reviewer, read-only, diff against `develop`), three findings,
+no blocker:
+- Fixed: the narrow-sidebar UI test dragged the divider a fixed 150 pt, so a sidebar restored wider
+  than about 370 pt would never reach the minimum. It now drags by the sidebar's full width.
+- Fixed: task 1.3 still called the check a hand check although a UI test now does it. The task
+  names the test.
+- Declined: the column widths `min: 220, ideal: 240` are literals, not design tokens. The list
+  column uses the same pattern, and the design system's tokens cover spacing and typography, not
+  column widths.
+
+The reviewer also noted that the two "Settings opens" scenarios (⌘, and clicking the gear) have no
+automated test. They were untested before; this change only rewords where the gear sits.
+
+No security-relevant code is touched: one column width and one UI test.
