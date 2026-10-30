@@ -57,6 +57,17 @@ final class WebsiteIconHostTests: XCTestCase {
         XCTAssertEqual(WebsiteIconHost.host(for: login), "www.example.com")
     }
 
+    /// Spec scenario "First URI without a value": a website stored without an address is skipped.
+    func testHostOfAnItem_skipsAURIWithoutAValue() {
+        let login = VaultItem(id: "2", name: "x", isFavorite: false, isDeleted: false,
+                              creationDate: Date(), revisionDate: Date(),
+                              content: .login(LoginContent(username: nil, password: nil,
+                                                           uris: [LoginURI(uri: nil, matchType: nil),
+                                                                  LoginURI(uri: "https://example.com", matchType: nil)],
+                                                           totp: nil, notes: nil, customFields: [])))
+        XCTAssertEqual(WebsiteIconHost.host(for: login), "example.com")
+    }
+
     func testEmptyAndNonWebsites() {
         XCTAssertNil(host(""))
         XCTAssertNil(host("   "))
