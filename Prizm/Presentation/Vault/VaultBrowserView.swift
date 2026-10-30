@@ -63,7 +63,11 @@ struct VaultBrowserView: View {
                 searchQuery:    viewModel.searchQuery.isEmpty ? nil : viewModel.searchQuery,
                 organizations:  viewModel.organizations,
                 onDelete:       { id in await viewModel.performSoftDelete(id: id) },
-                onToggleFavorite: { viewModel.toggleFavorite(item: $0) }
+                onToggleFavorite: { viewModel.toggleFavorite(item: $0) },
+                onSetArchived:  { item in
+                    guard viewModel.canSetArchived(item) else { return nil }
+                    return { archived in await viewModel.performSetArchived(id: item.id, archived: archived) }
+                }
             )
         }
     }
@@ -214,6 +218,18 @@ struct VaultBrowserView: View {
                                 .help(item.isFavorite ? "Unfavorite" : "Favorite")
                                 .accessibilityLabel(item.isFavorite ? "Unfavorite" : "Favorite")
                                 .accessibilityValue(item.isFavorite ? "Favorited" : "Not favorited")
+                            }
+                            if viewModel.canSetArchived(item) {
+                                ToolbarItem(placement: .primaryAction) {
+                                    Button {
+                                        Task { await viewModel.performSetArchived(id: item.id, archived: !item.isArchived) }
+                                    } label: {
+                                        Image(systemName: item.isArchived ? "archivebox.fill" : "archivebox")
+                                    }
+                                    .help(item.isArchived ? "Unarchive" : "Archive")
+                                    .accessibilityLabel(item.isArchived ? "Unarchive" : "Archive")
+                                    .accessibilityIdentifier(AccessibilityID.Archive.toolbarButton)
+                                }
                             }
                             ToolbarItem(placement: .primaryAction) {
                                 Button("Edit") {

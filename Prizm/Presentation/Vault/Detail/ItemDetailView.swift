@@ -125,6 +125,14 @@ struct ItemDetailView: View {
             Text(item.name.isEmpty ? " " : item.name)
                 .font(Typography.pageTitle)
                 .accessibilityIdentifier(AccessibilityID.Detail.itemName)
+            if item.isArchived && !item.isDeleted {
+                Text("Archived")
+                    .font(Typography.utility)
+                    .padding(.horizontal, Spacing.badgeHorizontal)
+                    .padding(.vertical, Spacing.badgeVertical)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: Spacing.badgeCornerRadius))
+                    .accessibilityIdentifier(AccessibilityID.Archive.badge)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, Spacing.pageTop)

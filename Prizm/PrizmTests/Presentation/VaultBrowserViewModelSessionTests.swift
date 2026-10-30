@@ -175,7 +175,8 @@ final class VaultBrowserViewModelTrashTests: XCTestCase {
 }
 
 @MainActor
-private func makeVaultBrowserViewModel(vault: MockVaultRepository, search: any SearchVaultUseCase) -> VaultBrowserViewModel {
+private func makeVaultBrowserViewModel(vault: MockVaultRepository, search: any SearchVaultUseCase,
+                                       setArchived: (any SetItemArchivedUseCase)? = nil) -> VaultBrowserViewModel {
     let syncRepo = MockSyncTimestampRepository(storedDate: nil)
     return VaultBrowserViewModel(
         vault:           vault,
@@ -195,7 +196,8 @@ private func makeVaultBrowserViewModel(vault: MockVaultRepository, search: any S
         deleteCollection: StubDeleteCollection(),
         syncTimestamp:    syncRepo,
         getLastSyncDate:  GetLastSyncDateUseCaseImpl(repository: syncRepo),
-        sync:             MockSyncUseCase()
+        sync:             MockSyncUseCase(),
+        setArchived:      setArchived
     )
 }
 
@@ -259,4 +261,127 @@ private struct StubRenameCollection: RenameCollectionUseCase {
 }
 private struct StubDeleteCollection: DeleteCollectionUseCase {
     func execute(collectionId: String, organizationId: String) async throws {}
+}
+
+// MARK: - Archive (archived-items)
+
+/// Archive actions in the browser (openspec change `archived-items`, tasks 3.3 and 4.3).
+@MainActor
+final class VaultBrowserViewModelArchiveTests: XCTestCase {
+
+    private final class SpyArchiveUseCase: SetItemArchivedUseCase {
+        var error: Error?
+        var onExecute: ((String, Bool) async -> Void)?
+        private(set) var calls: [(String, Bool)] = []
+        func execute(id: String, archived: Bool) async throws {
+            calls.append((id, archived))
+            // While the request "runs", then its outcome.
+            await onExecute?(id, archived)
+            if let error { throw error }
+        }
+    }
+
+    private var vault: MockVaultRepository!
+    private var useCase: SpyArchiveUseCase!
+    private var sut: VaultBrowserViewModel!
+
+    private func item(_ id: String, archived: Bool = false, deleted: Bool = false) -> VaultItem {
+        VaultItem(id: id, name: id, isFavorite: false, isDeleted: deleted, creationDate: Date(), revisionDate: Date(),
+                  content: .secureNote(SecureNoteContent(notes: nil, customFields: [])),
+                  archivedDate: archived ? Date() : nil)
+    }
+
+    override func setUp() async throws {
+        try await super.setUp()
+        vault = MockVaultRepository()
+        useCase = SpyArchiveUseCase()
+        sut = makeVaultBrowserViewModel(vault: vault, search: SearchVaultUseCaseImpl(vault: vault), setArchived: useCase)
+    }
+
+    private func waitUntil(_ condition: @escaping () -> Bool) async throws {
+        for _ in 0..<200 where !condition() { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertTrue(condition(), "condition not met in time")
+    }
+
+    func testCanSetArchived_followsServerSupportAndTrash() async throws {
+        vault.stubbedArchiveSupported = true
+        sut.refreshCounts()
+        try await waitUntil { self.sut.isArchiveSupported }
+        XCTAssertTrue(sut.canSetArchived(item("a")))
+        XCTAssertTrue(sut.canSetArchived(item("b", archived: true)))
+        XCTAssertFalse(sut.canSetArchived(item("c", deleted: true)), "not on a trashed item")
+        // No premium or permission gate: the archive state is per user, and a refusal shows the
+        // server's message (spec scenario "No premium check"; verify 2026-10-31).
+        let readOnlyOrgItem = VaultItem(id: "d", name: "d", isFavorite: false, isDeleted: false, creationDate: Date(),
+                                        revisionDate: Date(), content: .secureNote(SecureNoteContent(notes: nil, customFields: [])),
+                                        organizationId: "org-1", editBlock: .unsupportedFormat)
+        XCTAssertTrue(sut.canSetArchived(readOnlyOrgItem))
+
+        vault.stubbedArchiveSupported = false
+        sut.refreshCounts()
+        try await waitUntil { !self.sut.isArchiveSupported }
+        XCTAssertFalse(sut.canSetArchived(item("a")), "hidden on a server without archive")
+        XCTAssertTrue(sut.canSetArchived(item("b", archived: true)), "an archived item can still be unarchived")
+    }
+
+    func testArchive_announcesAndKeepsTheItemSelected() async throws {
+        let original = item("a")
+        await vault.populate(items: [original], folders: [], organizations: [], collections: [], syncedAt: Date())
+        sut.itemSelection = original
+        useCase.onExecute = { [vault] _, _ in
+            await vault?.populate(items: [original.with(archivedDate: Date())], folders: [], organizations: [],
+                                  collections: [], syncedAt: Date())
+        }
+
+        await sut.performSetArchived(id: "a", archived: true)
+
+        XCTAssertEqual(useCase.calls.map(\.1), [true])
+        XCTAssertEqual(sut.announcement, "Item archived")
+        XCTAssertEqual(sut.itemSelection?.id, "a")
+        XCTAssertEqual(sut.itemSelection?.isArchived, true, "the selection shows the moved item")
+    }
+
+    func testRefusal_showsTheMessage() async {
+        useCase.error = VaultError.archiveUnsupported
+        await sut.performSetArchived(id: "a", archived: true)
+        XCTAssertEqual(sut.actionError, "This server doesn't support archiving items.")
+        XCTAssertNil(sut.announcement)
+    }
+
+    func testArchiveSelection_fallsBackToAllItemsWhenEmpty() async throws {
+        sut.sidebarSelection = .archive
+        vault.stubbedItemCounts = [.archive: 0]
+        sut.refreshCounts()
+        try await waitUntil { self.sut.sidebarSelection == .allItems }
+    }
+
+    func testUnarchivingTheLastArchivedItem_keepsItSelected() async throws {
+        let archived = item("a", archived: true)
+        await vault.populate(items: [archived], folders: [], organizations: [], collections: [], syncedAt: Date())
+        sut.sidebarSelection = .archive
+        try await waitUntil { self.sut.displayedItems.map(\.id) == ["a"] }
+        sut.itemSelection = archived
+        useCase.onExecute = { [vault] _, _ in
+            await vault?.populate(items: [archived.with(archivedDate: nil)], folders: [], organizations: [],
+                                  collections: [], syncedAt: Date())
+        }
+        vault.stubbedItemCounts = [.archive: 0]
+
+        await sut.performSetArchived(id: "a", archived: false)
+
+        try await waitUntil { self.sut.sidebarSelection == .allItems }
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(sut.itemSelection?.id, "a", "the unarchived item stays selected")
+        XCTAssertEqual(sut.itemSelection?.isArchived, false)
+    }
+
+    func testArchiveFinishingAfterALock_showsNothingInTheNextSession() async throws {
+        useCase.error = VaultError.vaultLocked
+        useCase.onExecute = { [sut] _, _ in
+            await MainActor.run { sut?.clearSession(); sut?.beginSession() }
+        }
+        await sut.performSetArchived(id: "a", archived: true)
+        XCTAssertNil(sut.actionError, "an error from the ended session is not shown")
+        XCTAssertNil(sut.announcement)
+    }
 }

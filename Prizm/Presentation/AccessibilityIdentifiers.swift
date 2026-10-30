@@ -125,6 +125,14 @@ nonisolated enum AccessibilityID {
         static func row(_ index: Int) -> String { "history.\(index).unreadable" }
     }
 
+    // MARK: - Archive (archived-items)
+
+    enum Archive {
+        static let sidebarRow    = "sidebar.archive"
+        static let toolbarButton = "detail.archive"
+        static let badge         = "detail.archivedBadge"
+    }
+
     // MARK: - Field Row (US3)
 
     enum Field {

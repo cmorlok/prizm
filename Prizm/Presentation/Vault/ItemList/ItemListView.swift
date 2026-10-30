@@ -19,6 +19,8 @@ struct ItemListView: View {
     /// Nil disables the delete context-menu action (e.g. when trash actions are unavailable).
     var onDelete: ((String) async -> Void)? = nil
     var onToggleFavorite: ((VaultItem) -> Void)? = nil
+    /// Archives (`true`) or unarchives an item; nil for an item it is not offered on (archived-items).
+    var onSetArchived: ((VaultItem) -> ((Bool) async -> Void)?)? = nil
 
     // Tracks which item is pending a soft-delete confirmation alert.
     @State private var itemToDelete:    VaultItem? = nil
@@ -62,6 +64,11 @@ struct ItemListView: View {
                                         if let onToggleFavorite {
                                             Button(item.isFavorite ? "Unfavorite" : "Favorite") {
                                                 onToggleFavorite(item)
+                                            }
+                                        }
+                                        if let setArchived = onSetArchived?(item) {
+                                            Button(item.isArchived ? "Unarchive" : "Archive") {
+                                                Task { await setArchived(!item.isArchived) }
                                             }
                                         }
                                         if onDelete != nil {

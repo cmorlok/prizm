@@ -39,14 +39,21 @@ final class VaultBrowserViewModel: ObservableObject {
             if oldValue != sidebarSelection {
                 if isGlobalSearch { deactivateGlobalSearch(restoreSelection: false) }
                 Task { @MainActor [weak self] in
-                    self?.itemSelection = nil
-                    self?.refreshItems()
+                    guard let self else { return }
+                    // A fallback that keeps the shown item (see `refreshCounts`) sets it; any other
+                    // change of the sidebar row clears the selection.
+                    itemSelection = selectionKeptAcrossFallback
+                    selectionKeptAcrossFallback = nil
+                    refreshItems()
                 }
             }
         }
     }
 
     @Published var itemSelection: VaultItem?
+
+    /// The item to keep selected across the next sidebar change; set only by the Archive fallback.
+    private var selectionKeptAcrossFallback: VaultItem?
     @Published var searchQuery:   String = "" {
         didSet { Task { @MainActor in refreshItems() } }
     }
@@ -113,6 +120,8 @@ final class VaultBrowserViewModel: ObservableObject {
     private let deleteUseCase:          any DeleteVaultItemUseCase
     private let permanentDeleteUseCase: any PermanentDeleteVaultItemUseCase
     private let restoreUseCase:         any RestoreVaultItemUseCase
+    /// Nil hides Archive and Unarchive (tests that predate archived-items).
+    private let setArchivedUseCase:     (any SetItemArchivedUseCase)?
     private let createFolderUseCase:      any CreateFolderUseCase
     private let renameFolderUseCase:      any RenameFolderUseCase
     private let deleteFolderUseCase:      any DeleteFolderUseCase
@@ -201,6 +210,7 @@ final class VaultBrowserViewModel: ObservableObject {
         syncTimestamp:     any SyncTimestampRepository,
         getLastSyncDate:   any GetLastSyncDateUseCase,
         sync:              any SyncUseCase,
+        setArchived:       (any SetItemArchivedUseCase)? = nil,
         conflictResyncRetryDelay: Duration = .milliseconds(500)
     ) {
         self.vault                  = vault
@@ -221,6 +231,7 @@ final class VaultBrowserViewModel: ObservableObject {
         self.syncTimestamp          = syncTimestamp
         self.getLastSyncDate        = getLastSyncDate
         self.sync                   = sync
+        self.setArchivedUseCase     = setArchived
         self.conflictResyncRetryDelay = conflictResyncRetryDelay
         refreshItems()
         refreshCounts()
@@ -304,6 +315,7 @@ final class VaultBrowserViewModel: ObservableObject {
         sessionGeneration &+= 1
         syncErrorFromConflictResync = false
         itemSelection     = nil
+        selectionKeptAcrossFallback = nil
         displayedItems    = []
         itemCounts        = [:]
         folders           = []
@@ -381,8 +393,18 @@ final class VaultBrowserViewModel: ObservableObject {
             guard let self else { return }
             do {
                 let counts = try await vault.itemCounts()
+                let archiveSupported = await vault.isArchiveSupported()
                 guard isCurrent(generation) else { return }
                 itemCounts = counts
+                isArchiveSupported = archiveSupported
+                // The Archive row is shown only while it lists items; when it goes away while
+                // selected, fall back to All Items as for a deleted folder (archived-items, D6).
+                if sidebarSelection == .archive, (counts[.archive] ?? 0) == 0 {
+                    // The last archived item was just unarchived: it is in All Items now and stays
+                    // selected (archived-items spec, "Last archived item unarchived").
+                    selectionKeptAcrossFallback = itemSelection.flatMap { $0.isArchived ? nil : $0 }
+                    sidebarSelection = .allItems
+                }
             } catch {
                 logger.error("Failed to load item counts: \(ErrorLog.describe(error), privacy: .public)")
             }
@@ -713,6 +735,39 @@ final class VaultBrowserViewModel: ObservableObject {
                 guard isCurrent(generation) else { return }
                 actionError = error.localizedDescription
             }
+        }
+    }
+
+    // MARK: - Archive (archived-items)
+
+    /// Whether the server keeps archive state (`VaultRepository.isArchiveSupported`), refreshed with
+    /// the counts.
+    @Published private(set) var isArchiveSupported = false
+
+    /// Archive is offered for every active item and Unarchive for every archived one, with no
+    /// premium check (archived-items, D4); both are hidden on a server without archive.
+    func canSetArchived(_ item: VaultItem) -> Bool {
+        setArchivedUseCase != nil && !item.isDeleted && (item.isArchived || isArchiveSupported)
+    }
+
+    /// Archives (`true`) or unarchives `id`. The item stays selected and moves to its new list; a
+    /// refusal shows the server's message and leaves it where it is.
+    func performSetArchived(id: String, archived: Bool) async {
+        guard let setArchivedUseCase else { return }
+        let generation = sessionGeneration
+        do {
+            try await setArchivedUseCase.execute(id: id, archived: archived)
+            // Nothing for a session that ended (lock or sign-out) while the request ran.
+            guard isCurrent(generation) else { return }
+            announcement = archived ? "Item archived" : "Item unarchived"
+            if itemSelection?.id == id, let moved = try? await vault.itemDetail(id: id), isCurrent(generation) {
+                itemSelection = moved
+            }
+            refreshItems()
+            refreshCounts()
+        } catch {
+            logger.error("\(archived ? "Archive" : "Unarchive", privacy: .public) failed for \(id, privacy: .public): \(ErrorLog.describe(error), privacy: .public)")
+            if isCurrent(generation) { actionError = error.localizedDescription }
         }
     }
 

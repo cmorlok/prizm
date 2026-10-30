@@ -101,6 +101,9 @@ enum UITestFixtures {
             if let history = passwordHistory[item.id] {
                 record = try! withPasswordHistory(record, history, keys: keys)
             }
+            // A server with archive sends the key on every record, `null` when not archived; it is
+            // what turns the Archive action on (archived-items, D5).
+            record = try! withArchivedDate(record, item.archivedDate)
             // The UI-test vault's records follow the same rule as the server's: each carries its
             // item's revision, which the save path relies on to compare revisions. Re-encoding a
             // fixed record cannot fail, so a failure traps in this DEBUG seam, like the other
@@ -122,6 +125,12 @@ enum UITestFixtures {
             ["password": try EncString.encrypt(data: Data(entry.value.utf8), keys: keys).toString(),
              "lastUsedDate": entry.date]
         }
+        return try JSONDecoder().decode(RawCipher.self, from: JSONSerialization.data(withJSONObject: json))
+    }
+
+    private static func withArchivedDate(_ record: RawCipher, _ date: Date?) throws -> RawCipher {
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(record)) as? [String: Any] ?? [:]
+        json["archivedDate"] = date.map { serverRevisionString(for: $0) } ?? NSNull()
         return try JSONDecoder().decode(RawCipher.self, from: JSONSerialization.data(withJSONObject: json))
     }
 
@@ -239,6 +248,22 @@ enum UITestFixtures {
     /// journeys walk through is unchanged.
     static var withOrgFolders: Bool { CommandLine.arguments.contains("--ui-test-org-folders") }
 
+    /// `--ui-test-archived`: adds an archived login (archived-items). Off by default, so the sidebar
+    /// the other journeys walk through has no Archive row.
+    static var withArchivedItem: Bool { CommandLine.arguments.contains("--ui-test-archived") }
+
+    /// The archived login `--ui-test-archived` adds.
+    static var archivedItem: VaultItem {
+        VaultItem(
+            id: "archived1", name: "Archived Login", isFavorite: false, isDeleted: false,
+            creationDate: Date(timeIntervalSince1970: 1_700_000_000),
+            revisionDate: Date(timeIntervalSince1970: 1_700_000_000),
+            content: .login(LoginContent(username: "user-archived", password: "pw-archived", uris: [],
+                                         totp: nil, notes: nil, customFields: [])),
+            archivedDate: Date(timeIntervalSince1970: 1_700_000_500)
+        )
+    }
+
     /// `--ui-test-blocked-item`: adds an item Prizm cannot edit, for the journey that checks the
     /// disabled Edit button and its note. Off by default so the other journeys' lists stay unchanged.
     static var withBlockedItem: Bool { CommandLine.arguments.contains("--ui-test-blocked-item") }
@@ -260,6 +285,7 @@ enum UITestFixtures {
 
     static var items: [VaultItem] {
         let all = seededItems + (withOrgFolders ? [orgItemInFolder] : []) + (withBlockedItem ? [blockedItem] : [])
+            + (withArchivedItem ? [archivedItem] : [])
         guard withoutSeeds else { return all }
         return all.map { item in
             guard case .login = item.content else { return item }
