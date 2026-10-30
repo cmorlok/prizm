@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fix: the edit and New Item sheets were so short that only about three fields showed,
+  organization items worst. The sheet now asks for 800 pt; in a smaller window it fits the window
+  and the fields scroll.
 - Fix: the Settings button (gear) had moved into the toolbar's overflow menu, so it was hidden, and
   VoiceOver users did not find it in the toolbar. It is back next to the sidebar toggle; the
   sidebar is now at least 220 pt wide.
