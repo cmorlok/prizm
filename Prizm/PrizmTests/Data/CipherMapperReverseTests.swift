@@ -198,8 +198,9 @@ final class CipherMapperReverseTests: XCTestCase {
         XCTAssertEqual(res.privateKey, orig.privateKey)
         XCTAssertEqual(res.publicKey, orig.publicKey)
         XCTAssertEqual(res.notes, orig.notes)
-        // keyFingerprint is not sent to the API; the forward-mapped result will have nil.
-        // This is expected — the server returns the authoritative fingerprint post-save.
+        // The create path sends no fingerprint: no server derives one, and Prizm creates no SSH keys
+        // until it can compute one (fix-ssh-key-roundtrip, D4). An edit keeps the stored one
+        // (SSHKeyIntegrityTests).
         XCTAssertNil(res.keyFingerprint)
     }
 

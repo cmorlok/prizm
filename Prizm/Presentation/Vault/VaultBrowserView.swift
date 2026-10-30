@@ -143,7 +143,7 @@ struct VaultBrowserView: View {
                     if viewModel.sidebarSelection != .trash {
                         ToolbarItem(placement: .primaryAction) {
                             Menu {
-                                ForEach(ItemType.allCases) { type in
+                                ForEach(ItemType.allCases.filter(\.isCreatable)) { type in
                                     Button {
                                         viewModel.createItemType = type
                                     } label: {

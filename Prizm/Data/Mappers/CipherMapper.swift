@@ -181,7 +181,7 @@ nonisolated final class CipherMapper: Sendable {
             folderId:       raw.folderId,
             organizationId: raw.organizationId,
             collectionIds:  raw.collectionIds,
-            editBlock:      editBlock(for: raw)
+            editBlock:      editBlock(for: raw) ?? incompleteSSHKeyBlock(for: content)
         )
         return (item: item, cipherKey: effective.toData())
     }
@@ -293,6 +293,8 @@ nonisolated final class CipherMapper: Sendable {
     /// - a blob (`hasBlobData`): the official server stores a `data` that carries a `format_version`
     ///   verbatim and ignores the typed fields, so a save would not change the item;
     /// - a partial item (`hasPartialData`): Prizm does not hold the whole record;
+    /// - an SSH key item (type 5) without its private or public key, or without its SSH key object:
+    ///   `incompleteSSHKey` (`lacksKeyMaterial`);
     /// - a type 1, 3, 4 or 5 item without its login, card, identity or SSH key object: nothing to
     ///   rebuild the section from. A secure note (type 2) is mappable without its object, because
     ///   Prizm writes `{ "type": 0 }` back;
@@ -315,6 +317,7 @@ nonisolated final class CipherMapper: Sendable {
     private func lastingEditBlock(for raw: RawCipher) -> EditBlockReason? {
         if raw.hasBlobData { return .unsupportedFormat }
         if raw.hasPartialData { return .partiallyAvailable }
+        if raw.type == 5, lacksKeyMaterial(raw.sshKey) { return .incompleteSSHKey }
         if lacksItsTypeObject(raw) { return .unmappable }
         if usesLegacyEncryption(raw) { return .legacyEncryption }
         return nil
@@ -326,6 +329,24 @@ nonisolated final class CipherMapper: Sendable {
     private func usesLegacyEncryption(_ raw: RawCipher) -> Bool {
         guard let dot = raw.name.firstIndex(of: ".") else { return false }
         return Int(raw.name[..<dot]) == EncType.aes256Cbc_B64.rawValue
+    }
+
+    /// True when an SSH key section is absent or null, or its private or public key is absent or an
+    /// empty string: Vaultwarden 1.37.4 sends `sshKey: null` for an SSH item without fingerprint,
+    /// private or public key while the database row keeps them (`src/db/models/cipher.rs:298-308`),
+    /// so a save would overwrite the stored key (fix-ssh-key-roundtrip, D3). A missing fingerprint
+    /// alone is not checked here: an edit keeps it as it is.
+    private func lacksKeyMaterial(_ ssh: RawSSHKeyData?) -> Bool {
+        guard let ssh else { return true }
+        return ssh.privateKey?.isEmpty != false || ssh.publicKey?.isEmpty != false
+    }
+
+    /// The block for a mapped SSH item whose private or public key decrypted to an empty string,
+    /// which `editBlock(for:)` cannot see without decrypting.
+    private func incompleteSSHKeyBlock(for content: ItemContent) -> EditBlockReason? {
+        guard case .sshKey(let ssh) = content, !ssh.hasKeyMaterial else { return nil }
+        Self.logger.debug("SSH key item cannot be edited: incompleteSSHKey")
+        return .incompleteSSHKey
     }
 
     /// True for a login, card, identity or SSH key item whose own section is absent or null.
@@ -801,10 +822,11 @@ nonisolated final class CipherMapper: Sendable {
     // MARK: - Private: SSH Key reverse map
 
     private func toRawSSHKey(_ c: DraftSSHKeyContent, keys: CryptoKeys, base: RawSSHKeyData?) throws -> RawSSHKeyData {
-        // The fingerprint is not derived or checked here. A request without it makes Vaultwarden
-        // 1.37.4 drop the whole SSH key (design E8), so an edit sends the stored EncString back as
-        // received. Editing the key text keeps the old fingerprint until `fix-ssh-key-roundtrip`
-        // derives a new one. A create sends none, which that change also covers.
+        // No server derives the fingerprint: Vaultwarden 1.37.4 hides an SSH key sent without one
+        // (`src/db/models/cipher.rs:298-308`), the official server stores what it gets. An edit sends
+        // the stored EncString back as received; the key text cannot be edited
+        // (fix-ssh-key-roundtrip, D2), so it still describes the key. A create sends none: Prizm
+        // offers no SSH key creation until `ssh-key-import-and-generation` computes one.
         RawSSHKeyData(
             privateKey:     try c.privateKey.map  { try encryptString($0, keys: keys) },
             publicKey:      try c.publicKey.map   { try encryptString($0, keys: keys) },

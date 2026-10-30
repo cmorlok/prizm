@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Fix: an SSH key whose private or public key is missing (for example one that Vaultwarden hides)
+  can no longer be edited in Prizm, so a save cannot overwrite the key stored on the server. Prizm
+  says to repair it in a Bitwarden app.
+- Changed: the private key, public key and fingerprint of an SSH key are read-only in the edit
+  sheet, as in the other Bitwarden apps. Name, notes and custom fields stay editable.
+- Removed: creating SSH keys in Prizm, until Prizm can generate or import them. Keys created in
+  Prizm had no fingerprint, so Vaultwarden hid them. Create SSH keys in a Bitwarden app for now.
+- Known issue: SSH keys created by earlier Prizm versions are hidden on Vaultwarden and have no
+  fingerprint on the Bitwarden server. Recreate them in a Bitwarden app.
 - Fix: editing an item no longer deletes custom fields without a name or websites without an
   address, and no longer changes field types, linked fields or website match rules that Prizm does
   not know. Prizm shows them as "Unnamed field", "Unsupported field type" (read-only, hidden like a

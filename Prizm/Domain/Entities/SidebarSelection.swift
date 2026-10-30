@@ -32,6 +32,11 @@ nonisolated enum ItemType: String, Equatable, Hashable, CaseIterable, Identifiab
         case .sshKey:     return "terminal"
         }
     }
+
+    /// Whether Prizm offers this type in New Item. SSH keys are not created until Prizm can
+    /// generate or import a key with its fingerprint (openspec changes `fix-ssh-key-roundtrip`, D4,
+    /// and `ssh-key-import-and-generation`): a key without one is hidden by Vaultwarden.
+    var isCreatable: Bool { self != .sshKey }
 }
 
 /// Represents which sidebar row the user has selected.
