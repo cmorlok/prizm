@@ -73,6 +73,7 @@
 		53D703D1E7F5204C0B1F2861 /* CreateItemJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5DA157731CED7E933B1DAD7 /* CreateItemJourneyTests.swift */; };
 		325397BA09D8899F1EBC9757 /* EditItemJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF584A61C3A4EC6ADA18A608 /* EditItemJourneyTests.swift */; };
 		A09339128A31094E32BA184D /* EditSheetLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39DAF06CF084CA86F5E4E0AD /* EditSheetLayoutTests.swift */; };
+		3594B1E845A17C810B40A140 /* CollectionPickerJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A219083256A08FCA0D5EB57 /* CollectionPickerJourneyTests.swift */; };
 		6A01DCC1DFA27ADC42961580 /* KeyboardNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62BD63C6311650DC365E4EB0 /* KeyboardNavigationTests.swift */; };
 		DB96B1ECE6D3842D47240F3C /* LoginJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF759512918D91F966308B59 /* LoginJourneyTests.swift */; };
 		3BE22F45B780FDA1B6E80B08 /* PasswordGeneratorJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79CCCB32E2618189C4DD4D1F /* PasswordGeneratorJourneyTests.swift */; };
@@ -144,6 +145,7 @@
 		BB100D1E00000000000000F2 /* JSONValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100D1E00000000000000F2 /* JSONValue.swift */; };
 		175CE5C87A85D04465249B93 /* WireKdfSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5077DEE7ABDAD6E15AE5457 /* WireKdfSettings.swift */; };
 		890CF8A6B6C13E4DD0C96BA2 /* FirstLetterCaseInsensitiveKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03031A37BBA04C7B5454CDB /* FirstLetterCaseInsensitiveKey.swift */; };
+		713C8E9BAAAE7DA5849D88CD /* CipherCollectionsResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B8A39A8FF5DFB8B865A6C6C /* CipherCollectionsResult.swift */; };
 		BB100B00000000000000000B /* VaultKeyServiceImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100B00000000000000000B /* VaultKeyServiceImpl.swift */; };
 		BB100C00000000000000000C /* AttachmentMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100C00000000000000000C /* AttachmentMapper.swift */; };
 		BB100D00000000000000000D /* UploadAttachmentUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100D00000000000000000D /* UploadAttachmentUseCaseImpl.swift */; };
@@ -201,6 +203,7 @@
 		960765B0AB097AD5A024293E /* LegacyPreloginEndpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFDBB17F6E2AA8597455939D /* LegacyPreloginEndpoint.swift */; };
 		5DF16C9D6534C4005EA888F7 /* LegacyTokenUserKeyFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12B13DCFA3F09DB8B8DAEBF1 /* LegacyTokenUserKeyFields.swift */; };
 		7FF4F8DF427DE5B4A1FD329A /* LegacyPreloginKdfFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2EA196E567C8A1C74672A3C /* LegacyPreloginKdfFields.swift */; };
+		9DA915B7843DBBBA89E8E555 /* LegacyCipherCollectionsEndpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85A76C3C2D395298DAC61ACC /* LegacyCipherCollectionsEndpoint.swift */; };
 		DB6006E4E878A9C9C893C91A /* SetFavoriteUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33F70D5AD25DD2A43576733F /* SetFavoriteUseCase.swift */; };
 		918757C4B8FDA02ACD662167 /* SetFavoriteUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47EF6BBB6170F5C4F6D7AB9B /* SetFavoriteUseCaseImpl.swift */; };
 		5FB03807205EB54F055B4317 /* CollectionAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C7F64FECEB4D5C21395C438 /* CollectionAccess.swift */; };
@@ -212,6 +215,7 @@
 		229F4957F20D04456182853A /* URILaunchTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21A9990FFB396404B3E52BBE /* URILaunchTarget.swift */; };
 		7C86BF8D70EA0A284B3D72C2 /* ItemFieldNormalisation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FBECAE1E5694389ADDC6E6 /* ItemFieldNormalisation.swift */; };
 		44BE1F38B5E3AC4E55C29F31 /* ErrorLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F70EE2487F39ED7E35E20DA /* ErrorLog.swift */; };
+		8679692C77C9640959B1FF58 /* CollectionAssignment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 618E961E36BF711B2CCF2CB0 /* CollectionAssignment.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -341,6 +345,7 @@
 		AA100D1E00000000000000F2 /* JSONValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONValue.swift; sourceTree = "<group>"; };
 		C5077DEE7ABDAD6E15AE5457 /* WireKdfSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireKdfSettings.swift; sourceTree = "<group>"; };
 		C03031A37BBA04C7B5454CDB /* FirstLetterCaseInsensitiveKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstLetterCaseInsensitiveKey.swift; sourceTree = "<group>"; };
+		7B8A39A8FF5DFB8B865A6C6C /* CipherCollectionsResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CipherCollectionsResult.swift; sourceTree = "<group>"; };
 		AA100B00000000000000000B /* VaultKeyServiceImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultKeyServiceImpl.swift; sourceTree = "<group>"; };
 		AA100C00000000000000000C /* AttachmentMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentMapper.swift; sourceTree = "<group>"; };
 		AA100D00000000000000000D /* UploadAttachmentUseCaseImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadAttachmentUseCaseImpl.swift; sourceTree = "<group>"; };
@@ -400,6 +405,7 @@
 		A5DA157731CED7E933B1DAD7 /* CreateItemJourneyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CreateItemJourneyTests.swift; sourceTree = "<group>"; };
 		FF584A61C3A4EC6ADA18A608 /* EditItemJourneyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EditItemJourneyTests.swift; sourceTree = "<group>"; };
 		39DAF06CF084CA86F5E4E0AD /* EditSheetLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditSheetLayoutTests.swift; sourceTree = "<group>"; };
+		1A219083256A08FCA0D5EB57 /* CollectionPickerJourneyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionPickerJourneyTests.swift; sourceTree = "<group>"; };
 		62BD63C6311650DC365E4EB0 /* KeyboardNavigationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyboardNavigationTests.swift; sourceTree = "<group>"; };
 		FF759512918D91F966308B59 /* LoginJourneyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LoginJourneyTests.swift; sourceTree = "<group>"; };
 		79CCCB32E2618189C4DD4D1F /* PasswordGeneratorJourneyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PasswordGeneratorJourneyTests.swift; sourceTree = "<group>"; };
@@ -428,6 +434,7 @@
 		BFDBB17F6E2AA8597455939D /* LegacyPreloginEndpoint.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LegacyPreloginEndpoint.swift; sourceTree = "<group>"; };
 		12B13DCFA3F09DB8B8DAEBF1 /* LegacyTokenUserKeyFields.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyTokenUserKeyFields.swift; sourceTree = "<group>"; };
 		A2EA196E567C8A1C74672A3C /* LegacyPreloginKdfFields.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyPreloginKdfFields.swift; sourceTree = "<group>"; };
+		85A76C3C2D395298DAC61ACC /* LegacyCipherCollectionsEndpoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyCipherCollectionsEndpoint.swift; sourceTree = "<group>"; };
 		33F70D5AD25DD2A43576733F /* SetFavoriteUseCase.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SetFavoriteUseCase.swift; sourceTree = "<group>"; };
 		47EF6BBB6170F5C4F6D7AB9B /* SetFavoriteUseCaseImpl.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SetFavoriteUseCaseImpl.swift; sourceTree = "<group>"; };
 		0C7F64FECEB4D5C21395C438 /* CollectionAccess.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CollectionAccess.swift; sourceTree = "<group>"; };
@@ -439,6 +446,7 @@
 		21A9990FFB396404B3E52BBE /* URILaunchTarget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = URILaunchTarget.swift; sourceTree = "<group>"; };
 		41FBECAE1E5694389ADDC6E6 /* ItemFieldNormalisation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ItemFieldNormalisation.swift; sourceTree = "<group>"; };
 		5F70EE2487F39ED7E35E20DA /* ErrorLog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ErrorLog.swift; sourceTree = "<group>"; };
+		618E961E36BF711B2CCF2CB0 /* CollectionAssignment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionAssignment.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -631,6 +639,7 @@
 				AA100D1E00000000000000F2 /* JSONValue.swift */,
 				C5077DEE7ABDAD6E15AE5457 /* WireKdfSettings.swift */,
 				C03031A37BBA04C7B5454CDB /* FirstLetterCaseInsensitiveKey.swift */,
+				7B8A39A8FF5DFB8B865A6C6C /* CipherCollectionsResult.swift */,
 				15F3A553820942CF9B3935FD /* SyncResponse.swift */,
 				D7C2BEABB748471395CEC2C6 /* RawFolder.swift */,
 				AA1008000000000000000008 /* AttachmentDTO.swift */,
@@ -823,6 +832,7 @@
 				A5DA157731CED7E933B1DAD7 /* CreateItemJourneyTests.swift */,
 				FF584A61C3A4EC6ADA18A608 /* EditItemJourneyTests.swift */,
 				39DAF06CF084CA86F5E4E0AD /* EditSheetLayoutTests.swift */,
+				1A219083256A08FCA0D5EB57 /* CollectionPickerJourneyTests.swift */,
 				62BD63C6311650DC365E4EB0 /* KeyboardNavigationTests.swift */,
 				FF759512918D91F966308B59 /* LoginJourneyTests.swift */,
 				79CCCB32E2618189C4DD4D1F /* PasswordGeneratorJourneyTests.swift */,
@@ -892,6 +902,7 @@
 				9BF035335283019BA2C1E3B6 /* URILaunchPolicy.swift */,
 				41FBECAE1E5694389ADDC6E6 /* ItemFieldNormalisation.swift */,
 				5F70EE2487F39ED7E35E20DA /* ErrorLog.swift */,
+				618E961E36BF711B2CCF2CB0 /* CollectionAssignment.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -978,6 +989,7 @@
 				BFDBB17F6E2AA8597455939D /* LegacyPreloginEndpoint.swift */,
 				12B13DCFA3F09DB8B8DAEBF1 /* LegacyTokenUserKeyFields.swift */,
 				A2EA196E567C8A1C74672A3C /* LegacyPreloginKdfFields.swift */,
+				85A76C3C2D395298DAC61ACC /* LegacyCipherCollectionsEndpoint.swift */,
 			);
 			path = Legacy;
 			sourceTree = "<group>";
@@ -1216,6 +1228,7 @@
 				BB100D1E00000000000000F2 /* JSONValue.swift in Sources */,
 				175CE5C87A85D04465249B93 /* WireKdfSettings.swift in Sources */,
 				890CF8A6B6C13E4DD0C96BA2 /* FirstLetterCaseInsensitiveKey.swift in Sources */,
+				713C8E9BAAAE7DA5849D88CD /* CipherCollectionsResult.swift in Sources */,
 				E5F6A7B8C9D04BE2F3A4B5C6 /* SyncResponse.swift in Sources */,
 				F6A7B8C9D0E14CF3A4B5C6D7 /* CipherMapper.swift in Sources */,
 				A2B3C4D5E6F74718B9C0D1E2 /* KeychainService.swift in Sources */,
@@ -1320,6 +1333,7 @@
 				960765B0AB097AD5A024293E /* LegacyPreloginEndpoint.swift in Sources */,
 				5DF16C9D6534C4005EA888F7 /* LegacyTokenUserKeyFields.swift in Sources */,
 				7FF4F8DF427DE5B4A1FD329A /* LegacyPreloginKdfFields.swift in Sources */,
+				9DA915B7843DBBBA89E8E555 /* LegacyCipherCollectionsEndpoint.swift in Sources */,
 				DB6006E4E878A9C9C893C91A /* SetFavoriteUseCase.swift in Sources */,
 				918757C4B8FDA02ACD662167 /* SetFavoriteUseCaseImpl.swift in Sources */,
 				5FB03807205EB54F055B4317 /* CollectionAccess.swift in Sources */,
@@ -1331,6 +1345,7 @@
 				229F4957F20D04456182853A /* URILaunchTarget.swift in Sources */,
 				7C86BF8D70EA0A284B3D72C2 /* ItemFieldNormalisation.swift in Sources */,
 				44BE1F38B5E3AC4E55C29F31 /* ErrorLog.swift in Sources */,
+				8679692C77C9640959B1FF58 /* CollectionAssignment.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1348,6 +1363,7 @@
 				53D703D1E7F5204C0B1F2861 /* CreateItemJourneyTests.swift in Sources */,
 				325397BA09D8899F1EBC9757 /* EditItemJourneyTests.swift in Sources */,
 				A09339128A31094E32BA184D /* EditSheetLayoutTests.swift in Sources */,
+				3594B1E845A17C810B40A140 /* CollectionPickerJourneyTests.swift in Sources */,
 				6A01DCC1DFA27ADC42961580 /* KeyboardNavigationTests.swift in Sources */,
 				DB96B1ECE6D3842D47240F3C /* LoginJourneyTests.swift in Sources */,
 				3BE22F45B780FDA1B6E80B08 /* PasswordGeneratorJourneyTests.swift in Sources */,

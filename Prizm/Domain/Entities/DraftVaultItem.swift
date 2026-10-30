@@ -265,6 +265,10 @@ nonisolated struct DraftVaultItem: Equatable {
     /// The collections this item is assigned to within its organization.
     /// Empty for personal items and org items not yet assigned to a collection.
     var collectionIds: [String]
+    /// The item's collections when the draft was made from it; nil for a new item. A save applies
+    /// the user's collection change to what the server holds now, not this list as a whole
+    /// (`CollectionAssignment.rebased`, fix-collection-assignment D2a).
+    private(set) var originalCollectionIds: [String]? = nil
 
     /// Creates a blank draft for a new item of the given type.
     static func blank(type: ItemType) -> DraftVaultItem {
@@ -318,6 +322,7 @@ nonisolated struct DraftVaultItem: Equatable {
         self.reprompt = item.reprompt
         self.organizationId = item.organizationId
         self.collectionIds = item.collectionIds
+        self.originalCollectionIds = item.collectionIds
         self.content = {
             switch item.content {
             case .login(let c):      return .login(DraftLoginContent(c))

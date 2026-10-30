@@ -115,7 +115,7 @@ final class OrgItemsInFoldersTests: XCTestCase {
         XCTAssertEqual(api.partialUpdates.count, 0)
         XCTAssertEqual(api.lastUpdatedCipher?.folderId, "f2")
         XCTAssertEqual(api.lastUpdatedCipher?.organizationId, "org-1")
-        XCTAssertEqual(api.lastUpdatedCipherCollections?.collectionIds, ["col-a"])
+        XCTAssertNil(api.lastUpdatedCipherCollections, "collections unchanged: no request (fix-collection-assignment)")
     }
 
     private final class CapturingEdit: EditVaultItemUseCase {

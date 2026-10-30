@@ -95,9 +95,8 @@ final class KeyMatrixTests: XCTestCase {
         let itemKeys = try mapper.effectiveKeys(for: stored, activeKeys: orgKey)
         try assertNameReadable(sent, with: itemKeys, as: "Renamed org login", notWith: [orgKey, golden.vaultKeys])
         XCTAssertEqual(sent.organizationId, GoldenVault.orgId)
-        XCTAssertEqual(api.lastUpdatedCipherCollections?.id, GoldenVault.orgLoginId)
-        XCTAssertEqual(api.lastUpdatedCipherCollections?.collectionIds, draft.collectionIds)
         XCTAssertFalse(draft.collectionIds.isEmpty)
+        XCTAssertNil(api.lastUpdatedCipherCollections, "collections unchanged: no request (fix-collection-assignment)")
     }
 
     // MARK: - Keyless personal (fixture control)
@@ -133,7 +132,7 @@ final class KeyMatrixTests: XCTestCase {
         let sent = try XCTUnwrap(api.lastUpdatedCipher)
         XCTAssertNil(sent.key)
         try assertNameReadable(sent, with: orgKey, as: "Shared, renamed", notWith: [vaultKeys])
-        XCTAssertEqual(api.lastUpdatedCipherCollections?.collectionIds, ["col-1"])
+        XCTAssertNil(api.lastUpdatedCipherCollections, "collections unchanged: no request (fix-collection-assignment)")
     }
 
     // MARK: - An item key that does not unwrap

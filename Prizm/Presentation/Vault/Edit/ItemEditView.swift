@@ -53,46 +53,11 @@ struct ItemEditView: View {
             }
             .padding(.bottom, Spacing.pageHeaderBottom)
 
-            // Collection picker — shown for org items. Folder picker — shown for every item when
+            // Collections — shown for org items. Folder picker — shown for every item when
             // folders exist: folders are personal and also hold org items, as in the official item
             // form (org-items-in-personal-folders).
             if viewModel.draft.organizationId != nil {
-                // Org item: collection picker
-                let orgCollections = viewModel.collections.filter {
-                    $0.organizationId == viewModel.draft.organizationId
-                }
-                if !orgCollections.isEmpty {
-                    // Single-collection picker for this org. For items already assigned to
-                    // multiple collections, extra collection IDs (outside this org) are
-                    // preserved on save; only the selected collection within this org changes.
-                    let orgCollectionIds = Set(orgCollections.map(\.id))
-                    DetailSectionCard("Collection") {
-                        HStack {
-                            Picker(selection: Binding(
-                                get: {
-                                    viewModel.draft.collectionIds.first { orgCollectionIds.contains($0) }
-                                },
-                                set: { newId in
-                                    // Replace only the collection IDs that belong to this org;
-                                    // preserve any IDs from other orgs (should not exist in practice
-                                    // but guards against cross-org data loss).
-                                    let otherIds = viewModel.draft.collectionIds.filter { !orgCollectionIds.contains($0) }
-                                    viewModel.draft.collectionIds = otherIds + (newId.map { [$0] } ?? [])
-                                }
-                            )) {
-                                Text("None").tag(String?.none)
-                                ForEach(orgCollections) { col in
-                                    Text(col.name).tag(Optional(col.id))
-                                }
-                            } label: { EmptyView() }
-                            .pickerStyle(.menu)
-                            .accessibilityLabel("Collection")
-                            Spacer()
-                        }
-                        .padding(.vertical, Spacing.rowVertical)
-                        .padding(.horizontal, Spacing.rowHorizontal)
-                    }
-                }
+                collectionsCard
             }
             if !viewModel.folders.isEmpty {
                 DetailSectionCard("Folder") {
@@ -264,7 +229,7 @@ struct ItemEditView: View {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.secondary)
                                 .accessibilityHidden(true)
-                        case .none, .syncFailed, .itemGone:
+                        case .none, .syncFailed, .itemGone, .accessLost:
                             EmptyView()
                         }
 
@@ -316,6 +281,75 @@ struct ItemEditView: View {
             viewModel.importSSHKey(fromFile: url)
         } else {
             viewModel.importSSHKey(text: pasteboard.string(forType: .string) ?? "")
+        }
+    }
+
+    /// The organization item's collections as checkboxes (fix-collection-assignment, D3): the
+    /// writable ones of its organization, then the read-only assignments, checked and disabled. The
+    /// view model builds the saved list, so assignments the user cannot change are never dropped.
+    /// The rows scroll once they pass `Spacing.collectionListMaxHeight`, because the card sits in the
+    /// sheet's fixed header.
+    private var collectionsCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            DetailSectionCard("Collections") {
+                if viewModel.writableCollections.isEmpty {
+                    Text(ItemEditViewModel.noWritableCollectionNote)
+                        .font(Typography.fieldValue)
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, Spacing.rowVertical)
+                        .padding(.horizontal, Spacing.rowHorizontal)
+                }
+                ViewThatFits(in: .vertical) {
+                    collectionRows
+                    ScrollView { collectionRows }
+                }
+                .frame(maxHeight: Spacing.collectionListMaxHeight)
+            }
+            if let hint = viewModel.collectionHint {
+                Text(hint)
+                    .font(Typography.utility)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, Spacing.pageMargin)
+                    .padding(.bottom, Spacing.cardBottom)
+                    .accessibilityIdentifier(AccessibilityID.Edit.collectionHint)
+            }
+        }
+    }
+
+    private var collectionRows: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(viewModel.writableCollections) { collection in
+                Toggle(isOn: Binding(
+                    get: { viewModel.isCollectionChecked(collection.id) },
+                    set: { viewModel.setCollection(collection.id, checked: $0) }
+                )) {
+                    Text(collection.name).font(Typography.fieldValue)
+                }
+                .toggleStyle(.checkbox)
+                .accessibilityLabel(collection.name)
+                .accessibilityIdentifier(AccessibilityID.Edit.collectionCheckbox(collection.id))
+                .padding(.vertical, Spacing.rowVertical)
+                .padding(.horizontal, Spacing.rowHorizontal)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            ForEach(viewModel.readOnlyAssignments) { collection in
+                Toggle(isOn: .constant(true)) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(collection.name).font(Typography.fieldValue)
+                        Text(ItemEditViewModel.readOnlyCollectionNote)
+                            .font(Typography.fieldLabel)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.checkbox)
+                .disabled(true)
+                .accessibilityLabel(collection.name)
+                .accessibilityHint(ItemEditViewModel.readOnlyCollectionHint)
+                .accessibilityIdentifier(AccessibilityID.Edit.collectionCheckbox(collection.id))
+                .padding(.vertical, Spacing.rowVertical)
+                .padding(.horizontal, Spacing.rowHorizontal)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 

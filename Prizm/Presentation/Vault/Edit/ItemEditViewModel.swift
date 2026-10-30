@@ -37,12 +37,15 @@ final class ItemEditViewModel: ObservableObject {
     /// - `synced`: the sync worked and the item still exists; reload can refill the sheet.
     /// - `syncFailed`: the sync failed with this message; reload starts a new sync.
     /// - `itemGone`: the synced vault no longer has the item, or has it in Trash.
+    /// - `accessLost`: the save went through and its collection change ended the user's access
+    ///   (fix-collection-assignment, D5). Not a conflict, but the sheet ends the same way.
     enum ConflictState: Equatable {
         case none
         case syncing
         case synced
         case syncFailed(String)
         case itemGone
+        case accessLost
     }
 
     /// The conflict state; `.none` outside a conflict.
@@ -62,6 +65,7 @@ final class ItemEditViewModel: ObservableObject {
     /// reach `save()` through the vault browser without the button, so only this guard blocks them.
     var canSave: Bool {
         !draft.name.trimmingCharacters(in: .whitespaces).isEmpty && !isSaving && conflict == .none
+            && collectionHint == nil
             && hasSSHKeyIfCreating
     }
 
@@ -168,6 +172,7 @@ final class ItemEditViewModel: ObservableObject {
     /// The message the banner shows, or nil for no banner (never an empty banner).
     var bannerMessage: String? {
         if conflict == .itemGone { return Self.itemGoneNote }
+        if conflict == .accessLost { return VaultError.savedButAccessLost.localizedDescription }
         guard let saveError, !saveError.isEmpty else { return nil }
         return saveError
     }
@@ -175,7 +180,7 @@ final class ItemEditViewModel: ObservableObject {
     /// The status line next to the conflict action: progress, success or the sync error.
     var conflictStatusText: String? {
         switch conflict {
-        case .none, .itemGone:       return nil
+        case .none, .itemGone, .accessLost: return nil
         case .syncing:               return "Syncing…"
         case .synced:                return "Synced"
         case .syncFailed(let text):  return text.isEmpty ? nil : text
@@ -193,7 +198,7 @@ final class ItemEditViewModel: ObservableObject {
         switch conflict {
         case .none:                          return nil
         case .syncing, .synced, .syncFailed: return "Discard my changes and reload"
-        case .itemGone:                      return "Close"
+        case .itemGone, .accessLost:         return "Close"
         }
     }
 
@@ -211,11 +216,12 @@ final class ItemEditViewModel: ObservableObject {
         case .none:                          return nil
         case .syncing, .synced, .syncFailed: return "Reload the item first."
         case .itemGone:                      return "This item no longer exists."
+        case .accessLost:                    return "You no longer have access to this item."
         }
     }
 
     /// `true` when the synced vault no longer has the item; the view hides Delete Item.
-    var isItemGone: Bool { conflict == .itemGone }
+    var isItemGone: Bool { conflict == .itemGone || conflict == .accessLost }
 
     /// `true` when any field differs from the original item captured at open time.
     /// Used to decide whether the discard confirmation prompt is needed.
@@ -226,6 +232,52 @@ final class ItemEditViewModel: ObservableObject {
     /// `true` when editing an existing item (as opposed to creating a new one).
     /// Used to conditionally show the Delete button in the edit sheet.
     var isEditing: Bool { editUseCase != nil }
+
+    // MARK: - Collections (fix-collection-assignment, D2–D4)
+
+    /// The collections of the item's organization the user can add it to, sorted by name. Empty for
+    /// a personal item.
+    var writableCollections: [OrgCollection] {
+        guard let organizationId = draft.organizationId else { return [] }
+        return collections
+            .filter { $0.organizationId == organizationId && !$0.readOnly }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    /// Read-only collections the item was in when the edit started: shown checked and disabled,
+    /// and always saved back.
+    var readOnlyAssignments: [OrgCollection] {
+        let assigned = Set(original.collectionIds)
+        return collections
+            .filter { $0.readOnly && assigned.contains($0.id) }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    func isCollectionChecked(_ id: String) -> Bool {
+        draft.collectionIds.contains(id)
+    }
+
+    /// Checks or unchecks a writable collection. The list is rebuilt by
+    /// `CollectionAssignment.finalIds`, so assignments the user cannot change are never dropped.
+    func setCollection(_ id: String, checked: Bool) {
+        let writableIds = Set(collections.filter { !$0.readOnly }.map(\.id))
+        var selected = draft.collectionIds.filter { writableIds.contains($0) && $0 != id }
+        if checked { selected.append(id) }
+        draft.collectionIds = CollectionAssignment.finalIds(original: original.collectionIds,
+                                                            selectedWritable: selected,
+                                                            writableIds: writableIds)
+    }
+
+    /// Shown under the collections card; non-nil (and Save disabled) while an organization item has
+    /// no collection (D4).
+    var collectionHint: String? {
+        draft.organizationId != nil && draft.collectionIds.isEmpty ? Self.collectionRequiredHint : nil
+    }
+
+    static let collectionRequiredHint = "Choose at least one collection."
+    static let noWritableCollectionNote = "You can't add items to any collection in this organization."
+    static let readOnlyCollectionNote = "View only, can't be removed"
+    static let readOnlyCollectionHint = "View only. You can't remove this item from this collection."
 
     // MARK: - Private state
 
@@ -240,6 +292,10 @@ final class ItemEditViewModel: ObservableObject {
     /// Called on save success with the server-confirmed `VaultItem` so the caller
     /// (VaultBrowserViewModel or parent) can refresh the list pane.
     var onSaveSuccess: ((VaultItem) -> Void)?
+
+    /// Called with the item's id when a save ended the user's access to it, so the list and detail
+    /// drop the item the repository already removed (fix-collection-assignment, D5).
+    var onItemRemoved: ((String) -> Void)?
 
     /// Syncs the vault after a conflict and reports whether that worked. Set by the app for edit
     /// sheets only (a new item cannot conflict); the sheet has no sync use case of its own.
@@ -289,7 +345,10 @@ final class ItemEditViewModel: ObservableObject {
         var blank = DraftVaultItem.blank(type: type)
         blank.folderId       = folderId
         blank.organizationId = organizationId
-        blank.collectionIds  = collectionIds
+        // Only a collection the user can add items to; the server would refuse a read-only one
+        // (fix-collection-assignment, D3).
+        let writable = Set(collections.filter { !$0.readOnly }.map(\.id))
+        blank.collectionIds  = collectionIds.filter { writable.contains($0) }
         var keyMessage: String?
         if let sshKeys, case .sshKey(var ssh) = blank.content {
             do throws(SSHKeyError) {
@@ -352,6 +411,15 @@ final class ItemEditViewModel: ObservableObject {
                 logger.info("Save rejected, item changed elsewhere: \(self.draft.id, privacy: .public)")
                 await runConflictResync()
                 return
+            } catch VaultError.savedButAccessLost {
+                if isDismissed {
+                    logger.info("Save result ignored: the sheet was dismissed meanwhile")
+                } else {
+                    // Announced through the banner like a conflict; Save stays disabled.
+                    conflict = .accessLost
+                    onItemRemoved?(draft.id)
+                    logger.info("Item saved; access ended with its collection change")
+                }
             } catch VaultError.collectionChangeNotSaved {
                 if isDismissed {
                     logger.info("Save error ignored: the sheet was dismissed meanwhile")
@@ -461,7 +529,7 @@ final class ItemEditViewModel: ObservableObject {
                     conflict = .itemGone
                 }
             }
-        case .itemGone:
+        case .itemGone, .accessLost:
             discard()
         }
     }

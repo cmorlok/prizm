@@ -127,9 +127,9 @@ final class PartialUpdateTests: XCTestCase {
         XCTAssertEqual(String(data: try encName.decrypt(keys: orgKeys), encoding: .utf8), name,
                        "encrypted with the organization key", file: file, line: line)
         XCTAssertThrowsError(try encName.decrypt(keys: vaultKeys), "not with the vault key", file: file, line: line)
-        XCTAssertEqual(mockAPI.lastUpdatedCipherCollections?.id, orgItem.id, file: file, line: line)
-        XCTAssertEqual(mockAPI.lastUpdatedCipherCollections?.collectionIds, ["col-a"],
-                       "the original collections", file: file, line: line)
+        // The collections did not change, so no collections request is sent and the server keeps
+        // the original ones (fix-collection-assignment, D5).
+        XCTAssertNil(mockAPI.lastUpdatedCipherCollections, "collections unchanged: no request", file: file, line: line)
         XCTAssertEqual(sent.folderId, folderId, "the draft's folder, not the stored record's", file: file, line: line)
     }
 
@@ -210,7 +210,7 @@ final class PartialUpdateTests: XCTestCase {
         XCTAssertEqual(sent.key, stored.key, "the item key is sent as stored")
         XCTAssertEqual(sent.organizationId, GoldenVault.orgId)
         XCTAssertEqual(sent.folderId, "work")
-        XCTAssertEqual(mockAPI.lastUpdatedCipherCollections?.collectionIds, originalCollections)
+        XCTAssertNil(mockAPI.lastUpdatedCipherCollections, "collections unchanged (\(originalCollections)): no request")
         let orgKey = try XCTUnwrap(golden.orgKeys[GoldenVault.orgId])
         let itemKeys = try mapper.effectiveKeys(for: stored, activeKeys: orgKey)
         let encName = try EncString(string: sent.name)

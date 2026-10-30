@@ -135,11 +135,21 @@ nonisolated struct RawCollection: Codable, Equatable {
     let id:             String
     let organizationId: String
     let name:           String  // EncString, encrypted with org key
+    /// The user's access to the collection, from `/sync` (`CollectionDetailsResponseModel`).
+    /// Missing means false, as on servers that predate a field (fix-collection-assignment, D1).
+    /// `hidePasswords` and `manage` are not used yet (`honour-org-item-permissions`).
+    let readOnly:       Bool
+    let hidePasswords:  Bool
+    let manage:         Bool
 
-    init(id: String, organizationId: String, name: String) {
+    init(id: String, organizationId: String, name: String,
+         readOnly: Bool = false, hidePasswords: Bool = false, manage: Bool = false) {
         self.id             = id
         self.organizationId = organizationId
         self.name           = name
+        self.readOnly       = readOnly
+        self.hidePasswords  = hidePasswords
+        self.manage         = manage
     }
 
     init(from decoder: Decoder) throws {
@@ -147,12 +157,21 @@ nonisolated struct RawCollection: Codable, Equatable {
         id             = try (try? c.decode(String.self, forKey: .id))             ?? c.decode(String.self, forKey: .idUpper)
         organizationId = try (try? c.decode(String.self, forKey: .organizationId)) ?? c.decode(String.self, forKey: .organizationIdUpper)
         name           = try (try? c.decode(String.self, forKey: .name))           ?? c.decode(String.self, forKey: .nameUpper)
+        func flag(_ key: FlexCollKeys, _ upper: FlexCollKeys) -> Bool {
+            (try? c.decodeIfPresent(Bool.self, forKey: key)) ?? (try? c.decodeIfPresent(Bool.self, forKey: upper)) ?? false
+        }
+        readOnly      = flag(.readOnly, .readOnlyUpper)
+        hidePasswords = flag(.hidePasswords, .hidePasswordsUpper)
+        manage        = flag(.manage, .manageUpper)
     }
 
     private enum FlexCollKeys: String, CodingKey {
         case id             = "id",             idUpper             = "Id"
         case organizationId = "organizationId", organizationIdUpper = "OrganizationId"
         case name           = "name",           nameUpper           = "Name"
+        case readOnly       = "readOnly",       readOnlyUpper       = "ReadOnly"
+        case hidePasswords  = "hidePasswords",  hidePasswordsUpper  = "HidePasswords"
+        case manage         = "manage",         manageUpper         = "Manage"
     }
 }
 

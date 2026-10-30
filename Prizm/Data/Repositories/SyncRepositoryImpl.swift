@@ -228,7 +228,8 @@ actor SyncRepositoryImpl: SyncRepository {
                             logger.error("Collection name not valid UTF-8 for collection \(raw.id.prefix(8), privacy: .public)")
                             return nil
                         }
-                        return OrgCollection(id: raw.id, organizationId: raw.organizationId, name: name)
+                        return OrgCollection(id: raw.id, organizationId: raw.organizationId, name: name,
+                                             readOnly: raw.readOnly)
                     } catch {
                         logger.error("Failed to decrypt collection name for \(raw.id.prefix(8), privacy: .public): \(ErrorLog.describe(error), privacy: .public)")
                         return nil

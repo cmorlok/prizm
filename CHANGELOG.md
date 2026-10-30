@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Fix: saving an organization item no longer removed it from collections you did not uncheck.
+  Picking a collection replaced all of them, and "None" removed the item from every collection.
+  A save without a collection change no longer sends the collections at all, so changes another
+  member made are kept, and collections you can only view always stay assigned.
+- Fix: the collection picker no longer offered collections you can only view (the server refused
+  the change), and saving an organization item without a collection change no longer reported
+  "the collection change failed" on Vaultwarden.
+- Fix: an organization item can no longer be saved without a collection; "None" is gone. Before,
+  such an item could disappear for you and for other members.
+- Changed: an organization item's collections are now a list of checkboxes, so an item can be in
+  several collections. Collections you can only view are shown checked and cannot be removed.
 - Fix: accounts that use Argon2id can sign in and unlock. Before, Prizm derived their key
   differently from Bitwarden and the server answered "Invalid email or master password". An email
   typed with spaces before or after it no longer fails to sign in.

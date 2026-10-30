@@ -215,8 +215,15 @@ enum UITestFixtures {
     static var organizations: [Organization] {
         withOrgFolders ? [Organization(id: "org-acme", name: "Acme", role: .user, membershipId: .known("m-uitest"))] : []
     }
+    /// "View Only" is read-only for the fixture account, for the collection checkboxes of the edit
+    /// sheet (fix-collection-assignment).
     static var collections: [OrgCollection] {
-        withOrgFolders ? [OrgCollection(id: "col-shared", organizationId: "org-acme", name: "Shared")] : []
+        guard withOrgFolders else { return [] }
+        return [
+            OrgCollection(id: "col-shared", organizationId: "org-acme", name: "Shared"),
+            OrgCollection(id: "col-team", organizationId: "org-acme", name: "Team"),
+            OrgCollection(id: "col-view", organizationId: "org-acme", name: "View Only", readOnly: true),
+        ]
     }
 
     static var items: [VaultItem] {
@@ -276,7 +283,7 @@ enum UITestFixtures {
             creationDate: Date(timeIntervalSince1970: 1_700_000_000),
             revisionDate: Date(timeIntervalSince1970: 1_700_000_000),
             content: .secureNote(SecureNoteContent(notes: "shared", customFields: [])),
-            folderId: "work", organizationId: "org-acme", collectionIds: ["col-shared"]
+            folderId: "work", organizationId: "org-acme", collectionIds: ["col-shared", "col-view"]
         )
     }
 
