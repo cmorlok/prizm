@@ -119,7 +119,10 @@ struct VaultBrowserView: View {
                     )
                     SyncStatusView(label: viewModel.syncStatusLabel)
                 }
-                .navigationSplitViewColumnWidth(min: 180, ideal: 210)
+                // Wide enough for the window controls, the sidebar toggle and the Settings gear in this
+                // column's toolbar; narrower, macOS moves the gear into the overflow menu
+                // (fix-settings-gear-visible, D1).
+                .navigationSplitViewColumnWidth(min: 220, ideal: 240)
                 .toolbar {
                     ToolbarItem(placement: .automatic) {
                         SettingsLink {
