@@ -40,7 +40,7 @@ private struct CustomFieldEditRow: View {
         HStack(alignment: .center, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 // Field name is read-only (structural, not editable in v1).
-                Text(field.name)
+                Text(field.displayName)
                     .font(Typography.fieldLabel)
                     .foregroundStyle(.secondary)
 
@@ -67,9 +67,16 @@ private struct CustomFieldEditRow: View {
                         .font(Typography.fieldValue)
                         .foregroundStyle(.secondary)
 
-                default: // .text
+                case .unknown:
+                    // A type Prizm does not know is kept unchanged and not edited (design D3 of
+                    // fix-read-mapping-lossless-fields); its value is not shown here, as it may be secret.
+                    Text(CustomFieldLabels.unsupportedType)
+                        .font(Typography.fieldValue)
+                        .foregroundStyle(.secondary)
+
+                case .text:
                     TextField(
-                        field.name,
+                        field.displayName,
                         text: Binding(
                             get:  { field.value ?? "" },
                             set:  { field.value = $0.isEmpty ? nil : $0 }
@@ -90,7 +97,7 @@ private struct CustomFieldEditRow: View {
                 }
                 .buttonStyle(.plain)
                 .help(isRevealed ? "Hide" : "Reveal")
-                .accessibilityLabel(isRevealed ? "Hide \(field.name)" : "Reveal \(field.name)")
+                .accessibilityLabel(isRevealed ? "Hide \(field.displayName)" : "Reveal \(field.displayName)")
             }
         }
         .padding(.vertical, Spacing.rowVertical)
@@ -101,7 +108,7 @@ private struct CustomFieldEditRow: View {
     private var editableHiddenField: some View {
         if isRevealed {
             TextField(
-                field.name,
+                field.displayName,
                 text: Binding(
                     get:  { field.value ?? "" },
                     set:  { field.value = $0.isEmpty ? nil : $0 }

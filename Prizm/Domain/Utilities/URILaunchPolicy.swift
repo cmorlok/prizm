@@ -24,7 +24,7 @@ nonisolated enum URILaunchPolicy {
     ///   suffix list; this approximation also accepts unknown top-level domains (design D2).
     static func launchURL(for uri: LoginURI) -> URL? {
         guard uri.matchType != .regularExpression else { return nil }
-        let trimmed = uri.uri.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = (uri.uri ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
         var candidate = trimmed

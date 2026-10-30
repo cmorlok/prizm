@@ -52,10 +52,12 @@ struct LoginDetailView: View {
                     VerificationCodeCard(item: item, makeViewModel: makeCodesViewModel, onCopy: onCopy)
                 }
 
-                if !login.uris.isEmpty {
+                // A website without an address has nothing to open or copy, so it is not listed.
+                let websites = login.addressedURIs
+                if !websites.isEmpty {
                     DetailSectionCard("Websites") {
-                        ForEach(login.uris.indices, id: \.self) { index in
-                            let uri = login.uris[index]
+                        ForEach(websites.indices, id: \.self) { index in
+                            let uri = websites[index]
                             if index > 0 { Divider() }
                             FieldRowView(
                                 label:  "Website",

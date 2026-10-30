@@ -748,7 +748,7 @@ final class RootViewModel: ObservableObject {
         switch field {
         case .username: return login.username
         case .password: return login.password
-        case .website:  return login.uris.first?.uri
+        case .website:  return login.firstAddress
         case .totp:     return nil   // handled by copySelectedCode(); the seed is never copied
         }
     }

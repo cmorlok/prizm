@@ -57,7 +57,7 @@ final class EntityValidationTests: XCTestCase {
 
     func testCustomFieldNameIsNonEmpty() {
         let field = CustomField(name: "API Key", value: "abc123", type: .text, linkedId: nil)
-        XCTAssertFalse(field.name.isEmpty)
+        XCTAssertEqual(field.name, "API Key")
     }
 
     func testCustomFieldHiddenType() {
