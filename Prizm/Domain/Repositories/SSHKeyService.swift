@@ -17,6 +17,9 @@ nonisolated struct SSHKeyMaterial: Equatable, Sendable, CustomStringConvertible,
     let publicKey: String
     let fingerprint: String
 
+    /// Larger input is refused unread: a private key of any supported type is far smaller.
+    static let maxImportBytes = 16 * 1024
+
     var description: String { "SSHKeyMaterial(redacted)" }
     var debugDescription: String { description }
 }

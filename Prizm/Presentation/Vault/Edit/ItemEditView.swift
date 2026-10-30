@@ -294,6 +294,31 @@ struct ItemEditView: View {
 
     // MARK: - Per-type dispatch
 
+    /// Generate and import for a new SSH key; nil when editing (ssh-key-import-and-generation, D6).
+    private var sshKeyCreateActions: SSHKeyCreateActions? {
+        guard viewModel.offersSSHKeyActions else { return nil }
+        return SSHKeyCreateActions(
+            generate: { viewModel.generateSSHKey() },
+            importFromClipboard: { importSSHKeyFromPasteboard() },
+            importFromFile: { viewModel.importSSHKey(fromFile: $0) },
+            importFailed: { viewModel.sshKeyFileImportFailed($0) },
+            message: viewModel.sshKeyMessage,
+            refusalCount: viewModel.sshKeyRefusalCount
+        )
+    }
+
+    /// Read only when the user chooses "From clipboard". A key file copied in Finder is a file URL,
+    /// not text, so that file is imported instead (design D4). The pasteboard is not cleared: its
+    /// content is the user's (design D7).
+    private func importSSHKeyFromPasteboard() {
+        let pasteboard = NSPasteboard.general
+        if let url = (pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL])?.first {
+            viewModel.importSSHKey(fromFile: url)
+        } else {
+            viewModel.importSSHKey(text: pasteboard.string(forType: .string) ?? "")
+        }
+    }
+
     @ViewBuilder
     private var typeEditForm: some View {
         switch viewModel.draft.content {
@@ -341,7 +366,7 @@ struct ItemEditView: View {
                     return c
                 },
                 set:  { newContent in viewModel.draft.content = .sshKey(newContent) }
-            ), itemId: viewModel.draft.id)
+            ), itemId: viewModel.draft.id, createActions: sshKeyCreateActions)
         }
     }
 

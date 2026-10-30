@@ -62,6 +62,86 @@ final class ItemEditViewModel: ObservableObject {
     /// reach `save()` through the vault browser without the button, so only this guard blocks them.
     var canSave: Bool {
         !draft.name.trimmingCharacters(in: .whitespaces).isEmpty && !isSaving && conflict == .none
+            && hasSSHKeyIfCreating
+    }
+
+    // MARK: - SSH key create (ssh-key-import-and-generation, design D6)
+
+    /// Generates and imports keys; set only for the create sheet.
+    private let sshKeys: (any SSHKeyService)?
+
+    /// The refusal message of the last import, shown in the sheet and announced; nil when none.
+    @Published private(set) var sshKeyMessage: String?
+    /// Counts the refusals, so the sheet announces a refusal again even when its text is unchanged.
+    @Published private(set) var sshKeyRefusalCount = 0
+
+    /// True for the SSH key create sheet: it offers "Generate new key" and "Import key…".
+    var offersSSHKeyActions: Bool {
+        guard sshKeys != nil, editUseCase == nil, case .sshKey = draft.content else { return false }
+        return true
+    }
+
+    /// A new SSH key needs all three values: a key without its fingerprint is hidden by Vaultwarden.
+    private var hasSSHKeyIfCreating: Bool {
+        guard offersSSHKeyActions, case .sshKey(let ssh) = draft.content else { return true }
+        return [ssh.privateKey, ssh.publicKey, ssh.keyFingerprint].allSatisfy { $0?.isEmpty == false }
+    }
+
+    func generateSSHKey() {
+        apply { service throws(SSHKeyError) in try service.generate() }
+    }
+
+    func importSSHKey(text: String) {
+        apply { service throws(SSHKeyError) in try service.parse(privateKeyText: text) }
+    }
+
+    /// Reads at most 16 KiB + 1 bytes through the security-scoped URL the file picker returns, so a
+    /// large file is refused without being read whole; text that is not UTF-8 is refused too.
+    func importSSHKey(fromFile url: URL) {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        let limit = SSHKeyMaterial.maxImportBytes
+        let data: Data?
+        do {
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+            data = try handle.read(upToCount: limit + 1)
+        } catch {
+            logger.error("SSH key file could not be read: \(ErrorLog.describe(error), privacy: .public)")
+            data = nil
+        }
+        guard let data, data.count <= limit, let text = String(data: data, encoding: .utf8) else {
+            refuse(.notOpenSSHKey)
+            return
+        }
+        importSSHKey(text: text)
+    }
+
+    /// Replaces all three key values with the service's result, or keeps them and sets the message.
+    private func apply(_ make: (any SSHKeyService) throws(SSHKeyError) -> SSHKeyMaterial) {
+        guard let sshKeys, case .sshKey(var ssh) = draft.content else { return }
+        do throws(SSHKeyError) {
+            ssh.replace(with: try make(sshKeys))
+            draft.content = .sshKey(ssh)
+            sshKeyMessage = nil
+        } catch {
+            refuse(error)
+        }
+    }
+
+    static let sshKeyFileUnreadableMessage =
+        "Prizm could not open that file. Choose it again, or copy the key and use Import key… → From clipboard."
+
+    /// The file picker failed (for example, no access to the file). Logged and shown like a refusal.
+    func sshKeyFileImportFailed(_ error: Error) {
+        logger.error("SSH key file picker failed: \(ErrorLog.describe(error), privacy: .public)")
+        sshKeyMessage = Self.sshKeyFileUnreadableMessage
+        sshKeyRefusalCount += 1
+    }
+
+    private func refuse(_ error: SSHKeyError) {
+        sshKeyMessage = error.userMessage
+        sshKeyRefusalCount += 1
     }
 
     /// Non-nil when `draft.name` is blank, triggering inline validation.
@@ -190,6 +270,7 @@ final class ItemEditViewModel: ObservableObject {
          organizations: [Organization] = [], collections: [OrgCollection] = []) {
         self.draft         = DraftVaultItem(item)
         self.original      = DraftVaultItem(item)
+        self.sshKeys       = nil
         self.editUseCase   = useCase
         self.createUseCase = nil
         self.folders       = folders
@@ -199,15 +280,29 @@ final class ItemEditViewModel: ObservableObject {
     }
 
     /// Create mode: initialised with a blank draft for the given type.
+    /// For an SSH key, `sshKeys` generates the key the sheet opens with; it is part of the starting
+    /// state, so discarding an untouched sheet asks nothing (ssh-key-import-and-generation, D6).
     init(type: ItemType, useCase: any CreateVaultItemUseCase, folders: [Folder] = [],
          folderId: String? = nil, organizationId: String? = nil, collectionIds: [String] = [],
-         organizations: [Organization] = [], collections: [OrgCollection] = []) {
+         organizations: [Organization] = [], collections: [OrgCollection] = [],
+         sshKeys: (any SSHKeyService)? = nil) {
         var blank = DraftVaultItem.blank(type: type)
         blank.folderId       = folderId
         blank.organizationId = organizationId
         blank.collectionIds  = collectionIds
+        var keyMessage: String?
+        if let sshKeys, case .sshKey(var ssh) = blank.content {
+            do throws(SSHKeyError) {
+                ssh.replace(with: try sshKeys.generate())
+                blank.content = .sshKey(ssh)
+            } catch {
+                keyMessage = error.userMessage
+            }
+        }
         self.draft         = blank
         self.original      = blank
+        self.sshKeys       = sshKeys
+        self.sshKeyMessage = keyMessage
         self.editUseCase   = nil
         self.createUseCase = useCase
         self.folders       = folders

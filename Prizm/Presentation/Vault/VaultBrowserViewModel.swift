@@ -99,9 +99,7 @@ final class VaultBrowserViewModel: ObservableObject {
     /// app, for a reason not traced further (fix-ui-journey-findings).
     var createItemType: ItemType? {
         get { pendingCreateItemType }
-        // A type Prizm cannot create (SSH keys, fix-ssh-key-roundtrip D4) is refused here too, so
-        // no menu, shortcut or later caller can open its create sheet.
-        set { pendingCreateItemType = sidebarSelection == .trash || newValue?.isCreatable == false ? nil : newValue }
+        set { pendingCreateItemType = sidebarSelection == .trash ? nil : newValue }
     }
     @Published private var pendingCreateItemType: ItemType? = nil
 

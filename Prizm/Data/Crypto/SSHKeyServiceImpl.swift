@@ -26,7 +26,7 @@ import Foundation
 nonisolated struct SSHKeyServiceImpl: SSHKeyService {
 
     enum Format {
-        static let maxInputBytes = 16 * 1024
+        static let maxInputBytes = SSHKeyMaterial.maxImportBytes
         static let beginLine = "-----BEGIN OPENSSH PRIVATE KEY-----"
         static let endLine = "-----END OPENSSH PRIVATE KEY-----"
         static let magic = Array("openssh-key-v1\0".utf8)

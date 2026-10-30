@@ -163,15 +163,14 @@ final class VaultBrowserViewModelTrashTests: XCTestCase {
         XCTAssertEqual(sut.createItemType, .login)
     }
 
-    /// SSH keys are not created until Prizm can generate or import them (fix-ssh-key-roundtrip, D4).
-    func testCreateItemType_refusesSSHKey() async throws {
+    func testCreateItemType_acceptsSSHKey() async throws {
         let vault = MockVaultRepository()
         let sut = makeVaultBrowserViewModel(vault: vault, search: SearchVaultUseCaseImpl(vault: vault))
         sut.sidebarSelection = .type(.sshKey)
 
         sut.createItemType = .sshKey
 
-        XCTAssertNil(sut.createItemType)
+        XCTAssertEqual(sut.createItemType, .sshKey, "SSH keys can be created again (ssh-key-import-and-generation)")
     }
 }
 
