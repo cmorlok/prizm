@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fix: attachments now use the standard Bitwarden file format. Prizm 1.1.0 to 1.5.x saved files
+  in a layout other Bitwarden apps can't open, and Prizm couldn't open files that other Bitwarden
+  apps attached. Prizm still opens its old files, marks them "Prizm format" and can convert them:
+  use Convert on the file, or "Convert All" when Prizm offers it after a sync. Converting also
+  fixes files marked "Only you can open this file".
 - Fix: files you attached in Prizm to an organization item without its own key were encrypted
   with your personal key, so other members of the organization could not open them, and after the
   next sync they disappeared from the item in Prizm. Prizm now uses the organization key. Files

@@ -74,6 +74,7 @@ final class AppContainer: ObservableObject {
     let uploadAttachmentUseCase:   UploadAttachmentUseCaseImpl
     let downloadAttachmentUseCase: DownloadAttachmentUseCaseImpl
     let deleteAttachmentUseCase:   DeleteAttachmentUseCaseImpl
+    let convertAttachmentUseCase:  ConvertAttachmentUseCaseImpl
 
     // MARK: - Temp file lifecycle
 
@@ -189,6 +190,7 @@ final class AppContainer: ObservableObject {
         self.uploadAttachmentUseCase   = UploadAttachmentUseCaseImpl(repository: attachmentRepo, vaultKeyService: vaultKeyService)
         self.downloadAttachmentUseCase = DownloadAttachmentUseCaseImpl(repository: attachmentRepo, vaultKeyService: vaultKeyService)
         self.deleteAttachmentUseCase   = DeleteAttachmentUseCaseImpl(repository: attachmentRepo)
+        self.convertAttachmentUseCase  = ConvertAttachmentUseCaseImpl(repository: attachmentRepo, vaultKeyService: vaultKeyService)
         self.tempFileManager           = AttachmentTempFileManager()
         // Launch sweep: files a crash or a forced quit left behind are gone before any screen
         // appears (fix-attachment-transfer-flow, D7).
@@ -240,7 +242,7 @@ final class AppContainer: ObservableObject {
         #else
         let sync: any SyncUseCase = syncUseCase
         #endif
-        return VaultBrowserViewModel(
+        let browser = VaultBrowserViewModel(
             vault:            vaultStore,
             search:           searchVaultUseCase,
             delete:           deleteVaultItemUseCase,
@@ -260,6 +262,15 @@ final class AppContainer: ObservableObject {
             getLastSyncDate:  getLastSyncDateUseCase,
             sync:             sync
         )
+        #if DEBUG
+        // The seeded UI-test vault holds an old-format attachment; a notice sheet after its
+        // "sync" would cover every journey. The notice is covered by unit tests.
+        if UITestFixtures.isEnabled { return browser }
+        #endif
+        browser.attachmentConversion = AttachmentConversionViewModel(
+            convert: convertAttachmentUseCase,
+            onItemChanged: { [weak browser] _ in browser?.refreshItemSelection() })
+        return browser
     }
 
     /// Creates an `ItemEditViewModel` for the given item, wired with the live edit use case.
@@ -363,6 +374,7 @@ final class AppContainer: ObservableObject {
             attachment:      attachment,
             downloadUseCase: downloadAttachmentUseCase,
             deleteUseCase:   deleteAttachmentUseCase,
+            convertUseCase:  convertAttachmentUseCase,
             tempFileManager: tempFileManager,
             fileSaver:       Self.defaultSavePanel,
             fileOpener:      Self.defaultFileOpener

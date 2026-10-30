@@ -313,7 +313,7 @@ final class RootViewModelLockTests: XCTestCase {
             cipherId: "c1",
             attachment: Attachment(id: "att-1", fileName: "secret.txt", encryptedKey: "2.k|k|k",
                                    size: 6, sizeName: "6 B", url: nil),
-            downloadUseCase: FixedDownload(), deleteUseCase: UnusedDelete(),
+            downloadUseCase: FixedDownload(), deleteUseCase: UnusedDelete(), convertUseCase: RecordingConvertUseCase(),
             tempFileManager: tempFiles, fileSaver: { _ in nil }, fileOpener: { opened.url = $0 })
 
         row.open()

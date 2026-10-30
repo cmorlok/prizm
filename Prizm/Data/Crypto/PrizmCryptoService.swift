@@ -186,11 +186,11 @@ protocol PrizmCryptoService: Actor {
     nonisolated func generateAttachmentKey() throws -> Data
 
     /// Encrypts file data using AES-256-CBC + HMAC-SHA256 (Encrypt-then-MAC).
-    /// Binary layout: `IV (16) ‖ ciphertext ‖ HMAC-SHA256 (32)`.
+    /// Binary layout: the official EncArrayBuffer `0x02 ‖ IV (16) ‖ HMAC-SHA256 (32) ‖ ciphertext`.
     nonisolated func encryptData(_ data: Data, attachmentKey: Data) throws -> Data
 
-    /// Decrypts a binary blob produced by `encryptData`.
-    /// Verifies HMAC before decrypting (Encrypt-then-MAC).
+    /// Decrypts an attachment file in the official layout or in Prizm's old layout
+    /// (`AttachmentBlobLayout`). Verifies HMAC before decrypting (Encrypt-then-MAC).
     nonisolated func decryptData(_ data: Data, attachmentKey: Data) throws -> Data
 
     /// Wraps the per-attachment key as a type-2 EncString using the cipher's `CryptoKeys`.

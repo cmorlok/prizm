@@ -76,7 +76,10 @@ nonisolated final class AttachmentMapper: Sendable {
             encryptedKey:       dto.key,       // verbatim — not decrypted here
             size:               sizeInt,
             sizeName:           dto.sizeName,  // verbatim — not reformatted
-            url:                dto.url         // verbatim — may be nil
+            url:                dto.url,        // verbatim — may be nil
+            // AES-CBC output is a multiple of 16 bytes, so only Prizm's old layout (no type byte)
+            // has an encrypted size that is one too (fix-attachment-file-format, D3).
+            storedInLegacyPrizmFormat: sizeInt % 16 == 0
         )
     }
 }

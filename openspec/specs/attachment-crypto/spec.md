@@ -18,7 +18,7 @@ The system SHALL generate a cryptographically random 64-byte attachment key for 
 ---
 
 ### Requirement: File data encrypted with attachment key
-The system SHALL encrypt attachment file data using the AES-256-CBC + HMAC-SHA256 algorithm with the per-attachment key. The encrypted output SHALL be transmitted as **raw binary** — NOT as a Base64-encoded EncString string — with layout: 16-byte IV ‖ ciphertext ‖ 32-byte HMAC. This is the same algorithm as EncString type 2 but a different wire format: EncString (Base64-encoded, `2.<iv>|<ct>|<mac>`) is used only for metadata fields (attachment key and file name); the file blob is always raw bytes. MAC SHALL be verified before decryption (Encrypt-then-MAC).
+The system SHALL encrypt attachment file data using the AES-256-CBC + HMAC-SHA256 algorithm with the per-attachment key. The encrypted output SHALL be transmitted as **raw binary**, NOT as a Base64-encoded EncString string. Its byte layout is defined by the capability `attachment-file-format` (the official EncArrayBuffer type 2, `0x02 ‖ IV(16) ‖ HMAC-SHA256(32) ‖ ciphertext`), which supersedes the layout `16-byte IV ‖ ciphertext ‖ 32-byte HMAC` this requirement stated before; only Prizm 1.1.0 to 1.5.x wrote that layout. EncString (Base64-encoded, `2.<iv>|<ct>|<mac>`) is used only for metadata fields (attachment key and file name). MAC SHALL be verified before decryption (Encrypt-then-MAC).
 
 #### Scenario: File data is not stored or transmitted in plaintext
 - **WHEN** an attachment is prepared for upload
@@ -31,8 +31,6 @@ The system SHALL encrypt attachment file data using the AES-256-CBC + HMAC-SHA25
 #### Scenario: Round-trip encrypt then decrypt returns original bytes
 - **WHEN** a file is encrypted with an attachment key and then decrypted with the same key
 - **THEN** the decrypted bytes SHALL be identical to the original file bytes
-
----
 
 ### Requirement: Attachment key encrypted with cipher key
 The system SHALL encrypt the 64-byte attachment key with the item's effective key using AES-256-CBC + HMAC-SHA256, producing an EncString: the item's own key if it has one, otherwise the organization key for an organization item, otherwise the user's vault symmetric key (capability `attachment-key-resolution`). The system SHALL NOT use the user's vault symmetric key for an organization item. This encrypted attachment key SHALL be stored in the attachment metadata on the server.

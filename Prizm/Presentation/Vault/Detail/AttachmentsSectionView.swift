@@ -150,7 +150,10 @@ private struct AttachmentRowViewWithViewModel: View {
             onOpen:       { viewModel.open() },
             onSaveToDisk: { viewModel.saveToDisk() },
             onDelete:     { showDeleteAlert = true },
-            isFileMissing: viewModel.isFileMissing
+            isFileMissing: viewModel.isFileMissing,
+            onConvert:    { viewModel.convert() },
+            canConvert:   viewModel.canConvert,
+            isConverting: viewModel.isConverting
         )
         .alert("Delete Attachment", isPresented: $showDeleteAlert) {
             Button("Delete", role: .destructive) { viewModel.delete() }

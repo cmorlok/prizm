@@ -51,6 +51,19 @@ protocol AttachmentRepository {
     ///   - cipherId:     The ID of the vault item the attachment belongs to.
     ///   - attachmentId: The ID of the attachment to delete.
     func delete(cipherId: String, attachmentId: String) async throws
+
+    /// Re-uploads a file in the official layout as a new attachment with a new attachment key and
+    /// the same file name, then deletes the old attachment (fix-attachment-file-format, D4).
+    ///
+    /// - Parameters:
+    ///   - downloadKey: 64-byte key the old attachment key is wrapped with.
+    ///   - uploadKey:   64-byte effective key of the item, for the new attachment.
+    /// - Returns: The new attachment.
+    /// - Throws: `AttachmentError.alreadyStandardFormat` (nothing written) when the file is already
+    ///   official and the attachment is not `wrappedWithPersonalKey`; the upload's errors (the new
+    ///   record is rolled back, the old one kept); `AttachmentError.convertedOldCopyLeft` when the
+    ///   old attachment could not be deleted.
+    func convertLegacyFormat(cipherId: String, attachment: Attachment, downloadKey: Data, uploadKey: Data) async throws -> Attachment
 }
 
 // MARK: - AttachmentError
@@ -66,6 +79,18 @@ nonisolated enum AttachmentError: Error, LocalizedError, Equatable {
     case fileMissingOnServer
     /// The encrypted blob could not be downloaded.
     case downloadFailed
+    /// The file is in a layout Prizm does not decrypt (type 0 without a MAC, an unknown type, or a
+    /// length that fits no layout) (fix-attachment-file-format, D2).
+    case unsupportedFileFormat
+    /// The file's MAC did not verify: corrupt, tampered with, or encrypted with another key.
+    case fileDecryptionFailed
+    /// A conversion found the file already in the official layout and changed nothing (D4).
+    case alreadyStandardFormat
+    /// A conversion uploaded the new file, but deleting the old attachment failed; the item has
+    /// both (D4).
+    case convertedOldCopyLeft
+    /// The same file is already being converted (the row's Convert and "Convert all" overlap).
+    case conversionAlreadyRunning
 
     var errorDescription: String? {
         switch self {
@@ -77,6 +102,16 @@ nonisolated enum AttachmentError: Error, LocalizedError, Equatable {
             return "The file is missing on the server."
         case .downloadFailed:
             return "Download failed. If this keeps happening, try locking and unlocking your vault."
+        case .unsupportedFileFormat:
+            return "The file uses a format Prizm can't open."
+        case .fileDecryptionFailed:
+            return "The file could not be decrypted."
+        case .alreadyStandardFormat:
+            return "This file is already in the standard format."
+        case .convertedOldCopyLeft:
+            return "Converted, but the old copy could not be removed. Delete it from the item."
+        case .conversionAlreadyRunning:
+            return "This file is already being converted."
         }
     }
 }

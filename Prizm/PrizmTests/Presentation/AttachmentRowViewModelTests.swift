@@ -15,6 +15,7 @@ final class AttachmentRowViewModelTests: XCTestCase {
     private var mockDownload: MockRowDownloadUseCase!
     private var mockDelete:   MockRowDeleteUseCase!
     private var mockTempMgr:  MockTempFileManager!
+    private var mockConvert:  RecordingConvertUseCase!
 
     private var normalAttachment: Attachment!
 
@@ -22,6 +23,7 @@ final class AttachmentRowViewModelTests: XCTestCase {
         mockDownload = MockRowDownloadUseCase()
         mockDelete   = MockRowDeleteUseCase()
         mockTempMgr  = MockTempFileManager()
+        mockConvert  = RecordingConvertUseCase()
 
         normalAttachment = Attachment(
             id: "att-1", fileName: "report.pdf", encryptedKey: "2.a|b|c",
@@ -42,6 +44,7 @@ final class AttachmentRowViewModelTests: XCTestCase {
             attachment:      attachment ?? normalAttachment,
             downloadUseCase: mockDownload,
             deleteUseCase:   mockDelete,
+            convertUseCase:  mockConvert,
             tempFileManager: mockTempMgr,
             fileSaver:       fileSaver ?? { _ in nil },
             fileOpener:      { [weak self] _ in self?.fileOpenerCalled = true }
@@ -166,6 +169,52 @@ final class AttachmentRowViewModelTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(100))
 
         XCTAssertNotNil(sut.actionError)
+    }
+
+    // MARK: - Convert (fix-attachment-file-format, D5)
+
+    func test_convert_callsTheUseCase_andReportsTheChange() async throws {
+        let sut = makeSUT()
+        var changes = 0
+        sut.onAttachmentChanged = { changes += 1 }
+
+        sut.convert()
+        XCTAssertTrue(sut.isConverting)
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertEqual(mockConvert.executed, ["att-1"])
+        XCTAssertFalse(sut.isConverting)
+        XCTAssertNil(sut.actionError)
+        XCTAssertEqual(changes, 1)
+    }
+
+    func test_convert_failure_setsActionError() async throws {
+        mockConvert.failing = ["att-1"]
+        let sut = makeSUT()
+
+        sut.convert()
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertEqual(sut.actionError, "Could not convert file: Upload failed.")
+        XCTAssertFalse(sut.isConverting)
+    }
+
+    func test_canConvert_forOldOrPersonalKeyAttachments() {
+        XCTAssertFalse(makeSUT().canConvert)
+        let legacy = Attachment(id: "l", fileName: "l.pdf", encryptedKey: "2.k|k|k", size: 64, sizeName: "64 B",
+                                url: nil, storedInLegacyPrizmFormat: true)
+        XCTAssertTrue(makeSUT(attachment: legacy).canConvert)
+        let flagged = Attachment(id: "f", fileName: "f.pdf", encryptedKey: "2.k|k|k", size: 65, sizeName: "65 B",
+                                 url: nil, wrappedWithPersonalKey: true)
+        XCTAssertTrue(makeSUT(attachment: flagged).canConvert)
+    }
+
+    func test_canConvert_isFalseForAnItemInTheTrash() {
+        let legacy = Attachment(id: "l", fileName: "l.pdf", encryptedKey: "2.k|k|k", size: 64, sizeName: "64 B",
+                                url: nil, storedInLegacyPrizmFormat: true)
+        let sut = makeSUT(attachment: legacy)
+        sut.itemIsDeleted = true
+        XCTAssertFalse(sut.canConvert)
     }
 
     // MARK: - File missing on the server (fix-attachment-transfer-flow, 2.4)

@@ -254,6 +254,9 @@ enum UITestFixtures {
             login(id: "kappa", name: "Kappa Login", totp: nil, isFavorite: true, attachments: [
                 Attachment(id: "att1", fileName: "kappa-notes.txt", encryptedKey: "", size: 1024,
                            sizeName: "1 KB", url: nil),
+                // In Prizm's old file layout (fix-attachment-file-format): badge and Convert.
+                Attachment(id: "att-legacy", fileName: "kappa-old-report.pdf", encryptedKey: "", size: 1072,
+                           sizeName: "1 KB", url: nil, storedInLegacyPrizmFormat: true),
             ], uris: [
                 // A second item with websites, so switching from Gamma reuses the Website rows.
                 // Without a scheme it has no host, so no UI run asks the icon service for it.

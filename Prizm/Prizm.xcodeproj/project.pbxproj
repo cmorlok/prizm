@@ -136,6 +136,7 @@
 		BB1004000000000000000004 /* UploadAttachmentUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1004000000000000000004 /* UploadAttachmentUseCase.swift */; };
 		BB1005000000000000000005 /* DownloadAttachmentUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1005000000000000000005 /* DownloadAttachmentUseCase.swift */; };
 		BB1006000000000000000006 /* DeleteAttachmentUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1006000000000000000006 /* DeleteAttachmentUseCase.swift */; };
+		C234DFEB2010DB7E94E4FDAB /* ConvertAttachmentUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = D34AA5476C3C2A2DCBCDF719 /* ConvertAttachmentUseCase.swift */; };
 		BB1007000000000000000007 /* AttachmentCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1007000000000000000007 /* AttachmentCrypto.swift */; };
 		BB1008000000000000000008 /* AttachmentDTO.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1008000000000000000008 /* AttachmentDTO.swift */; };
 		BB1009000000000000000009 /* AttachmentRepositoryImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1009000000000000000009 /* AttachmentRepositoryImpl.swift */; };
@@ -153,11 +154,14 @@
 		BB100D00000000000000000D /* UploadAttachmentUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100D00000000000000000D /* UploadAttachmentUseCaseImpl.swift */; };
 		BB100E00000000000000000E /* DownloadAttachmentUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100E00000000000000000E /* DownloadAttachmentUseCaseImpl.swift */; };
 		BB100F00000000000000000F /* DeleteAttachmentUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100F00000000000000000F /* DeleteAttachmentUseCaseImpl.swift */; };
+		6164ED7983C6C9FDAD093D76 /* ConvertAttachmentUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CAF2E3DF2B495781E75A60F /* ConvertAttachmentUseCaseImpl.swift */; };
 		BB1010000000000000000010 /* TempFileManaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1010000000000000000010 /* TempFileManaging.swift */; };
 		BB1011000000000000000011 /* AttachmentAddViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1011000000000000000011 /* AttachmentAddViewModel.swift */; };
 		BB1012000000000000000012 /* AttachmentBatchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1012000000000000000012 /* AttachmentBatchViewModel.swift */; };
 		BB1013000000000000000013 /* AttachmentRowViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1013000000000000000013 /* AttachmentRowViewModel.swift */; };
+		867AB2241CD8F538F81FF77D /* AttachmentConversionViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADC117441EFFFC084795E398 /* AttachmentConversionViewModel.swift */; };
 		BB1014000000000000000014 /* AttachmentConfirmSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1014000000000000000014 /* AttachmentConfirmSheet.swift */; };
+		A37F7FA2360A667210DD9A7C /* AttachmentConversionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09A2BEF7E4A9160C1B007CFD /* AttachmentConversionSheet.swift */; };
 		BB1015000000000000000015 /* AttachmentBatchSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1015000000000000000015 /* AttachmentBatchSheet.swift */; };
 		BB1016000000000000000016 /* AttachmentsSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1016000000000000000016 /* AttachmentsSectionView.swift */; };
 		BB1017000000000000000017 /* AttachmentRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1017000000000000000017 /* AttachmentRowView.swift */; };
@@ -338,6 +342,7 @@
 		AA1004000000000000000004 /* UploadAttachmentUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadAttachmentUseCase.swift; sourceTree = "<group>"; };
 		AA1005000000000000000005 /* DownloadAttachmentUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadAttachmentUseCase.swift; sourceTree = "<group>"; };
 		AA1006000000000000000006 /* DeleteAttachmentUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeleteAttachmentUseCase.swift; sourceTree = "<group>"; };
+		D34AA5476C3C2A2DCBCDF719 /* ConvertAttachmentUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvertAttachmentUseCase.swift; sourceTree = "<group>"; };
 		AA1007000000000000000007 /* AttachmentCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentCrypto.swift; sourceTree = "<group>"; };
 		AA1008000000000000000008 /* AttachmentDTO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentDTO.swift; sourceTree = "<group>"; };
 		AA1009000000000000000009 /* AttachmentRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentRepositoryImpl.swift; sourceTree = "<group>"; };
@@ -355,11 +360,14 @@
 		AA100D00000000000000000D /* UploadAttachmentUseCaseImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadAttachmentUseCaseImpl.swift; sourceTree = "<group>"; };
 		AA100E00000000000000000E /* DownloadAttachmentUseCaseImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadAttachmentUseCaseImpl.swift; sourceTree = "<group>"; };
 		AA100F00000000000000000F /* DeleteAttachmentUseCaseImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeleteAttachmentUseCaseImpl.swift; sourceTree = "<group>"; };
+		4CAF2E3DF2B495781E75A60F /* ConvertAttachmentUseCaseImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvertAttachmentUseCaseImpl.swift; sourceTree = "<group>"; };
 		AA1010000000000000000010 /* TempFileManaging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TempFileManaging.swift; sourceTree = "<group>"; };
 		AA1011000000000000000011 /* AttachmentAddViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentAddViewModel.swift; sourceTree = "<group>"; };
 		AA1012000000000000000012 /* AttachmentBatchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentBatchViewModel.swift; sourceTree = "<group>"; };
 		AA1013000000000000000013 /* AttachmentRowViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentRowViewModel.swift; sourceTree = "<group>"; };
+		ADC117441EFFFC084795E398 /* AttachmentConversionViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentConversionViewModel.swift; sourceTree = "<group>"; };
 		AA1014000000000000000014 /* AttachmentConfirmSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentConfirmSheet.swift; sourceTree = "<group>"; };
+		09A2BEF7E4A9160C1B007CFD /* AttachmentConversionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentConversionSheet.swift; sourceTree = "<group>"; };
 		AA1015000000000000000015 /* AttachmentBatchSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentBatchSheet.swift; sourceTree = "<group>"; };
 		AA1016000000000000000016 /* AttachmentsSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentsSectionView.swift; sourceTree = "<group>"; };
 		AA1017000000000000000017 /* AttachmentRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentRowView.swift; sourceTree = "<group>"; };
@@ -586,6 +594,7 @@
 				AA1004000000000000000004 /* UploadAttachmentUseCase.swift */,
 				AA1005000000000000000005 /* DownloadAttachmentUseCase.swift */,
 				AA1006000000000000000006 /* DeleteAttachmentUseCase.swift */,
+				D34AA5476C3C2A2DCBCDF719 /* ConvertAttachmentUseCase.swift */,
 				22F420DF3338449A8BDBACCD /* CreateCollectionUseCase.swift */,
 				6C53A49FF8CB462DBB0E474A /* RenameCollectionUseCase.swift */,
 				6EDCDA57D3434985AC25FF5F /* DeleteCollectionUseCase.swift */,
@@ -927,7 +936,9 @@
 				AA1011000000000000000011 /* AttachmentAddViewModel.swift */,
 				AA1012000000000000000012 /* AttachmentBatchViewModel.swift */,
 				AA1013000000000000000013 /* AttachmentRowViewModel.swift */,
+				ADC117441EFFFC084795E398 /* AttachmentConversionViewModel.swift */,
 				AA1014000000000000000014 /* AttachmentConfirmSheet.swift */,
+				09A2BEF7E4A9160C1B007CFD /* AttachmentConversionSheet.swift */,
 				AA1015000000000000000015 /* AttachmentBatchSheet.swift */,
 			);
 			path = Attachments;
@@ -982,6 +993,7 @@
 				AA100D00000000000000000D /* UploadAttachmentUseCaseImpl.swift */,
 				AA100E00000000000000000E /* DownloadAttachmentUseCaseImpl.swift */,
 				AA100F00000000000000000F /* DeleteAttachmentUseCaseImpl.swift */,
+				4CAF2E3DF2B495781E75A60F /* ConvertAttachmentUseCaseImpl.swift */,
 				4DCCEC04E9695CEDB593662E /* GenerateTOTPCodeUseCaseImpl.swift */,
 				47EF6BBB6170F5C4F6D7AB9B /* SetFavoriteUseCaseImpl.swift */,
 				17EED397A28B285C0BD7FF6A /* EmptyTrashUseCaseImpl.swift */,
@@ -1295,6 +1307,7 @@
 				BB1004000000000000000004 /* UploadAttachmentUseCase.swift in Sources */,
 				BB1005000000000000000005 /* DownloadAttachmentUseCase.swift in Sources */,
 				BB1006000000000000000006 /* DeleteAttachmentUseCase.swift in Sources */,
+				C234DFEB2010DB7E94E4FDAB /* ConvertAttachmentUseCase.swift in Sources */,
 				BB1007000000000000000007 /* AttachmentCrypto.swift in Sources */,
 				BB1008000000000000000008 /* AttachmentDTO.swift in Sources */,
 				BB1009000000000000000009 /* AttachmentRepositoryImpl.swift in Sources */,
@@ -1308,11 +1321,14 @@
 				BB100D00000000000000000D /* UploadAttachmentUseCaseImpl.swift in Sources */,
 				BB100E00000000000000000E /* DownloadAttachmentUseCaseImpl.swift in Sources */,
 				BB100F00000000000000000F /* DeleteAttachmentUseCaseImpl.swift in Sources */,
+				6164ED7983C6C9FDAD093D76 /* ConvertAttachmentUseCaseImpl.swift in Sources */,
 				BB1010000000000000000010 /* TempFileManaging.swift in Sources */,
 				BB1011000000000000000011 /* AttachmentAddViewModel.swift in Sources */,
 				BB1012000000000000000012 /* AttachmentBatchViewModel.swift in Sources */,
 				BB1013000000000000000013 /* AttachmentRowViewModel.swift in Sources */,
+				867AB2241CD8F538F81FF77D /* AttachmentConversionViewModel.swift in Sources */,
 				BB1014000000000000000014 /* AttachmentConfirmSheet.swift in Sources */,
+				A37F7FA2360A667210DD9A7C /* AttachmentConversionSheet.swift in Sources */,
 				BB1015000000000000000015 /* AttachmentBatchSheet.swift in Sources */,
 				BB1016000000000000000016 /* AttachmentsSectionView.swift in Sources */,
 				BB1017000000000000000017 /* AttachmentRowView.swift in Sources */,

@@ -34,4 +34,8 @@ nonisolated struct Attachment: Identifiable, Equatable, Hashable {
     /// were encrypted with the user's personal key (Prizm before fix-org-attachment-key). Only this
     /// user can open it; the download unwraps its key with the personal key (design D3).
     var wrappedWithPersonalKey: Bool = false
+    /// True when the encrypted size the server reports is a multiple of 16: the file is probably in
+    /// the layout Prizm 1.1.0 to 1.5.x wrote, which other Bitwarden apps can't open. A hint for the
+    /// UI only; the download checks the real layout (fix-attachment-file-format, D3).
+    var storedInLegacyPrizmFormat: Bool = false
 }

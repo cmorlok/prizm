@@ -332,12 +332,17 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     /// How long the upload takes; a cancelled caller ends it with `CancellationError`.
     nonisolated(unsafe) var uploadBitwardenHostedDelay: Duration?
 
+    /// The encrypted file of the last direct upload, as sent.
+    nonisolated(unsafe) var lastUploadedBlob: Data?
+
     func uploadAttachmentBitwardenHosted(cipherId: String, attachmentId: String, encryptedFileName: String,
                                          encryptedBlob: Data) async throws {
         uploadBitwardenHostedCallCount += 1
         lastUploadedCipherId = cipherId
         lastUploadedAttachmentId = attachmentId
         lastUploadedFileName = encryptedFileName
+        // A copy: the repository zeroes its buffer after the upload.
+        lastUploadedBlob = Data(Array(encryptedBlob))
         if let delay = uploadBitwardenHostedDelay { try await Task.sleep(for: delay) }
         if let err = uploadBitwardenHostedShouldThrow { throw err }
     }

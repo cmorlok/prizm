@@ -76,6 +76,9 @@ final class VaultBrowserViewModel: ObservableObject {
     }
     @Published private(set) var lastSyncedAt: Date?
     @Published var syncErrorMessage: String? = nil
+    /// The "Convert all" notice for attachments in Prizm's old file layout, offered after a sync
+    /// (fix-attachment-file-format, D5). Set by `AppContainer`; `nil` in tests that don't need it.
+    var attachmentConversion: AttachmentConversionViewModel?
     /// True while `syncErrorMessage` holds the failure of a conflict resync. The edit sheet shows
     /// a conflict, and its status line announces that failure; the browser's banner shows it
     /// without announcing it a second time. Cleared by a successful sync, a dismissal, a lock and
@@ -319,6 +322,7 @@ final class VaultBrowserViewModel: ObservableObject {
         // Not `favoriteInFlight`: a request still open blocks the next one for that item, also
         // across a lock, so two requests for one item never race on the server (D2).
         favoriteIntent    = [:]
+        attachmentConversion?.resetSession()
     }
 
     /// Accepts vault data again. Called by `RootViewModel` when it shows the unlocked vault.
@@ -421,6 +425,23 @@ final class VaultBrowserViewModel: ObservableObject {
         refreshItemSelection()
         syncErrorFromConflictResync = false
         syncErrorMessage = nil
+        offerAttachmentConversion()
+    }
+
+    /// Hands the synced items to the conversion notice, which shows itself once per unlock.
+    private func offerAttachmentConversion() {
+        guard let conversion = attachmentConversion else { return }
+        let generation = sessionGeneration
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let items = try await vault.allItems()
+                guard generation == sessionGeneration, isSessionOpen else { return }
+                conversion.vaultDidSync(items: items)
+            } catch {
+                logger.error("Attachment conversion check failed: \(ErrorLog.describe(error), privacy: .public)")
+            }
+        }
     }
 
     /// Called when a sync fails mid-session (FR-049).

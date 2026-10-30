@@ -190,6 +190,17 @@ nonisolated enum AccessibilityID {
         static func missingFileNote(_ id: String) -> String { "attachment.row.\(id).missingFile" }
         /// The "Only you can open this file" note of an org attachment wrapped with the personal key.
         static func personalKeyNote(_ id: String) -> String { "attachment.row.\(id).personalKey" }
+        /// The "Prizm format" badge of an attachment probably in Prizm's old file layout.
+        static func legacyFormatBadge(_ id: String) -> String { "attachment.row.\(id).legacyFormat" }
+        /// The "Convert" action of an attachment in the old layout or wrapped with the personal key.
+        static func convertButton(_ id: String) -> String { "attachment.row.\(id).convert" }
+        /// The "Convert all" sheet after a sync (fix-attachment-file-format, D5).
+        static let conversionSheet    = "attachment.conversion.sheet"
+        static let convertAllButton   = "attachment.conversion.convertAll"
+        static let conversionLater    = "attachment.conversion.later"
+        static let conversionCancel   = "attachment.conversion.cancel"
+        static let conversionDone     = "attachment.conversion.done"
+        static let conversionProgress = "attachment.conversion.progress"
     }
 
     // MARK: - Password Generator (password-generator)

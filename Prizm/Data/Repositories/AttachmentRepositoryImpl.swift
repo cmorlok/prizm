@@ -12,7 +12,7 @@ import os.log
 /// - Security goal: all file bytes and key material are encrypted before leaving the
 ///   device. The attachment key (64 random bytes) encrypts the file blob. The cipher
 ///   key encrypts the attachment key. Both use AES-256-CBC + HMAC-SHA256
-///   (EncString type-2 for key/metadata; binary IV‖ciphertext‖HMAC for the blob).
+///   (EncString type-2 for key/metadata; the official EncArrayBuffer `0x02‖IV‖HMAC‖ciphertext` for the blob).
 ///
 /// - Algorithm: Bitwarden two-layer attachment encryption per Security Whitepaper §4.
 ///   - Layer 1: `encryptData` — AES-256-CBC + HMAC-SHA256 over raw file bytes.
@@ -67,7 +67,7 @@ final class AttachmentRepositoryImpl: AttachmentRepository {
     /// Upload flow (Bitwarden Security Whitepaper §4, "Attachments"):
     /// 1. Generate a 64-byte random per-attachment key.
     /// 2. Encrypt the file name as an EncString using the cipher key.
-    /// 3. Encrypt the file blob using the attachment key (binary layout: IV‖ciphertext‖HMAC).
+    /// 3. Encrypt the file blob using the attachment key (official layout: 0x02‖IV‖HMAC‖ciphertext).
     /// 4. Wrap the attachment key as an EncString using the cipher key.
     /// 5. POST metadata to `/api/ciphers/{id}/attachment/v2` to register the attachment.
     /// 6. Upload the encrypted blob:
@@ -215,13 +215,22 @@ final class AttachmentRepositoryImpl: AttachmentRepository {
     /// 2. Fetch the encrypted blob from the URL, never from a cache. A 404 means the server has no
     ///    file for the record (`fileMissingOnServer`); there is no retry, the URL is already fresh.
     /// 3. Decrypt the blob: unwrap the attachment key (EncString → 64 bytes) using the
-    ///    cipher key, then decrypt the blob (binary IV‖ciphertext‖HMAC) using the attachment key.
+    ///    cipher key, then decrypt the blob (official or old Prizm layout) using the attachment key.
     /// 4. Zero key and blob buffers.
     func download(cipherId: String, attachment: Attachment, cipherKey: Data) async throws -> Data {
         logger.debug("download: starting for cipher=\(cipherId, privacy: .public) attachment=\(attachment.id, privacy: .public)")
 
         let keys = try splitKey(cipherKey)
+        var encBlob = try await fetchBlob(cipherId: cipherId, attachment: attachment)
+        defer { encBlob.resetBytes(in: encBlob.indices) }
 
+        let plaintext = try decrypt(encBlob, of: attachment, keys: keys)
+        logger.info("download: decrypted \(plaintext.count, privacy: .public) bytes for \(attachment.id, privacy: .public)")
+        return plaintext
+    }
+
+    /// Steps 1–2 of `download`: the encrypted file from a fresh URL, else the sync URL.
+    private func fetchBlob(cipherId: String, attachment: Attachment) async throws -> Data {
         let downloadURL: URL
         do {
             downloadURL = try await fetchFreshDownloadURL(cipherId: cipherId, attachmentId: attachment.id)
@@ -236,9 +245,8 @@ final class AttachmentRepositoryImpl: AttachmentRepository {
             throw AttachmentError.downloadFailed
         }
 
-        var encBlob: Data
         do {
-            encBlob = try await apiClient.downloadBlob(from: downloadURL)
+            return try await apiClient.downloadBlob(from: downloadURL)
         } catch let error as APIError where statusCode(of: error) == 404 {
             logger.error("download: the server has no file for \(attachment.id, privacy: .public)")
             throw AttachmentError.fileMissingOnServer
@@ -246,16 +254,62 @@ final class AttachmentRepositoryImpl: AttachmentRepository {
             logger.error("download: failed for \(attachment.id, privacy: .public): \(ErrorLog.describe(error), privacy: .public)")
             throw AttachmentError.downloadFailed
         }
-        defer { encBlob.resetBytes(in: encBlob.indices) }
+    }
 
-        // Decrypt the attachment key (EncString → raw 64 bytes).
+    /// Step 3 of `download`: unwraps the attachment key with `keys` and decrypts `encBlob` in
+    /// either layout (fix-attachment-file-format, D2). File errors become messages a user can read.
+    private func decrypt(_ encBlob: Data, of attachment: Attachment, keys: CryptoKeys) throws -> Data {
         var attachmentKey = try crypto.decryptAttachmentKey(attachment.encryptedKey, cipherKey: keys)
         defer { attachmentKey.resetBytes(in: attachmentKey.indices) }
+        do {
+            return try crypto.decryptData(encBlob, attachmentKey: attachmentKey)
+        } catch AttachmentCryptoError.malformedBlob, AttachmentCryptoError.unsupportedEncryptionType {
+            throw AttachmentError.unsupportedFileFormat
+        } catch AttachmentCryptoError.macMismatch, AttachmentCryptoError.decryptionFailed {
+            throw AttachmentError.fileDecryptionFailed
+        }
+    }
 
-        // Decrypt the blob.
-        let plaintext = try crypto.decryptData(encBlob, attachmentKey: attachmentKey)
-        logger.info("download: decrypted \(plaintext.count, privacy: .public) bytes for \(attachment.id, privacy: .public)")
-        return plaintext
+    // MARK: - Convert
+
+    /// Converts one attachment like the SDK's `upgrade_attachment` (fix-attachment-file-format,
+    /// D4): download, check the old layout, re-upload through `upload` (new attachment key,
+    /// official layout, rollback on failure), then delete the old attachment.
+    ///
+    /// - Security goal: files other Bitwarden apps can open, without a second upload path to audit.
+    ///   The plaintext and the downloaded blob are zeroed on every path.
+    /// - Intentionally NOT done: overwriting the bytes under the same attachment ID. Neither server
+    ///   documents it, and Vaultwarden compares the new size with the stored one.
+    func convertLegacyFormat(cipherId: String, attachment: Attachment, downloadKey: Data, uploadKey: Data) async throws -> Attachment {
+        let downloadKeys = try splitKey(downloadKey)
+        var encBlob = try await fetchBlob(cipherId: cipherId, attachment: attachment)
+        defer { encBlob.resetBytes(in: encBlob.indices) }
+
+        // The size hint can be wrong; the blob's own layout decides. A flagged attachment still has
+        // to move to the item's key, whatever its layout.
+        let layout: AttachmentBlobLayout
+        do {
+            layout = try AttachmentBlobLayout.of(encBlob)
+        } catch {
+            throw AttachmentError.unsupportedFileFormat
+        }
+        guard layout == .legacyPrizm || attachment.wrappedWithPersonalKey else {
+            logger.info("convert: \(attachment.id, privacy: .public) is already in the official layout")
+            throw AttachmentError.alreadyStandardFormat
+        }
+
+        var plaintext = try decrypt(encBlob, of: attachment, keys: downloadKeys)
+        defer { plaintext.resetBytes(in: plaintext.indices) }
+
+        let converted = try await upload(cipherId: cipherId, fileName: attachment.fileName, data: plaintext, cipherKey: uploadKey)
+        do {
+            try await delete(cipherId: cipherId, attachmentId: attachment.id)
+        } catch {
+            logger.error("convert: \(converted.id, privacy: .public) uploaded, old \(attachment.id, privacy: .public) not deleted: \(ErrorLog.describe(error), privacy: .public)")
+            throw AttachmentError.convertedOldCopyLeft
+        }
+        logger.info("convert: \(attachment.id, privacy: .public) replaced by \(converted.id, privacy: .public)")
+        return converted
     }
 
     // MARK: - Delete
