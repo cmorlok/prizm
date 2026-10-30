@@ -179,8 +179,10 @@ protocol PrizmAPIClientProtocol: Actor {
     /// POST `/api/ciphers/{cipherId}/attachment/{attachmentId}` — uploads a file blob via multipart.
     ///
     /// Used when `fileUploadType == 0` (Bitwarden-hosted storage).
-    /// The encrypted blob is sent as the `data` field of a multipart/form-data body.
-    func uploadAttachmentBitwardenHosted(cipherId: String, attachmentId: String, encryptedBlob: Data) async throws
+    /// The encrypted blob is sent as the `data` field of a multipart/form-data body, named with the
+    /// encrypted file name.
+    func uploadAttachmentBitwardenHosted(cipherId: String, attachmentId: String, encryptedFileName: String,
+                                         encryptedBlob: Data) async throws
 
     /// PUT `<signedURL>` with `x-ms-blob-type: BlockBlob` — uploads to Azure Blob Storage.
     ///
@@ -191,11 +193,13 @@ protocol PrizmAPIClientProtocol: Actor {
     /// GET `/api/ciphers/{cipherId}/attachment/{attachmentId}` — fetches a fresh signed download URL.
     ///
     /// Returns an `AttachmentDownloadResponse` containing the signed URL valid for a limited time.
-    /// Called when `Attachment.url` is nil or returns HTTP 403.
+    /// Called before every download (fix-attachment-transfer-flow, D2).
     func fetchAttachmentDownloadURL(cipherId: String, attachmentId: String) async throws -> AttachmentDownloadResponse
 
     /// DELETE `/api/ciphers/{cipherId}/attachment/{attachmentId}` — deletes an attachment.
-    func deleteAttachment(cipherId: String, attachmentId: String) async throws
+    /// - Returns: the item as the server holds it afterwards, or nil when the answer has none
+    ///   (Vaultwarden < 1.34.0, Bitwarden server < v2026.2.1) or it cannot be read.
+    func deleteAttachment(cipherId: String, attachmentId: String) async throws -> RawCipher?
 
     /// GET `<signedURL>` — downloads the raw encrypted blob from a signed URL.
     ///
@@ -557,6 +561,42 @@ nonisolated struct AttachmentMetadataResponse: Decodable {
     let attachmentId:   String
     let url:            String
     let fileUploadType: Int
+    /// The item after the attachment record was created (both servers send it on the v2 route).
+    /// Nil when absent or unreadable; the caller then patches its list locally
+    /// (fix-attachment-transfer-flow, D5).
+    let cipherResponse: RawCipher?
+
+    init(attachmentId: String, url: String, fileUploadType: Int, cipherResponse: RawCipher? = nil) {
+        self.attachmentId   = attachmentId
+        self.url            = url
+        self.fileUploadType = fileUploadType
+        self.cipherResponse = cipherResponse
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        attachmentId   = try c.decode(String.self, forKey: .attachmentId)
+        url            = try c.decode(String.self, forKey: .url)
+        fileUploadType = try c.decode(Int.self, forKey: .fileUploadType)
+        cipherResponse = (try? c.decodeIfPresent(RawCipher.self, forKey: .cipherResponse)) ?? nil
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case attachmentId, url, fileUploadType, cipherResponse
+    }
+}
+
+/// Response to DELETE `/api/ciphers/{id}/attachment/{attachmentId}`: `{"cipher": …}` on Vaultwarden
+/// 1.34.0+ and Bitwarden server v2026.2.1+, nothing on older servers.
+nonisolated struct AttachmentDeleteResponse: Decodable {
+    let cipher: RawCipher?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        cipher = (try? c.decodeIfPresent(RawCipher.self, forKey: .cipher)) ?? nil
+    }
+
+    private enum CodingKeys: String, CodingKey { case cipher }
 }
 
 /// Response from GET `/api/ciphers/{id}/attachment/{attachmentId}`.
@@ -1040,15 +1080,19 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
 
     // MARK: - uploadAttachmentBitwardenHosted
 
-    func uploadAttachmentBitwardenHosted(cipherId: String, attachmentId: String, encryptedBlob: Data) async throws {
+    func uploadAttachmentBitwardenHosted(cipherId: String, attachmentId: String, encryptedFileName: String,
+                                         encryptedBlob: Data) async throws {
         guard let base = baseURL else { throw APIError.baseURLNotSet }
         let url = base.appendingPathComponent("api/ciphers").appendingPathComponent(cipherId).appendingPathComponent("attachment").appendingPathComponent(attachmentId)
 
-        // Multipart/form-data with a single `data` field containing the encrypted blob.
+        // Multipart/form-data with a single `data` field containing the encrypted blob. The part's
+        // `filename` is the encrypted file name, as the official clients send it
+        // (`bitwarden-file-upload.service.ts`; fix-attachment-transfer-flow, D6). An EncString holds
+        // only base64 characters, `.`, `|` and digits, so it needs no quoting.
         let boundary = UUID().uuidString
         var body = Data()
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"data\"; filename=\"attachment\"\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"data\"; filename=\"\(encryptedFileName)\"\r\n".data(using: .utf8)!)
         body.append("Content-Type: application/octet-stream\r\n\r\n".data(using: .utf8)!)
         body.append(encryptedBlob)
         body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
@@ -1091,20 +1135,24 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
 
     // MARK: - deleteAttachment
 
-    func deleteAttachment(cipherId: String, attachmentId: String) async throws {
+    func deleteAttachment(cipherId: String, attachmentId: String) async throws -> RawCipher? {
         guard let base = baseURL else { throw APIError.baseURLNotSet }
         let url = base.appendingPathComponent("api/ciphers").appendingPathComponent(cipherId).appendingPathComponent("attachment").appendingPathComponent(attachmentId)
         var request = baseRequest(url: url)
         request.httpMethod = "DELETE"
         if let token = accessToken { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
-        try await performEmpty(request: request)
+        let answer: AttachmentDeleteResponse? = try await performOptional(request: request)
+        return answer?.cipher
     }
 
 
     // MARK: - downloadBlob
 
     func downloadBlob(from url: URL) async throws -> Data {
-        let (data, response) = try await session.data(from: url)
+        // Never from a cache: the official clients fetch with `cache: "no-store"`, and a cached copy
+        // could outlive a deleted or replaced file.
+        let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw APIError.httpError(statusCode: 0, body: "Invalid response")
         }

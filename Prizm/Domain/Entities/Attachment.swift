@@ -25,16 +25,9 @@ nonisolated struct Attachment: Identifiable, Equatable, Hashable {
     /// Human-readable file size string supplied by the server (e.g. "1.2 MB").
     /// Stored verbatim; not reformatted by the client to match what the server computed.
     let sizeName: String
-    /// Signed download URL. Non-nil when the server has provided a URL in the sync
-    /// payload. May be nil immediately after a successful upload (before the next sync),
-    /// or when the server omits the URL. The download flow fetches a fresh URL on demand
-    /// when this is nil or when the existing URL returns HTTP 403.
+    /// Download URL from the sync payload. Signed and short-lived (Vaultwarden: about 90 seconds),
+    /// so a download always asks for a fresh one first and uses this only when that request
+    /// answers 404, as the official clients do (fix-attachment-transfer-flow, D2). Nil right after
+    /// an upload whose answer carried no item.
     let url: String?
-    /// True when the attachment metadata was created on the server but the file blob
-    /// was not successfully uploaded. An incomplete attachment shows a "Retry Upload"
-    /// UI instead of the normal Open / Save to Disk actions.
-    ///
-    /// Derived at sync time from whether the server returned a `url`:
-    /// a missing URL indicates the blob was never received.
-    let isUploadIncomplete: Bool
 }

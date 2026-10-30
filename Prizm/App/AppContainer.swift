@@ -190,6 +190,9 @@ final class AppContainer: ObservableObject {
         self.downloadAttachmentUseCase = DownloadAttachmentUseCaseImpl(repository: attachmentRepo, vaultKeyService: vaultKeyService)
         self.deleteAttachmentUseCase   = DeleteAttachmentUseCaseImpl(repository: attachmentRepo)
         self.tempFileManager           = AttachmentTempFileManager()
+        // Launch sweep: files a crash or a forced quit left behind are gone before any screen
+        // appears (fix-attachment-transfer-flow, D7).
+        self.tempFileManager.sweepAll()
     }
 
     #if DEBUG
@@ -330,17 +333,6 @@ final class AppContainer: ObservableObject {
         return panel.runModal() == .OK ? panel.url : nil
     }
 
-    /// Default single-file picker for retry using `NSOpenPanel`.
-    @MainActor
-    private static func defaultRetryOpenPanel() -> URL? {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles          = true
-        panel.canChooseDirectories    = false
-        panel.allowsMultipleSelection = false
-        panel.message                 = "Select the file to re-upload"
-        return panel.runModal() == .OK ? panel.url : nil
-    }
-
     /// Default file opener using `NSWorkspace`.
     @MainActor
     private static func defaultFileOpener(url: URL) {
@@ -371,10 +363,8 @@ final class AppContainer: ObservableObject {
             attachment:      attachment,
             downloadUseCase: downloadAttachmentUseCase,
             deleteUseCase:   deleteAttachmentUseCase,
-            uploadUseCase:   uploadAttachmentUseCase,
             tempFileManager: tempFileManager,
             fileSaver:       Self.defaultSavePanel,
-            retryFilePicker: Self.defaultRetryOpenPanel,
             fileOpener:      Self.defaultFileOpener
         )
     }

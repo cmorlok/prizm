@@ -160,9 +160,12 @@ final class AttachmentAddViewModel: Identifiable {
                 )
                 fileData.resetBytes(in: fileData.indices)
                 self.isDismissed = true
-            } catch AttachmentError.premiumRequired {
+            } catch let error as AttachmentError {
+                // These texts are complete sentences: the server's reason, or the record left
+                // behind (fix-attachment-transfer-flow, D1 and D3).
                 fileData.resetBytes(in: fileData.indices)
-                self.uploadError = "Attachment storage requires a premium Bitwarden subscription."
+                self.uploadError = error.errorDescription
+                logger.error("upload failed: \(ErrorLog.describe(error), privacy: .public)")
             } catch is CancellationError {
                 fileData.resetBytes(in: fileData.indices)
             } catch {

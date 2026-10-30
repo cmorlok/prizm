@@ -265,6 +265,71 @@ final class RootViewModelLockTests: XCTestCase {
         XCTAssertEqual(deps.fakePasteboard.string, "not ours", "Another app's value stays")
     }
 
+    // MARK: - Opened attachment files (fix-attachment-transfer-flow, D7)
+
+    func testLockVault_sweepsOpenedAttachmentFiles() async throws {
+        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault)
+        let root = RootViewModel(container: deps)
+        mockAuth.stubbedStoredAccount = stubAccount
+        root.screen = .vault
+
+        root.lockVault()
+        try await waitUntil { if case .unlock = root.screen { return true }; return false }
+
+        XCTAssertEqual(deps.tempFiles.sweepCount, 1)
+    }
+
+    func testSignOut_sweepsOpenedAttachmentFiles() async throws {
+        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault)
+        let root = RootViewModel(container: deps)
+        root.screen = .vault
+
+        root.signOut()
+        try await waitUntil { if case .login = root.screen { return true }; return false }
+
+        XCTAssertEqual(deps.tempFiles.sweepCount, 1)
+    }
+
+    func testQuit_sweepsOpenedAttachmentFiles() {
+        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault)
+        let root = RootViewModel(container: deps)
+        NotificationCenter.default.post(name: NSApplication.willTerminateNotification, object: nil)
+        XCTAssertEqual(deps.tempFiles.sweepCount, 1)
+        _ = root
+    }
+
+    /// Task 6.3: an attachment opened through its row is gone from the folder after a lock.
+    func testOpenAttachmentThenLock_leavesTheFolderEmpty() async throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("prizm-locktest-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let tempFiles = AttachmentTempFileManager(folder: folder)
+        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault)
+        deps.attachmentTempFiles = tempFiles
+        mockAuth.stubbedStoredAccount = stubAccount
+        let root = RootViewModel(container: deps)
+        let opened = OpenedURL()
+        let row = AttachmentRowViewModel(
+            cipherId: "c1",
+            attachment: Attachment(id: "att-1", fileName: "secret.txt", encryptedKey: "2.k|k|k",
+                                   size: 6, sizeName: "6 B", url: nil),
+            downloadUseCase: FixedDownload(), deleteUseCase: UnusedDelete(),
+            tempFileManager: tempFiles, fileSaver: { _ in nil }, fileOpener: { opened.url = $0 })
+
+        row.open()
+        try await waitUntil { opened.url != nil }
+        let openedFiles = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+        XCTAssertEqual(openedFiles.count, 1, "The opened file is in the folder")
+
+        // Set after the wait: the launch check may have moved the screen meanwhile.
+        root.screen = .vault
+        root.lockVault()
+        try await waitUntil { if case .unlock = root.screen { return true }; return false }
+
+        let left = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+        XCTAssertTrue(left.isEmpty, "No decrypted file outlives the session")
+    }
+
     func testCopyCommands_unavailableWhileLocked() async throws {
         sut.screen = .unlock
         // Even if a decrypted item were still selected, nothing may be copied while locked.
@@ -545,6 +610,9 @@ final class MockRootDependencies: RootViewModelDependencies {
     let fakePasteboard = FakePasteboard()
     lazy var clipboardService = ClipboardServiceImpl(pasteboard: fakePasteboard)
     var clipboard: any ClipboardService { clipboardService }
+    let tempFiles = SweepCountingTempFiles()
+    /// Replaceable so an integration test can use the real temp-file manager.
+    lazy var attachmentTempFiles: any TempFileManaging = tempFiles
     let authRepo: any AuthRepository
     let vaultRepo: any VaultRepository
 
@@ -648,4 +716,27 @@ private struct UnusedGenerateTOTPCode: GenerateTOTPCodeUseCase {
     func execute(seed: String, at date: Date) async throws -> TOTPCode {
         throw TOTPError.invalidSecret
     }
+}
+
+/// Counts `sweepAll()` calls; writes nothing.
+final class SweepCountingTempFiles: TempFileManaging, @unchecked Sendable {
+    private(set) var sweepCount = 0
+    var sweepGeneration: Int { sweepCount }
+    func write(_ data: Data, fileExtension: String, generation: Int) throws -> URL { throw CocoaError(.featureUnsupported) }
+    func sweepAll() { sweepCount += 1 }
+    func register(url: URL) {}
+    func cleanup() {}
+}
+
+private final class FixedDownload: DownloadAttachmentUseCase {
+    func execute(cipherId: String, attachment: Attachment) async throws -> Data { Data("secret".utf8) }
+}
+
+private final class UnusedDelete: DeleteAttachmentUseCase {
+    func execute(cipherId: String, attachmentId: String) async throws {}
+}
+
+@MainActor
+private final class OpenedURL {
+    var url: URL?
 }

@@ -198,22 +198,29 @@ one). The **attachment key** is a freshly generated 64-byte random value for eac
 
 ### Temp file lifecycle (Open action)
 
-When a user opens an attachment, the decrypted plaintext is written to a system temp
-directory file and opened with the default application. The temp file is:
+When a user opens an attachment, the decrypted plaintext is written to a file in one folder,
+`<temp>/PrizmAttachments` (owner-only, mode `0700`), and opened with the default application.
+Files in that folder are:
 
 1. Overwritten with zeros then deleted after **30 seconds** (deadline-based cleanup).
 2. Cleaned up on every **foreground transition** (`NSApplication.didBecomeActiveNotification`).
+3. All removed on **lock**, **sign-out** and **quit**, and at **launch** (files a crash left behind).
 
 The 30-second window is a trade-off: long enough for the application to load the file,
 short enough to limit plaintext exposure if the user switches away without closing the file.
+Deletion is the control that matters; the zero overwrite is best effort, because APFS
+copy-on-write and SSD wear levelling can keep the old blocks (FileVault protects those).
+Prizm does not close the file in the application that opened it: such an app keeps its own
+copy in memory after the file on disk is gone.
 
-### Upload-incomplete state
+### Failed uploads
 
-If a network failure occurs after the server creates attachment metadata but before the
-encrypted blob is fully uploaded, the attachment is marked `isUploadIncomplete = true`.
-The server retains the empty metadata record. The client shows a "Retry" action which:
-1. Deletes the orphaned metadata record via `DELETE /api/ciphers/{id}/attachment/{attachmentId}`.
-2. Performs a fresh upload as a new attachment.
+If the encrypted file upload fails after the server created the attachment record (network
+error, cancellation, server rejection), Prizm deletes that record right away
+(`DELETE /api/ciphers/{id}/attachment/{attachmentId}`), so no broken entry stays in the vault.
+Only when that delete fails too does Prizm say that a broken entry may remain; the user can
+delete it from the item. A download that finds no file on the server marks the attachment as
+missing and offers only Delete.
 
 ### Threat model additions
 

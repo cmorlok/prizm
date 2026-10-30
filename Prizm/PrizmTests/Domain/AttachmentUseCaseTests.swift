@@ -7,7 +7,7 @@ private final class MockAttachmentRepository: AttachmentRepository {
     var uploadCalled = false
     var uploadResult: Result<Attachment, Error> = .success(
         Attachment(id: "att-1", fileName: "file.txt", encryptedKey: "2.x|y|z",
-                   size: 64, sizeName: "64 B", url: nil, isUploadIncomplete: false)
+                   size: 64, sizeName: "64 B", url: nil)
     )
     var downloadCalled = false
     var downloadResult: Result<Data, Error> = .success(Data("hello".utf8))
@@ -79,11 +79,11 @@ final class UploadAttachmentUseCaseTests: XCTestCase {
     }
 
     func test_execute_propagatesUploadError() async {
-        mockRepo.uploadResult = .failure(AttachmentError.premiumRequired)
+        mockRepo.uploadResult = .failure(AttachmentError.serverRejected(message: "No premium"))
         do {
             _ = try await sut.execute(cipherId: "c-1", fileName: "f", data: Data())
-            XCTFail("Expected AttachmentError.premiumRequired")
-        } catch AttachmentError.premiumRequired {
+            XCTFail("Expected AttachmentError.serverRejected")
+        } catch AttachmentError.serverRejected {
             // expected
         } catch {
             XCTFail("Unexpected error: \(error)")
@@ -102,7 +102,7 @@ final class DownloadAttachmentUseCaseTests: XCTestCase {
 
     private let stubAttachment = Attachment(
         id: "att-1", fileName: "file.txt", encryptedKey: "2.x|y|z",
-        size: 64, sizeName: "64 B", url: "https://cdn.example.com/file", isUploadIncomplete: false
+        size: 64, sizeName: "64 B", url: "https://cdn.example.com/file"
     )
 
     override func setUp() async throws {

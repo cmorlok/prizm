@@ -26,7 +26,7 @@ nonisolated struct AttachmentDTO: Codable {
     /// Human-readable size string computed by the server (e.g. "1 MB").
     /// Mapped verbatim to `Attachment.sizeName` — not reformatted by the client.
     let sizeName: String
-    /// Signed download URL. `nil` (or absent in the JSON) means the file blob was
-    /// never successfully uploaded — the attachment is "upload incomplete".
+    /// Signed download URL from the sync, short-lived. Used only when a fresh URL cannot be
+    /// fetched (fix-attachment-transfer-flow, D2); nil or absent says nothing about the file.
     let url:      String?
 }

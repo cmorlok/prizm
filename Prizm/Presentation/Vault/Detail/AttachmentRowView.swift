@@ -4,9 +4,8 @@ import SwiftUI
 
 /// A single row in the Attachments section card displaying an attachment's name and size.
 ///
-/// When `attachment.isUploadIncomplete` is true the row shows an "Upload incomplete" warning
-/// and a Retry button instead of the normal Open / Save to Disk actions. Normal action buttons
-/// (Open, Save to Disk, Delete) are added by `AttachmentRowViewModel` in task 7.
+/// When a download found no file on the server, the row says so and offers only Delete
+/// (fix-attachment-transfer-flow, D2). Otherwise Open, Save to Disk and Delete show on hover.
 struct AttachmentRowView: View {
 
     let attachment: Attachment
@@ -16,7 +15,8 @@ struct AttachmentRowView: View {
     var onOpen:       () -> Void = {}
     var onSaveToDisk: () -> Void = {}
     var onDelete:     () -> Void = {}
-    var onRetry:      () -> Void = {}
+    /// True once a download found no file for this attachment on the server.
+    var isFileMissing: Bool = false
 
     @State private var isHovered = false
 
@@ -40,8 +40,8 @@ struct AttachmentRowView: View {
 
             Spacer()
 
-            if attachment.isUploadIncomplete {
-                incompleteActions
+            if isFileMissing {
+                missingFileActions
             } else if isHovered {
                 normalActions
             }
@@ -95,24 +95,29 @@ struct AttachmentRowView: View {
         .transition(.opacity)
     }
 
-    // MARK: - Upload-incomplete indicator (task 6d.1)
+    // MARK: - File missing on the server (fix-attachment-transfer-flow, D2)
 
+    /// Always visible, not only on hover: the only thing left to do with such an entry is delete it.
     @ViewBuilder
-    private var incompleteActions: some View {
+    private var missingFileActions: some View {
         HStack(spacing: 6) {
             Image(systemName: "exclamationmark.triangle")
                 .foregroundStyle(.orange)
                 .imageScale(.small)
-            Text("Upload incomplete")
+                .accessibilityHidden(true)
+            Text(AttachmentRowViewModel.missingFileNote)
                 .font(Typography.utility)
                 .foregroundStyle(.orange)
-            Button("Retry") {
-                onRetry()
+                .accessibilityIdentifier(AccessibilityID.Attachment.missingFileNote(attachment.id))
+            Button { onDelete() } label: {
+                Image(systemName: "trash")
+                    .imageScale(.medium)
+                    .foregroundStyle(Color.red)
             }
-            .buttonStyle(.borderless)
-            .font(Typography.utility)
-            .foregroundStyle(Color.accentColor)
-            .accessibilityIdentifier(AccessibilityID.Attachment.retryButton(attachment.id))
+            .buttonStyle(.plain)
+            .accessibilityLabel("Delete")
+            .accessibilityHint("Deletes this attachment entry")
+            .accessibilityIdentifier(AccessibilityID.Attachment.deleteButton(attachment.id))
         }
     }
 }

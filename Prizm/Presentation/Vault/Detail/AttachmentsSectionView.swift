@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -13,8 +14,8 @@ import UniformTypeIdentifiers
 /// - Drag-and-drop of one or more files onto the card, highlighted with a border while
 ///   a file is dragged over (task 5.4).
 ///
-/// Action closures (`onAddTapped`, `onDropFiles`, per-row `onOpen`/`onSaveToDisk`/`onDelete`/
-/// `onRetry`) are wired by the parent view. The defaults are no-ops so task-5 callers compile
+/// Action closures (`onAddTapped`, `onDropFiles`, per-row `onOpen`/`onSaveToDisk`/`onDelete`)
+/// are wired by the parent view. The defaults are no-ops so task-5 callers compile
 /// before the ViewModels from tasks 6 and 7 are wired up.
 struct AttachmentsSectionView: View {
 
@@ -149,7 +150,7 @@ private struct AttachmentRowViewWithViewModel: View {
             onOpen:       { viewModel.open() },
             onSaveToDisk: { viewModel.saveToDisk() },
             onDelete:     { showDeleteAlert = true },
-            onRetry:      { viewModel.retryUpload() }
+            isFileMissing: viewModel.isFileMissing
         )
         .alert("Delete Attachment", isPresented: $showDeleteAlert) {
             Button("Delete", role: .destructive) { viewModel.delete() }
@@ -157,8 +158,16 @@ private struct AttachmentRowViewWithViewModel: View {
         } message: {
             Text(verbatim: "\u{201C}" + viewModel.attachment.fileName + "\u{201D} will be permanently deleted.")
         }
+        // The row's action buttons disappear when a download fails, and VoiceOver's focus moves away,
+        // so the outcome is announced (hand check 2026-10-30, Constitution §VIII).
+        .onChange(of: viewModel.isFileMissing) { _, missing in
+            if missing { Self.announce(AttachmentRowViewModel.missingFileNote) }
+        }
+        .onChange(of: viewModel.actionError) { _, error in
+            if let error { Self.announce(error) }
+        }
         .overlay(alignment: .bottom) {
-            if let error = viewModel.actionError ?? viewModel.retryError {
+            if let error = viewModel.actionError {
                 Text(error)
                     .font(Typography.utility)
                     .foregroundStyle(.red)
@@ -166,6 +175,16 @@ private struct AttachmentRowViewWithViewModel: View {
                     .transition(.opacity)
             }
         }
+    }
+
+    /// Posts through AppKit at high priority: macOS VoiceOver ignores the priority that SwiftUI's
+    /// `AccessibilityNotification.Announcement` carries (same as `ItemEditView.announce`).
+    private static func announce(_ text: String) {
+        NSAccessibility.post(
+            element: NSApp as Any,
+            notification: .announcementRequested,
+            userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue]
+        )
     }
 }
 

@@ -186,8 +186,8 @@ nonisolated enum AccessibilityID {
         static func saveButton(_ id: String) -> String { "attachment.row.\(id).save" }
         /// The Delete button on a specific attachment row.
         static func deleteButton(_ id: String) -> String { "attachment.row.\(id).delete" }
-        /// The Retry Upload button shown when `isUploadIncomplete` is true.
-        static func retryButton(_ id: String) -> String { "attachment.row.\(id).retry" }
+        /// The "The file is missing on the server" note of a row whose download found no file.
+        static func missingFileNote(_ id: String) -> String { "attachment.row.\(id).missingFile" }
     }
 
     // MARK: - Password Generator (password-generator)

@@ -23,7 +23,7 @@ final class PartialUpdateTests: XCTestCase {
         content: .login(LoginContent(username: "team", password: "pw", uris: [], totp: nil, notes: nil, customFields: [])),
         reprompt: 1,
         attachments: [Attachment(id: "att-1", fileName: "a.txt", encryptedKey: "2.k|k|k", size: 10,
-                                 sizeName: "10 B", url: nil, isUploadIncomplete: false)],
+                                 sizeName: "10 B", url: nil)],
         folderId: "old-folder",
         organizationId: "org-1",
         collectionIds: ["col-a"]

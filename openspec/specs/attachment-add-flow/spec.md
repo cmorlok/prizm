@@ -58,12 +58,12 @@ Encryption and upload SHALL execute on a background `Task`. While in progress, t
 - **THEN** the upload task SHALL be cancelled, the in-memory file data buffer SHALL be zeroed, and the sheet SHALL dismiss immediately
 
 #### Scenario: Upload failure shows inline error with Cancel enabled
-- **WHEN** the upload fails (network error, server error, premium gate)
+- **WHEN** the upload fails (network error, server error, server rejection)
 - **THEN** the confirmation sheet SHALL remain open with an inline error message and Cancel SHALL be enabled
 
-#### Scenario: Premium gate error shown inline
-- **WHEN** the server returns HTTP 402
-- **THEN** the error "Attachments require a Bitwarden Premium account." SHALL be shown on the confirmation sheet
+#### Scenario: Server rejection shown inline
+- **WHEN** the server rejects the upload with HTTP 400 and a JSON `message`
+- **THEN** "The server rejected the upload: <message>" SHALL be shown on the confirmation sheet
 
 ---
 
@@ -127,9 +127,7 @@ When files are dropped, the system SHALL present a single sheet listing all drop
 
 #### Scenario: Cancel while uploads are in progress cancels all tasks
 - **WHEN** the user presses Cancel on the batch confirmation sheet after confirming (while uploads are running)
-- **THEN** all in-flight upload tasks SHALL be cancelled, in-memory file bytes SHALL be zeroed, and the sheet SHALL dismiss immediately; any partially uploaded files SHALL appear as "Upload incomplete" on the next sync
-
----
+- **THEN** all in-flight upload tasks SHALL be cancelled, in-memory file bytes SHALL be zeroed, and the sheet SHALL dismiss immediately; the attachment record of every cancelled upload SHALL be deleted again (`attachment-transfer`, "Failed uploads are rolled back")
 
 ### Requirement: Reject concurrent drag-drop while batch upload is in progress
 While a batch upload is actively running (at least one upload task is in flight), the Attachments section drop zone SHALL NOT accept a new drop. When the user drags files over the card during an active upload, the card SHALL display a rejection indicator instead of the normal drop-target highlight, and the drop SHALL be ignored.

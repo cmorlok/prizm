@@ -1,10 +1,10 @@
 import XCTest
 @testable import Prizm
 
-/// Unit tests for `AttachmentRowViewModel` (tasks 7.5 and 6d.3).
+/// Unit tests for `AttachmentRowViewModel` (task 7.5; fix-attachment-transfer-flow).
 ///
 /// Covers: Open error path, Save to Disk cancel (no download triggered), Delete confirm
-/// vs cancel, incomplete-attachment row state, and retry flow.
+/// vs cancel, and the missing-file state.
 @MainActor
 final class AttachmentRowViewModelTests: XCTestCase {
 
@@ -14,45 +14,36 @@ final class AttachmentRowViewModelTests: XCTestCase {
     private let plainData     = Data("decrypted file content".utf8)
     private var mockDownload: MockRowDownloadUseCase!
     private var mockDelete:   MockRowDeleteUseCase!
-    private var mockUpload:   MockRowUploadUseCase!
     private var mockTempMgr:  MockTempFileManager!
 
     private var normalAttachment: Attachment!
-    private var incompleteAttachment: Attachment!
 
     override func setUp() async throws {
         mockDownload = MockRowDownloadUseCase()
         mockDelete   = MockRowDeleteUseCase()
-        mockUpload   = MockRowUploadUseCase()
         mockTempMgr  = MockTempFileManager()
 
         normalAttachment = Attachment(
             id: "att-1", fileName: "report.pdf", encryptedKey: "2.a|b|c",
-            size: 1024, sizeName: "1 KB", url: "https://cdn.example.com/blob",
-            isUploadIncomplete: false
+            size: 1024, sizeName: "1 KB", url: "https://cdn.example.com/blob"
         )
+    }
 
-        incompleteAttachment = Attachment(
-            id: "att-inc", fileName: "draft.doc", encryptedKey: "2.x|y|z",
-            size: 512, sizeName: "512 B", url: nil,
-            isUploadIncomplete: true
-        )
+    override func tearDown() async throws {
+        for url in mockTempMgr.written { try? FileManager.default.removeItem(at: url) }
     }
 
     private var fileOpenerCalled = false
 
     private func makeSUT(attachment: Attachment? = nil,
-                         fileSaver: (@MainActor (String) -> URL?)? = nil,
-                         retryPicker: (@MainActor () -> URL?)? = nil) -> AttachmentRowViewModel {
+                         fileSaver: (@MainActor (String) -> URL?)? = nil) -> AttachmentRowViewModel {
         AttachmentRowViewModel(
             cipherId:        cipherId,
             attachment:      attachment ?? normalAttachment,
             downloadUseCase: mockDownload,
             deleteUseCase:   mockDelete,
-            uploadUseCase:   mockUpload,
             tempFileManager: mockTempMgr,
             fileSaver:       fileSaver ?? { _ in nil },
-            retryFilePicker: retryPicker ?? { nil },
             fileOpener:      { [weak self] _ in self?.fileOpenerCalled = true }
         )
     }
@@ -177,70 +168,47 @@ final class AttachmentRowViewModelTests: XCTestCase {
         XCTAssertNotNil(sut.actionError)
     }
 
-    // MARK: - Incomplete attachment (task 6d.3)
+    // MARK: - File missing on the server (fix-attachment-transfer-flow, 2.4)
 
-    func test_incompleteAttachment_isUploadIncompleteTrue() {
-        let sut = makeSUT(attachment: incompleteAttachment)
-        XCTAssertTrue(sut.attachment.isUploadIncomplete)
+    func test_open_fileMissing_setsTheMissingState_notAnError() async throws {
+        mockDownload.result = .failure(AttachmentError.fileMissingOnServer)
+        let sut = makeSUT()
+
+        sut.open()
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertTrue(sut.isFileMissing)
+        XCTAssertNil(sut.actionError)
+        XCTAssertFalse(fileOpenerCalled)
+        XCTAssertEqual(AttachmentRowViewModel.missingFileNote, "The file is missing on the server")
     }
 
-    func test_normalAttachment_isUploadIncompleteFalse() {
-        let sut = makeSUT(attachment: normalAttachment)
-        XCTAssertFalse(sut.attachment.isUploadIncomplete)
+    /// A lock sweeps the folder while the file downloads: the decrypted file is not written or
+    /// opened afterwards (review 2026-10-30).
+    func test_open_lockDuringTheDownload_writesAndOpensNothing() async throws {
+        mockDownload.result = .success(plainData)
+        mockDownload.whileDownloading = { [mockTempMgr] in mockTempMgr?.sweepAll() }
+        let sut = makeSUT()
+
+        sut.open()
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertTrue(mockTempMgr.written.isEmpty)
+        XCTAssertFalse(fileOpenerCalled)
+        XCTAssertNil(sut.actionError, "The vault is locked; there is nothing to show")
+        XCTAssertFalse(sut.isLoading)
     }
 
-    // MARK: - Retry Upload (task 6d.3)
+    func test_open_writesThroughTheTempFileManager() async throws {
+        mockDownload.result = .success(plainData)
+        let sut = makeSUT()
 
-    func test_retryUpload_onlyWorksOnIncompleteAttachment() {
-        let sut = makeSUT(attachment: normalAttachment, retryPicker: { URL(fileURLWithPath: "/tmp/f.txt") })
-        // Should not trigger on a complete attachment
-        sut.retryUpload()
-        XCTAssertFalse(mockDelete.executeCalled)
-        XCTAssertFalse(mockUpload.executeCalled)
-    }
+        sut.open()
+        try await Task.sleep(for: .milliseconds(100))
 
-    func test_retryUpload_userCancels_noAction() {
-        let sut = makeSUT(attachment: incompleteAttachment, retryPicker: { nil })
-        sut.retryUpload()
-        XCTAssertFalse(mockDelete.executeCalled)
-    }
-
-    func test_retryUpload_success_deletesOldThenUploads() async throws {
-        let tempFile = FileManager.default.temporaryDirectory
-            .appendingPathComponent("prizm-retry-\(UUID().uuidString).txt")
-        try Data("content".utf8).write(to: tempFile)
-        defer { try? FileManager.default.removeItem(at: tempFile) }
-
-        mockDelete.result = .success(())
-        mockUpload.result = .success(Attachment(
-            id: "att-new", fileName: "draft.doc", encryptedKey: "2.a|b|c",
-            size: 7, sizeName: "7 B", url: nil, isUploadIncomplete: false
-        ))
-
-        let sut = makeSUT(attachment: incompleteAttachment, retryPicker: { tempFile })
-        sut.retryUpload()
-        try await Task.sleep(for: .milliseconds(200))
-
-        XCTAssertTrue(mockDelete.executeCalled,  "Old incomplete attachment should be deleted first")
-        XCTAssertTrue(mockUpload.executeCalled,  "New upload should be started after delete")
-        XCTAssertNil(sut.retryError)
-    }
-
-    func test_retryUpload_deleteFailure_setsRetryError() async throws {
-        let tempFile = FileManager.default.temporaryDirectory
-            .appendingPathComponent("prizm-retry-fail-\(UUID().uuidString).txt")
-        try Data("content".utf8).write(to: tempFile)
-        defer { try? FileManager.default.removeItem(at: tempFile) }
-
-        mockDelete.result = .failure(AttachmentError.downloadFailed)
-
-        let sut = makeSUT(attachment: incompleteAttachment, retryPicker: { tempFile })
-        sut.retryUpload()
-        try await Task.sleep(for: .milliseconds(200))
-
-        XCTAssertNotNil(sut.retryError)
-        XCTAssertFalse(mockUpload.executeCalled,
-            "Upload should NOT be called if delete failed")
+        XCTAssertEqual(mockTempMgr.written.count, 1)
+        XCTAssertEqual(mockTempMgr.written.first?.pathExtension, "pdf")
+        XCTAssertTrue(fileOpenerCalled)
     }
 }
 
@@ -249,9 +217,12 @@ final class AttachmentRowViewModelTests: XCTestCase {
 private final class MockRowDownloadUseCase: DownloadAttachmentUseCase {
     var result: Result<Data, Error> = .success(Data())
     private(set) var executeCalled = false
+    /// Runs while the download is in progress.
+    var whileDownloading: (() -> Void)?
 
     func execute(cipherId: String, attachment: Attachment) async throws -> Data {
         executeCalled = true
+        whileDownloading?()
         return try result.get()
     }
 }
@@ -266,23 +237,24 @@ private final class MockRowDeleteUseCase: DeleteAttachmentUseCase {
     }
 }
 
-private final class MockRowUploadUseCase: UploadAttachmentUseCase {
-    var result: Result<Attachment, Error> = .success(
-        Attachment(id: "att-1", fileName: "f.txt", encryptedKey: "2.a|b|c",
-                   size: 1, sizeName: "1 B", url: nil, isUploadIncomplete: false)
-    )
-    private(set) var executeCalled = false
-
-    func execute(cipherId: String, fileName: String, data: Data) async throws -> Attachment {
-        executeCalled = true
-        return try result.get()
-    }
-}
-
 private final class MockTempFileManager: TempFileManaging, @unchecked Sendable {
     private(set) var registerCalled = false
     private(set) var cleanupCalled  = false
+    private(set) var sweepAllCalled = false
+    private(set) var written: [URL] = []
 
+    private(set) var sweepGeneration = 0
+
+    func write(_ data: Data, fileExtension: String, generation: Int) throws -> URL {
+        guard generation == sweepGeneration else { throw TempFileError.sweptSinceDownload }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("prizm-rowtest-\(UUID().uuidString).\(fileExtension)")
+        try data.write(to: url)
+        written.append(url)
+        register(url: url)
+        return url
+    }
+    func sweepAll()          { sweepAllCalled = true; sweepGeneration += 1 }
     func register(url: URL) { registerCalled = true }
     func cleanup()           { cleanupCalled  = true }
 }

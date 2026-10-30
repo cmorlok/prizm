@@ -229,6 +229,8 @@ protocol RootViewModelDependencies: AnyObject {
     var generateTOTPCode: any GenerateTOTPCodeUseCase { get }
     /// The app's one clipboard service; cleared on lock, sign-out and quit.
     var clipboard: any ClipboardService { get }
+    /// Folder of opened attachment files; emptied on lock, sign-out and quit.
+    var attachmentTempFiles: any TempFileManaging { get }
     func makeLoginViewModel() -> LoginViewModel
     func makeUnlockViewModel(account: Account) -> UnlockViewModel
     func makeVaultBrowserViewModel() -> VaultBrowserViewModel
@@ -245,6 +247,7 @@ extension AppContainer: RootViewModelDependencies {
     var authRepo: any AuthRepository { authRepository }
     var vaultRepo: any VaultRepository { vaultStore }
     var generateTOTPCode: any GenerateTOTPCodeUseCase { generateTOTPCodeUseCase }
+    var attachmentTempFiles: any TempFileManaging { tempFileManager }
 }
 
 /// Top-level state machine that decides which screen to show.
@@ -403,7 +406,13 @@ final class RootViewModel: ObservableObject {
             forName: NSApplication.willTerminateNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in MainActor.assumeIsolated { self?.container.clipboard.clearIfOwned() } }
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.container.clipboard.clearIfOwned()
+                // Opened attachment files do not outlive the app (fix-attachment-transfer-flow, D7).
+                self?.container.attachmentTempFiles.sweepAll()
+            }
+        }
 
         // Auto-lock on Mac sleep.
         sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -574,6 +583,7 @@ final class RootViewModel: ObservableObject {
             // authRepo.signOut() zeroes and clears every key cache through its lockVault().
             await container.vaultRepo.clearVault()
             container.clipboard.clearIfOwned()
+            container.attachmentTempFiles.sweepAll()
             // Again: a vault shown while the sign-out ran must not keep its items.
             vaultBrowserVM.clearSession()
             // The next account must not start in a folder or collection of this one.
@@ -606,8 +616,10 @@ final class RootViewModel: ObservableObject {
             // Data layer for lock and sign-out (harden-key-lifecycle-and-logging, D1).
             await container.authRepo.lockVault()
             await container.vaultRepo.clearVault()
-            // A copied secret does not outlive the session (clipboard-hardening, D3).
+            // A copied secret does not outlive the session (clipboard-hardening, D3), nor does an
+            // opened attachment file (fix-attachment-transfer-flow, D7).
             container.clipboard.clearIfOwned()
+            container.attachmentTempFiles.sweepAll()
             // Again: a vault shown while the teardown ran must not keep its items (D2).
             vaultBrowserVM.clearSession()
             if let account = container.authRepo.storedAccount() {

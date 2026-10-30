@@ -157,7 +157,7 @@ final class EditGuardTests: XCTestCase {
         XCTAssertEqual(afterRestore.editBlock, .unsupportedFormat, "after restore")
 
         let attachment = Attachment(id: "att-1", fileName: "a.txt", encryptedKey: "2.k|k|k", size: 10,
-                                    sizeName: "10 B", url: nil, isUploadIncomplete: false)
+                                    sizeName: "10 B", url: nil)
         await sut.updateAttachments([attachment], for: blocked.id)
         let after = try await sut.itemDetail(id: blocked.id)
         XCTAssertEqual(after.editBlock, .unsupportedFormat, "after an attachment update")

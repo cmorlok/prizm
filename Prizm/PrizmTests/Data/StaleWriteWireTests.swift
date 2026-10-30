@@ -373,7 +373,7 @@ final class StaleWriteWireTests: XCTestCase {
         _ = try await rig.vault.setFavorite(itemId: "c1", isFavorite: true)
         await rig.vault.updateAttachments(
             [Attachment(id: "att-1", fileName: "a.txt", encryptedKey: "2.k|k|k", size: 10,
-                        sizeName: "10 B", url: nil, isUploadIncomplete: false)],
+                        sizeName: "10 B", url: nil)],
             for: "c1")
         let latest = try await rig.vault.itemDetail(id: "c1")
         var draft = DraftVaultItem(latest)

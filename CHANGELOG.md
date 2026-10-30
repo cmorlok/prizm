@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Fix: opening or saving an attachment failed on Vaultwarden when the last sync was more than about
+  a minute ago. Prizm now asks the server for a fresh download link every time.
+- Fix: a failed or cancelled attachment upload no longer leaves a broken attachment entry on the
+  item: Prizm deletes the entry again. If that delete fails too, Prizm says so, and you can delete
+  the entry yourself.
+- Fix: when the server refuses an upload (for example, attachments need a premium account, or the
+  storage limit is reached), Prizm shows the server's message.
+- Fix: attachment files opened from Prizm are now deleted when the vault locks, when you sign out
+  and when Prizm quits; files left behind by a crash are deleted at the next launch.
+- Changed: the "Upload incomplete" state and its Retry button are gone. An attachment whose file is
+  missing on the server says so and offers Delete.
 - Fix: saving an organization item no longer removed it from collections you did not uncheck.
   Picking a collection replaced all of them, and "None" removed the item from every collection.
   A save without a collection change no longer sends the collections at all, so changes another

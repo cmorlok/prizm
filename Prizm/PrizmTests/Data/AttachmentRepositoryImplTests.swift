@@ -91,7 +91,6 @@ final class AttachmentRepositoryImplTests: XCTestCase {
         // url must be nil — the v2 response URL is the signed upload URL, not a download URL
         XCTAssertNil(attachment.url,
             "url must be nil: v2 response URL is the signed upload URL, not a permanent download URL")
-        XCTAssertFalse(attachment.isUploadIncomplete)
         XCTAssertEqual(attachment.size, plainData.count)
         // encryptedKey is an EncString type-2
         XCTAssertTrue(attachment.encryptedKey.hasPrefix("2."),
@@ -184,12 +183,11 @@ final class AttachmentRepositoryImplTests: XCTestCase {
         XCTAssertEqual(attachment.id, attachmentId)
         XCTAssertNil(attachment.url,
             "url must be nil even for Azure path — upload URL ≠ download URL")
-        XCTAssertFalse(attachment.isUploadIncomplete)
     }
 
-    // MARK: - Upload: HTTP 402 → premiumRequired
+    // MARK: - Upload: HTTP 402 is not special (servers answer 400 with a message; D3)
 
-    func test_upload_http402_throwsPremiumRequired() async throws {
+    func test_upload_http402_staysAnHTTPError() async throws {
         apiClient.createAttachmentMetadataShouldThrow = APIError.httpError(statusCode: 402, body: "")
 
         do {
@@ -199,11 +197,9 @@ final class AttachmentRepositoryImplTests: XCTestCase {
                 data:      plainData,
                 cipherKey: cipherKey
             )
-            XCTFail("Expected AttachmentError.premiumRequired to be thrown")
-        } catch AttachmentError.premiumRequired {
-            // Expected
+            XCTFail("Expected the HTTP error to be thrown")
         } catch {
-            XCTFail("Expected AttachmentError.premiumRequired, got \(error)")
+            XCTAssertEqual(error as? APIError, .httpError(statusCode: 402, body: ""))
         }
     }
 
@@ -228,8 +224,7 @@ final class AttachmentRepositoryImplTests: XCTestCase {
             encryptedKey:       encKeyString,
             size:               plainData.count,
             sizeName:           "32 B",
-            url:                "https://cdn.prizm-test.invalid/blob",
-            isUploadIncomplete: false
+            url:                "https://cdn.prizm-test.invalid/blob"
         )
 
         let decrypted = try await sut.download(
@@ -263,8 +258,7 @@ final class AttachmentRepositoryImplTests: XCTestCase {
             encryptedKey:       encKeyString,
             size:               plainData.count,
             sizeName:           "32 B",
-            url:                nil,    // forces fresh-URL fetch
-            isUploadIncomplete: false
+            url:                nil
         )
 
         let decrypted = try await sut.download(
@@ -277,7 +271,7 @@ final class AttachmentRepositoryImplTests: XCTestCase {
         XCTAssertEqual(apiClient.fetchAttachmentDownloadURLCallCount, 1)
     }
 
-    func test_download_403_refetchesURLAndRetries() async throws {
+    func test_download_withSyncURL_downloadsFromTheFreshURL() async throws {
         let attachmentKey = try crypto.generateAttachmentKey()
         let encBlob       = try crypto.encryptData(plainData, attachmentKey: attachmentKey)
 
@@ -287,13 +281,10 @@ final class AttachmentRepositoryImplTests: XCTestCase {
         )
         let encKeyString = try crypto.encryptAttachmentKey(attachmentKey, cipherKey: cipherKeys)
 
-        // First call returns 403 (stale URL); second call returns the blob (fresh URL).
-        apiClient.downloadBlobSequence = [
-            1: .failure(APIError.httpError(statusCode: 403, body: "")),
-            2: .success(encBlob)
-        ]
+        // The sync URL may be signed and expired, so the fresh one is fetched first (D2).
+        apiClient.downloadBlobResult = encBlob
         apiClient.fetchAttachmentDownloadURLResponse = AttachmentDownloadResponse(
-            url: "https://cdn.prizm-test.invalid/fresh-after-retry"
+            url: "https://cdn.prizm-test.invalid/fresh"
         )
 
         let attachment = Attachment(
@@ -302,8 +293,7 @@ final class AttachmentRepositoryImplTests: XCTestCase {
             encryptedKey:       encKeyString,
             size:               plainData.count,
             sizeName:           "32 B",
-            url:                "https://cdn.prizm-test.invalid/stale",
-            isUploadIncomplete: false
+            url:                "https://cdn.prizm-test.invalid/stale"
         )
 
         let decrypted = try await sut.download(
@@ -314,7 +304,7 @@ final class AttachmentRepositoryImplTests: XCTestCase {
 
         XCTAssertEqual(decrypted, plainData)
         XCTAssertEqual(apiClient.fetchAttachmentDownloadURLCallCount, 1)
-        XCTAssertEqual(apiClient.downloadBlobCallCount, 2)
+        XCTAssertEqual(apiClient.downloadedURLs, [URL(string: "https://cdn.prizm-test.invalid/fresh")!])
     }
 
     // MARK: - Delete
@@ -327,8 +317,7 @@ final class AttachmentRepositoryImplTests: XCTestCase {
             encryptedKey:       "2.abc|def|ghi",
             size:               1024,
             sizeName:           "1 KB",
-            url:                "https://cdn.example.com/file",
-            isUploadIncomplete: false
+            url:                "https://cdn.example.com/file"
         )
         await vaultRepo.populate(items: [VaultItem(
             id:           cipherId,
@@ -359,8 +348,7 @@ final class AttachmentRepositoryImplTests: XCTestCase {
             encryptedKey:       "2.k|k|k",
             size:               512,
             sizeName:           "512 B",
-            url:                "https://cdn.example.com/keep",
-            isUploadIncomplete: false
+            url:                "https://cdn.example.com/keep"
         )
         let toDelete = Attachment(
             id:                 attachmentId,
@@ -368,8 +356,7 @@ final class AttachmentRepositoryImplTests: XCTestCase {
             encryptedKey:       "2.d|d|d",
             size:               256,
             sizeName:           "256 B",
-            url:                "https://cdn.example.com/delete",
-            isUploadIncomplete: false
+            url:                "https://cdn.example.com/delete"
         )
         await vaultRepo.populate(items: [VaultItem(
             id:           cipherId,
@@ -425,7 +412,7 @@ final class AttachmentRepositoryImplTests: XCTestCase {
         let attachment = Attachment(
             id: attachmentId, fileName: plainFileName, encryptedKey: "2.stubEncKey|stub|stub",
             size: plainData.count, sizeName: "32 B",
-            url: "https://cdn.prizm-test.invalid/blob", isUploadIncomplete: false
+            url: "https://cdn.prizm-test.invalid/blob"
         )
 
         let decrypted = try await repo.download(
