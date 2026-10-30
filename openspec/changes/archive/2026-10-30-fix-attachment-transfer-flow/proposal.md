@@ -66,10 +66,11 @@ server has. Users notice it:
   and temp-file lifecycle for attachments.
 
 ### Modified Capabilities
-_None in this delta._ Related existing specs, to be corrected when this change is archived:
-`openspec/specs/attachment-api/spec.md` (sync URL used directly, line 34 and 49; incomplete upload,
-line 28), `openspec/specs/attachment-view-flow/spec.md` and `openspec/specs/attachment-add-flow/spec.md`
-(Retry and 402 wording).
+- `attachment-api`: download asks for a fresh URL first; failed uploads are rolled back; the
+  server's message replaces the 402 premium text; the delete answer's item is used.
+- `attachment-view-flow`: the "Upload incomplete" state and Retry are removed; opened files go to
+  the dedicated folder.
+- `attachment-add-flow`: upload errors show the server's message; cancelled uploads are rolled back.
 
 ## Non-Goals
 

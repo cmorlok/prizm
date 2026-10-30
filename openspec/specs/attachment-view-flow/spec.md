@@ -1,6 +1,6 @@
 ## Purpose
 
-Defines the detail pane UI for viewing, opening, saving, deleting, and retrying file attachments.
+Defines the detail pane UI for viewing, opening, saving and deleting file attachments.
 
 ## Requirements
 
@@ -17,27 +17,14 @@ The vault item detail pane SHALL include an "Attachments" section below the exis
 
 ---
 
-### Requirement: Upload-incomplete attachments are shown with retry option
-If a sync response includes an attachment whose `url` is nil and whose metadata cannot be resolved to a downloadable file (indicating a prior upload was interrupted after the metadata POST but before the blob upload), the attachment row SHALL be shown in a degraded "Upload incomplete" state. The row SHALL display the decrypted file name, a visual indicator distinguishing it from normal rows, and a "Retry Upload" button. Pressing "Retry Upload" SHALL re-prompt the user to select a file via `NSOpenPanel` and re-initiate the two-step upload flow. Pressing Delete SHALL behave identically to the normal delete flow.
-
-#### Scenario: Incomplete attachment is shown as degraded
-- **WHEN** a synced cipher has an attachment with no resolvable download URL
-- **THEN** the attachment row SHALL display a "Upload incomplete" indicator and a "Retry Upload" button instead of the Open/Save actions
-
-#### Scenario: Retry Upload deletes orphaned metadata then does a fresh upload
-- **WHEN** the user presses "Retry Upload" on an incomplete attachment
-- **THEN** an `NSOpenPanel` SHALL open so the user can select a file; on confirm the system SHALL (1) call `DeleteAttachmentUseCase.execute` to remove the orphaned server metadata, then (2) call `UploadAttachmentUseCase.execute` as a fresh upload — the new attachment receives a new server-assigned ID and replaces the incomplete row on success; the old incomplete row SHALL disappear
-
----
-
 ### Requirement: Open decrypts and opens attachment in default app
 Each attachment row SHALL have an "Open" action. Pressing it SHALL:
 1. Download and decrypt the attachment on a background `Task`
-2. Write the plaintext bytes to a temp file in a `FileManager`-managed temp directory
+2. Write the plaintext bytes to a temp file in the dedicated folder defined in `attachment-transfer` ("Decrypted temp files do not outlive the session")
 3. Open the temp file via `NSWorkspace.shared.open(_:)`
 4. After 30 seconds, overwrite the temp file with zeroes and delete it
 
-A row-level progress indicator SHALL be shown during download and decryption. If the operation fails, an inline error SHALL appear on the row.
+A row-level progress indicator SHALL be shown during download and decryption. If the operation fails, an inline error SHALL appear on the row; if the server has no file for the attachment, the row SHALL show the missing-file state defined in `attachment-transfer` instead.
 
 #### Scenario: Open downloads, decrypts, and launches default app
 - **WHEN** the user clicks "Open" on an attachment row
@@ -50,8 +37,6 @@ A row-level progress indicator SHALL be shown during download and decryption. If
 #### Scenario: Open failure shows inline row error
 - **WHEN** download or decryption fails
 - **THEN** an inline error SHALL appear on the attachment row; no temp file SHALL remain on disk
-
----
 
 ### Requirement: Save to Disk decrypts and saves via NSSavePanel
 Each attachment row SHALL have a "Save to Disk" action. Pressing it SHALL open an `NSSavePanel` pre-filled with the original (decrypted) file name. After the user confirms a save location, the system SHALL download and decrypt the attachment on a background `Task` and write the plaintext to the chosen path. The in-memory plaintext buffer SHALL be zeroed immediately after the write completes.

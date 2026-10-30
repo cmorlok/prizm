@@ -48,6 +48,13 @@ Vaultwarden returns `{"cipher": …}` (`src/api/core/ciphers.rs:2022-2023`); Bit
 - Errors are JSON with `message` and status 400 by default (`src/error.rs:131, 331`, `err!` macro
   `:341-351`). A missing attachment on `GET …/attachment/{aid}` is 400 "Attachment doesn't exist"
   (`ciphers.rs:1145`).
+- **Rig result (tasks 1.1 and 1.2, 2026-10-30, run `20261030T113852Z`):** `POST …/attachment/v2`
+  answers 200 with `cipherResponse` and `fileUploadType: 0`; the attachment DELETE answers 200 with
+  `cipher` in the body; `GET …/attachment/{aid}` for a deleted attachment answers 400 "Attachment
+  doesn't exist"; a download URL used 6.7 minutes after it was issued answers 404. The 2-minute
+  point was not measured (the source gives 1 minute plus 30 s leeway). The storage-limit and
+  premium 400 bodies could not be produced on Vaultwarden. Bitwarden self-hosted was not
+  available, so its answers (Open Question 2, task 1.3) rest on the source reading above.
 
 **Bitwarden server specifics.**
 - Premium and storage errors are `BadRequestException` (400): "Not enough storage available."
@@ -187,6 +194,59 @@ is a deliberate Prizm feature (`design.md:60`).
   manually.
 - **[Low] Locking closes nothing in other apps.** A file already opened in Preview stays in
   Preview's memory; only the disk copy goes. Documented in SECURITY.md.
+
+## Review
+
+Independent review on 2026-10-30 (fresh reviewer, read only), no blockers, four should-fix findings
+and six nits:
+- Fixed: a rollback DELETE that finds the record already gone (404, or Vaultwarden's 400 "Attachment
+  doesn't exist" after it deleted the record itself on a size mismatch) wrongly reported a broken
+  entry. It now reports only the upload error (D1, `testRollbackFindsTheRecordGone_reportsOnlyTheUploadError`).
+  D1 was corrected to the code: when the rollback fails for another reason, the user gets
+  `uploadFailedRecordLeft` without the server's message, because the entry left behind is what the
+  user has to act on.
+- Fixed: a download that finished after a lock could still write and open the plaintext file.
+  Every sweep now bumps a generation; the row reads it before the download, and the write refuses a
+  stale one under the manager's lock (D7, `test_write_afterASweep_isRefused_andLeavesNoFile`,
+  `test_open_lockDuringTheDownload_writesAndOpensNothing`).
+- Fixed: the cancellation test did not cancel anything. It now cancels the calling task while the
+  upload is suspended and checks that the DELETE ran uncancelled.
+- Fixed: no test covered the wire code. `AttachmentTransferWireTests` checks the multipart
+  `filename`, the item in the v2 and delete answers, and the empty 200 of older servers.
+- Fixed (nit): an attachment answer without a readable revision changed the cached list before the
+  revision check. The check now comes first, and nothing changes (`testAttachmentAnswerWithoutRevision_changesNothing`).
+- Kept as designed (nit): Vaultwarden's 400 for an attachment deleted elsewhere stays
+  `downloadFailed`, not the missing-file state; D2 step 5 says so, and the next sync removes the row.
+- Declined (nit): no test for the launch sweep in `AppContainer.init`. It is one call to
+  `sweepAll()`, which is tested, including a file left by an earlier run.
+- Not addressed (nits, no change made): `AttachmentAddViewModel.cancel()` closes the sheet, so an
+  `uploadFailedRecordLeft` after a cancel is set on a sheet nobody sees, and a cancel during the
+  metadata POST can leave a record (official clients behave the same); `HStack(spacing: 6)` in
+  `AttachmentRowView` is a raw literal from before this change; the debug log of a swept file shows
+  its extension (the name is a UUID).
+
+**Security review (task 7.2).** Opened files are written only to `<tmp>/PrizmAttachments`, inside
+the sandbox container, created with mode `0700`; files are named `<UUID>.<ext>` and written with
+`.withoutOverwriting`, and the plaintext buffer is zeroed on success and on a failed write.
+`sweepAll()` lists the whole folder, so it also removes files a crashed run never registered; it
+zeroes and deletes each file. It runs on lock (after the key teardown, and every automatic lock
+goes through the same `lockVault`), on sign-out, on `willTerminate` and at launch; the 30-second
+and activation sweeps stay. A download that ends after a sweep is neither written nor opened (sweep
+generation, checked and written under one lock). Zeroing is best effort on APFS and SSDs, and a file
+already open in another app stays in that app's memory; both are documented in SECURITY.md and the
+§VII comment. Logs carry cipher and attachment ids, counts, status codes and `ErrorLog.describe`
+output; no file name, download URL, token or key. The multipart `filename` is the encrypted file
+name, never the plaintext. A failed upload deletes its record in a detached task, so a cancelled
+upload cannot leave it behind unless that delete fails, which the user is told.
+
+**Archive pass (2026-10-30).**
+- Fixed: an error of the download-URL request other than an HTTP status (for example no network)
+  passed through unmapped; it is now `downloadFailed`, as D2 step 5 says.
+- Fixed (hand check, task 2.4): the missing-file message and row errors were shown but not spoken,
+  because VoiceOver focus stays in the item list; both are now announced at high priority.
+- Main specs: the scenarios this change replaces (402 premium text, sync URL first, one retry on
+  403, "Upload incomplete") were removed from `attachment-api` and `attachment-add-flow` in the
+  archive commit, so the MODIFIED deltas could be applied as written.
 
 ## Open Questions
 
