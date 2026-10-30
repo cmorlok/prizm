@@ -17,7 +17,7 @@ struct SecureNoteEditForm: View {
                     OptionalEditFieldRow(label: "Note", value: $draft.notes)
                 }
 
-                CustomFieldsEditSection(fields: $draft.customFields)
+                CustomFieldsEditSection(fields: $draft.customFields, itemType: .secureNote)
             }
         }
     }

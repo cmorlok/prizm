@@ -63,7 +63,7 @@ struct IdentityEditForm: View {
                     OptionalEditFieldRow(label: "Notes", value: $draft.notes)
                 }
 
-                CustomFieldsEditSection(fields: $draft.customFields)
+                CustomFieldsEditSection(fields: $draft.customFields, itemType: .identity)
             }
         }
     }

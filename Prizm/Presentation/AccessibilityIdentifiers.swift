@@ -177,6 +177,14 @@ nonisolated enum AccessibilityID {
         static func collectionCheckbox(_ id: String) -> String { "edit.collection.\(id)" }
         /// The "Choose at least one collection." hint under the Collections card.
         static let collectionHint = "edit.collectionHint"
+        /// The "Add Field" menu of the Custom Fields card (vault-browsing-parity, design D6).
+        static let addCustomField = "edit.customField.add"
+        /// The controls of the custom field at `index` (0-based, in the order shown).
+        static func customFieldName(_ index: Int) -> String { "edit.customField.\(index).name" }
+        static func customFieldMoveUp(_ index: Int) -> String { "edit.customField.\(index).moveUp" }
+        static func customFieldMoveDown(_ index: Int) -> String { "edit.customField.\(index).moveDown" }
+        static func customFieldRemove(_ index: Int) -> String { "edit.customField.\(index).remove" }
+        static func customFieldNameRequired(_ index: Int) -> String { "edit.customField.\(index).nameRequired" }
     }
 
     // MARK: - Trash (delete-restore-items)

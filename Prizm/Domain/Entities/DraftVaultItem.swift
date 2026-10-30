@@ -46,25 +46,87 @@ nonisolated struct DraftLoginURI: Equatable, Identifiable {
 
 /// Mutable mirror of `CustomField` used exclusively within the edit flow.
 ///
-/// Field `name` and `type` are intentionally kept as `let` because renaming a custom field or
-/// changing its type is out of scope for v1 editing (structural changes are deferred). Only
-/// `value` can be mutated by the user.
-nonisolated struct DraftCustomField: Equatable {
-    /// Read-only: field names are structural and not editable in v1. Nil for a field stored
-    /// without a name.
-    let name: String?
+/// Fields can be added, renamed, removed and moved (openspec change `vault-browsing-parity`,
+/// design D6). The type stays `let`: official clients do not change a field's type either.
+nonisolated struct DraftCustomField: Equatable, Identifiable {
+    /// Draft-only identity, so SwiftUI keeps a row's state when the fields are reordered. Left out
+    /// of `==`, like `DraftLoginURI.id`.
+    let id = UUID()
+    /// Nil for a field stored without a name; `nameText` keeps it nil unless the user names it.
+    var name: String?
     var value: String?
-    /// Read-only: field type changes are out of scope for v1 editing.
     let type: CustomFieldType
     /// Non-nil only when `type == .linked`.
-    let linkedId: LinkedFieldId?
+    var linkedId: LinkedFieldId?
+    /// The name the field was read with. The save pairs a field with its stored field by this name
+    /// and the type, so a rename keeps keys Prizm does not model (`CipherMapper.toRawFields`).
+    let originalName: String?
+    /// True for a field added in this sheet; it is never paired with a stored field.
+    let isNew: Bool
+    /// The field's position in the item it was read from; nil for a new field or one built without
+    /// it. The save pairs a field with the stored field at this position first, so two fields with
+    /// the same name keep their own unknown keys when the user reorders them.
+    let originalIndex: Int?
 
-    init(_ source: CustomField) {
+    init(_ source: CustomField, at index: Int? = nil) {
         self.name = source.name
         self.value = source.value
         self.type = source.type
         self.linkedId = source.linkedId
+        self.originalName = source.name
+        self.isNew = false
+        self.originalIndex = index
     }
+
+    /// A field the user adds. A checkbox starts unchecked and a linked field links to the item
+    /// type's first linkable field, as in official clients.
+    init(newOfType type: CustomFieldType, for itemType: ItemType) {
+        self.name = ""
+        self.value = type == .boolean ? "false" : nil
+        self.type = type
+        self.linkedId = type == .linked ? LinkedFieldId.options(for: itemType).first : nil
+        self.originalName = nil
+        self.isNew = true
+        self.originalIndex = nil
+    }
+
+    /// The name as the edit field shows and changes it. Clearing the name of a field that was read
+    /// without one (or with an empty one) gives back what was read, so the field is saved as it was.
+    var nameText: String {
+        get { name ?? "" }
+        set { name = newValue.isEmpty && !isNew && (originalName ?? "").isEmpty ? originalName : newValue }
+    }
+
+    /// True when Save must wait for a name: a new field, or one read with a name, whose name is empty
+    /// or only whitespace.
+    var isMissingName: Bool {
+        (isNew || !(originalName ?? "").isEmpty)
+            && (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    // Exclude the draft-only `id`, `originalName` and `isNew`: opening and cancelling the sheet is
+    // not a change, and a field renamed back to its old name is unchanged.
+    static func == (lhs: DraftCustomField, rhs: DraftCustomField) -> Bool {
+        lhs.name == rhs.name && lhs.value == rhs.value && lhs.type == rhs.type && lhs.linkedId == rhs.linkedId
+    }
+}
+
+nonisolated extension Array where Element == DraftCustomField {
+    /// Moves the field with `id` by `offset` places. Returns its new index, or nil when it is not
+    /// in the list or would move past an end.
+    @discardableResult
+    mutating func moveField(id: UUID, by offset: Int) -> Int? {
+        guard let from = firstIndex(where: { $0.id == id }), indices.contains(from + offset) else { return nil }
+        swapAt(from, from + offset)
+        return from + offset
+    }
+
+    mutating func removeField(id: UUID) {
+        removeAll { $0.id == id }
+    }
+
+    /// True when a field still needs a name; the edit sheet then blocks Save.
+    var hasMissingName: Bool { contains { $0.isMissingName } }
 }
 
 // MARK: - Draft content types
@@ -79,7 +141,7 @@ nonisolated struct DraftLoginContent: Equatable {
     /// TOTP seed is carried through unchanged; it is not editable here, and it is never displayed or copied.
     let totp: String?
     var notes: String?
-    /// Custom field values are editable; adding/removing/reordering is out of scope.
+    /// Custom fields can be added, renamed, removed and moved (vault-browsing-parity, design D6).
     var customFields: [DraftCustomField]
 
     init(_ source: LoginContent) {
@@ -88,7 +150,7 @@ nonisolated struct DraftLoginContent: Equatable {
         self.uris = source.uris.map(DraftLoginURI.init)
         self.totp = source.totp
         self.notes = source.notes
-        self.customFields = source.customFields.map(DraftCustomField.init)
+        self.customFields = source.customFields.enumerated().map { DraftCustomField($1, at: $0) }
     }
 }
 
@@ -113,7 +175,7 @@ nonisolated struct DraftCardContent: Equatable {
         self.expYear = source.expYear
         self.code = source.code
         self.notes = source.notes
-        self.customFields = source.customFields.map(DraftCustomField.init)
+        self.customFields = source.customFields.enumerated().map { DraftCustomField($1, at: $0) }
     }
 }
 
@@ -162,7 +224,7 @@ nonisolated struct DraftIdentityContent: Equatable {
         self.passportNumber = source.passportNumber
         self.licenseNumber = source.licenseNumber
         self.notes = source.notes
-        self.customFields = source.customFields.map(DraftCustomField.init)
+        self.customFields = source.customFields.enumerated().map { DraftCustomField($1, at: $0) }
     }
 }
 
@@ -175,7 +237,7 @@ nonisolated struct DraftSecureNoteContent: Equatable {
 
     init(_ source: SecureNoteContent) {
         self.notes = source.notes
-        self.customFields = source.customFields.map(DraftCustomField.init)
+        self.customFields = source.customFields.enumerated().map { DraftCustomField($1, at: $0) }
     }
 }
 
@@ -196,16 +258,18 @@ nonisolated struct DraftSSHKeyContent: Equatable {
         self.publicKey = source.publicKey
         self.keyFingerprint = source.keyFingerprint
         self.notes = source.notes
-        self.customFields = source.customFields.map(DraftCustomField.init)
+        self.customFields = source.customFields.enumerated().map { DraftCustomField($1, at: $0) }
     }
 
     /// Replaces the three key values at once with a generated or imported key, so they always
     /// belong together. Used only by the create sheet (`ssh-key-import-and-generation`, design D6).
     mutating func replace(with material: SSHKeyMaterial) {
+        // The draft's own fields are kept as they are, so a field added in the sheet stays new.
+        let fields = customFields
         self = DraftSSHKeyContent(SSHKeyContent(
             privateKey: material.privateKey, publicKey: material.publicKey,
-            keyFingerprint: material.fingerprint, notes: notes,
-            customFields: customFields.map { CustomField(name: $0.name, value: $0.value, type: $0.type, linkedId: $0.linkedId) }))
+            keyFingerprint: material.fingerprint, notes: notes, customFields: []))
+        customFields = fields
     }
 }
 
@@ -225,6 +289,41 @@ nonisolated enum DraftItemContent: Equatable {
     case card(DraftCardContent)
     case identity(DraftIdentityContent)
     case sshKey(DraftSSHKeyContent)
+}
+
+nonisolated extension DraftItemContent {
+    /// The item type this content belongs to.
+    var itemType: ItemType {
+        switch self {
+        case .login:      return .login
+        case .secureNote: return .secureNote
+        case .card:       return .card
+        case .identity:   return .identity
+        case .sshKey:     return .sshKey
+        }
+    }
+
+    /// The custom fields of whichever type this content is.
+    var customFields: [DraftCustomField] {
+        get {
+            switch self {
+            case .login(let c):      return c.customFields
+            case .secureNote(let c): return c.customFields
+            case .card(let c):       return c.customFields
+            case .identity(let c):   return c.customFields
+            case .sshKey(let c):     return c.customFields
+            }
+        }
+        set {
+            switch self {
+            case .login(var c):      c.customFields = newValue; self = .login(c)
+            case .secureNote(var c): c.customFields = newValue; self = .secureNote(c)
+            case .card(var c):       c.customFields = newValue; self = .card(c)
+            case .identity(var c):   c.customFields = newValue; self = .identity(c)
+            case .sshKey(var c):     c.customFields = newValue; self = .sshKey(c)
+            }
+        }
+    }
 }
 
 // MARK: - DraftVaultItem
