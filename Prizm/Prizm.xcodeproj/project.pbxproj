@@ -25,6 +25,8 @@
 		2B6CA91FF52E48F69DA89240 /* RenameFolderUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47D6E5C134C44B349511A5DC /* RenameFolderUseCase.swift */; };
 		2CA025EEBDD14800B361F176 /* LoginUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14DACA379C784C528EFA980F /* LoginUseCaseImpl.swift */; };
 		2D9BD6B00E6145FA83F324D7 /* ItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C40EE0279BE41BE97FC5942 /* ItemDetailView.swift */; };
+		EA73B443B8C8DFCFE695EBEB /* PasswordHistorySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEDE95B1041BF185FD0BA339 /* PasswordHistorySheet.swift */; };
+		76058846FE29FEE8C6C7E087 /* PasswordHistoryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6050C4AD954F3A8EC22BF95 /* PasswordHistoryViewModel.swift */; };
 		2E8E71AB9E244C56B93F96AD /* CustomFieldsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F95EFA050DE64617AC5076CD /* CustomFieldsSection.swift */; };
 		3025343DFDDB4ACE97F1EC2A /* MoveItemToFolderUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3AF8078B4F847EBACB42331 /* MoveItemToFolderUseCase.swift */; };
 		398F032CED024F6584FF693D /* SyncUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EBA517603CA448A8F9106AF /* SyncUseCase.swift */; };
@@ -318,6 +320,8 @@
 		7A8A5A665870AF09BFD47C09 /* TOTPCodesViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TOTPCodesViewModel.swift; sourceTree = "<group>"; };
 		7AFBFFDE4FCE4BD28D3C8E9A /* UnlockViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnlockViewModel.swift; sourceTree = "<group>"; };
 		7C40EE0279BE41BE97FC5942 /* ItemDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemDetailView.swift; sourceTree = "<group>"; };
+		DEDE95B1041BF185FD0BA339 /* PasswordHistorySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordHistorySheet.swift; sourceTree = "<group>"; };
+		E6050C4AD954F3A8EC22BF95 /* PasswordHistoryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordHistoryViewModel.swift; sourceTree = "<group>"; };
 		7D25874A14B2430FB85D7DC9 /* VaultRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultRepository.swift; sourceTree = "<group>"; };
 		7E8090A01B2C300607182930 /* LoginEditForm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginEditForm.swift; sourceTree = "<group>"; };
 		7E8F9A0B1C2D3E4F5A6B7C8D /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
@@ -780,6 +784,8 @@
 			isa = PBXGroup;
 			children = (
 				7C40EE0279BE41BE97FC5942 /* ItemDetailView.swift */,
+				DEDE95B1041BF185FD0BA339 /* PasswordHistorySheet.swift */,
+				E6050C4AD954F3A8EC22BF95 /* PasswordHistoryViewModel.swift */,
 				4F246F209ADA45F99C9B17DB /* LoginDetailView.swift */,
 				850DDD79F86D4651A98ADD0A /* CardDetailView.swift */,
 				40543834D81F44848D37A737 /* IdentityDetailView.swift */,
@@ -1267,6 +1273,8 @@
 				21BA94E7B93240BAB0D49B1A /* SSHKeyDetailView.swift in Sources */,
 				2E8E71AB9E244C56B93F96AD /* CustomFieldsSection.swift in Sources */,
 				2D9BD6B00E6145FA83F324D7 /* ItemDetailView.swift in Sources */,
+				EA73B443B8C8DFCFE695EBEB /* PasswordHistorySheet.swift in Sources */,
+				76058846FE29FEE8C6C7E087 /* PasswordHistoryViewModel.swift in Sources */,
 				A1B2C3D4E5F647A8B9C0D1E2 /* CryptoKeys.swift in Sources */,
 				2A776694FA53418CB2002486 /* OrgKeyCache.swift in Sources */,
 				B2C3D4E5F6A748B9C0D1E2F3 /* EncString.swift in Sources */,

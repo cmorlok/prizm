@@ -54,6 +54,7 @@ final class AppContainer: ObservableObject {
     let deleteVaultItemUseCase:          DeleteVaultItemUseCaseImpl
     let permanentDeleteVaultItemUseCase: PermanentDeleteVaultItemUseCaseImpl
     let restoreVaultItemUseCase:         RestoreVaultItemUseCaseImpl
+    let getPasswordHistoryUseCase:       GetPasswordHistoryUseCaseImpl
     let createFolderUseCase:             CreateFolderUseCaseImpl
     let renameFolderUseCase:             RenameFolderUseCaseImpl
     let deleteFolderUseCase:             DeleteFolderUseCaseImpl
@@ -188,6 +189,7 @@ final class AppContainer: ObservableObject {
         self.deleteVaultItemUseCase          = DeleteVaultItemUseCaseImpl(repository: vault)
         self.permanentDeleteVaultItemUseCase = PermanentDeleteVaultItemUseCaseImpl(repository: vault)
         self.restoreVaultItemUseCase         = RestoreVaultItemUseCaseImpl(repository: vault)
+        self.getPasswordHistoryUseCase       = GetPasswordHistoryUseCaseImpl(repository: vault)
         self.createFolderUseCase             = CreateFolderUseCaseImpl(repository: vault)
         self.renameFolderUseCase             = RenameFolderUseCaseImpl(repository: vault)
         self.deleteFolderUseCase             = DeleteFolderUseCaseImpl(repository: vault)
@@ -247,6 +249,11 @@ final class AppContainer: ObservableObject {
     /// Creates the once-per-second tracker that keeps displayed TOTP codes current.
     func makeTOTPCodesViewModel() -> TOTPCodesViewModel {
         TOTPCodesViewModel(generate: generateTOTPCodeUseCase)
+    }
+
+    /// Creates the password history sheet's view model for one item (password-history).
+    func makePasswordHistoryViewModel(itemId: String) -> PasswordHistoryViewModel {
+        PasswordHistoryViewModel(itemId: itemId, useCase: getPasswordHistoryUseCase)
     }
 
     /// Creates a `VaultBrowserViewModel` backed by the live vault store.

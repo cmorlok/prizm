@@ -23,6 +23,8 @@ struct VaultBrowserView: View {
     var makeAttachmentRowViewModel: ((String, Attachment) -> AttachmentRowViewModel)? = nil
     /// Factory for the TOTP code tracker — injected from AppContainer (Constitution §II).
     var makeCodesViewModel: (() -> TOTPCodesViewModel)? = nil
+    /// Factory for the password history sheet — injected from AppContainer (Constitution §II).
+    var makePasswordHistoryViewModel: ((String) -> PasswordHistoryViewModel)? = nil
 
     @State private var showPermanentDeleteAlert = false
     @State private var showDeleteFolderAlert = false
@@ -84,6 +86,7 @@ struct VaultBrowserView: View {
             onRestore:                      { id in await viewModel.performRestore(id: id) },
             onPermanentDelete:              { id in await viewModel.performPermanentDelete(id: id) },
             makeCodesViewModel:             makeCodesViewModel,
+            makePasswordHistoryViewModel:   makePasswordHistoryViewModel,
             editTrigger:                    viewModel.editTrigger,
             saveTrigger:                    viewModel.saveTrigger
         )

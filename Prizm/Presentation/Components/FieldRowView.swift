@@ -27,6 +27,14 @@ struct FieldRowView: View {
     var onCopy:   ((String) -> Void)? = nil
     /// What VoiceOver reads instead of `value`, when the shown text reads badly ("03 / 2027").
     var spokenValue: String? = nil
+    /// The label's font; the field name by default, a smaller date in the password history.
+    var labelFont: Font = Typography.fieldValue
+    /// What VoiceOver calls the field when `label` is not a name (the history's dates).
+    var accessibilityName: String? = nil
+    /// The key of the accessibility identifiers when `label` is not unique on screen.
+    var identifierKey: String? = nil
+    /// What the copy hint says is copied; the label by default.
+    var copiedThing: String? = nil
 
     @State private var isHovered = false
     @State private var showCopied = false
@@ -36,10 +44,11 @@ struct FieldRowView: View {
             // Field content
             if isMasked {
                 Text(label)
-                    .font(Typography.fieldValue)
+                    .font(labelFont)
                 Spacer()
                 hoverActions
-                MaskedFieldView(label: label, value: value, itemId: itemId)
+                MaskedFieldView(label: label, value: value, itemId: itemId,
+                                accessibilityName: accessibilityName, identifierKey: identifierKey)
                     .accessibilityHint(copyHint)
             } else if isMultiLine {
                 VStack(alignment: .leading, spacing: 2) {
@@ -76,13 +85,13 @@ struct FieldRowView: View {
                 isHovered = hovering
             }
         }
-        .accessibilityIdentifier(AccessibilityID.Field.row(label))
+        .accessibilityIdentifier(AccessibilityID.Field.row(identifierKey ?? label))
     }
 
     /// On the value elements only: on the row it would also reach the "Open" button, whose own
     /// hint is "Opens in browser" (safe-uri-launch).
     private var copyHint: String {
-        value != nil && !(value?.isEmpty ?? true) ? "Copies \(label) to clipboard" : ""
+        value != nil && !(value?.isEmpty ?? true) ? "Copies \(copiedThing ?? label) to clipboard" : ""
     }
 
     private func copyValue() {
