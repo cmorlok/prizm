@@ -247,9 +247,9 @@ protocol PrizmCryptoService: Actor {
 ///   `KdfParams.type == .pbkdf2`.  Implemented via CommonCrypto `CCKeyDerivationPBKDF`.
 /// - **Argon2id** (RFC 9106): used when `KdfParams.type == .argon2id`.
 ///   Delegated to the vendored `Argon2Swift` library.
-/// - **HKDF** (RFC 5869): used for key stretching in `stretchKey`.  Implemented
-///   using CryptoKit `HKDF<SHA256>` which is the recommended approach on Apple
-///   platforms (CryptoKit is FIPS 140-3 certified since macOS 12).
+/// - **HKDF-Expand** (RFC 5869 §2.3, no Extract): used for key stretching in `stretchKey`.
+///   One HMAC-SHA256 block from CryptoKit `HMAC<SHA256>`; equal to CryptoKit
+///   `HKDF<SHA256>.expand` and the SDK vector (`KeyStretchKATTests`).
 actor PrizmCryptoServiceImpl: PrizmCryptoService {
 
     #if DEBUG
@@ -430,12 +430,13 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
         //   encKey = HKDF-Expand(PRK=masterKey, info="enc", len=32)
         //   macKey = HKDF-Expand(PRK=masterKey, info="mac", len=32)
         //
-        // IMPORTANT: Bitwarden uses HKDF-Expand ONLY (RFC 5869 §2.3) — it skips the
-        // Extract step and uses the 32-byte masterKey directly as the PRK.
-        // CryptoKit's HKDF.deriveKey() performs full HKDF (Extract + Expand), which
-        // produces different output and must NOT be used here.
-        //
-        // Reference: bitwarden/sdk-internal CryptoService.stretchKey / jslib hkdfExpand
+        // Bitwarden uses HKDF-Expand ONLY (RFC 5869 §2.3): it skips the Extract step and uses
+        // the 32-byte masterKey directly as the PRK (SDK `keys/utils.rs` `stretch_key`, which
+        // calls `Hkdf::<Sha256>::from_prk(..).expand`). Full HKDF (`HKDF.deriveKey`, Extract +
+        // Expand) gives different output and must not be used. CryptoKit's Expand-only
+        // `HKDF<SHA256>.expand` gives the same result as `hkdfExpand` below; the helper stays
+        // because it is reviewed and tested against both (KeyStretchKATTests; fix-encstring-
+        // validation, D6).
         let encKey = hkdfExpand(prk: masterKey, info: Data("enc".utf8), outputLength: 32)
         let macKey = hkdfExpand(prk: masterKey, info: Data("mac".utf8), outputLength: 32)
         return CryptoKeys(encryptionKey: encKey, macKey: macKey)
@@ -445,8 +446,8 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
     ///
     /// `T(1) = HMAC-SHA256(key=PRK, data=info || 0x01)`
     ///
-    /// Bitwarden passes the masterKey directly as PRK, bypassing the Extract phase.
-    /// This matches the behaviour of `CryptoFunctionService.hkdfExpand` in bitwarden/sdk.
+    /// Bitwarden passes the masterKey directly as PRK, bypassing the Extract phase, as the SDK's
+    /// `hkdf_expand` (`util.rs`) does.
     private func hkdfExpand(prk: Data, info: Data, outputLength: Int) -> Data {
         precondition(outputLength <= 32, "Single-block HKDF-Expand limited to 32 bytes (SHA-256 hash length)")
         let input = info + Data([0x01])   // T(0)=empty || info || counter=1
