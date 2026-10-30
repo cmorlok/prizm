@@ -40,29 +40,12 @@ final class AttachmentCryptoTests: XCTestCase {
         XCTAssertEqual(decrypted, plaintext)
     }
 
-    func test_encryptData_blobLayout() throws {
-        // Verify that the blob has the correct structure: IV (16) ‖ ciphertext ‖ HMAC (32)
-        let plaintext = Data("test".utf8)   // 4 bytes → padded to 16 bytes by AES-CBC
-        let encrypted = try sut.encryptData(plaintext, attachmentKey: attachmentKey64)
-        // IV (16) + AES block (16) + HMAC (32) = 64 bytes minimum for a 4-byte input
-        XCTAssertGreaterThanOrEqual(encrypted.count, 48)
-        // Last 32 bytes are always the HMAC
-        XCTAssertEqual(encrypted.count, 16 + 16 + 32)  // IV + 1 AES block + HMAC
-    }
-
     func test_decrypt_throwsMacMismatch_whenBlobTampered() throws {
         var encrypted = try sut.encryptData(Data("secret".utf8), attachmentKey: attachmentKey64)
-        // Flip a bit in the ciphertext (byte 16, which is the first ciphertext byte)
-        encrypted[16] ^= 0xFF
+        // Flip a bit in the ciphertext (after type byte, IV and MAC)
+        encrypted[encrypted.startIndex + 49] ^= 0xFF
         XCTAssertThrowsError(try sut.decryptData(encrypted, attachmentKey: attachmentKey64)) { error in
             XCTAssertEqual(error as? AttachmentCryptoError, .macMismatch)
-        }
-    }
-
-    func test_decrypt_throwsBlobTooShort_whenTooSmall() throws {
-        let tooShort = Data(repeating: 0, count: 48)  // 48 < 49 minimum
-        XCTAssertThrowsError(try sut.decryptData(tooShort, attachmentKey: attachmentKey64)) { error in
-            XCTAssertEqual(error as? AttachmentCryptoError, .blobTooShort)
         }
     }
 

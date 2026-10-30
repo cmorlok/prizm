@@ -7,11 +7,14 @@ import SwiftUI
 /// When a download found no file on the server, the row says so and offers only Delete
 /// (fix-attachment-transfer-flow, D2). Otherwise Open, Save to Disk and Delete show on hover.
 /// An org attachment that earlier versions wrapped with the personal key carries a note that only
-/// this user can open it (fix-org-attachment-key, D4).
+/// this user can open it (fix-org-attachment-key, D4). A file probably in Prizm's old layout shows
+/// a "Prizm format" badge; both offer "Convert", always visible (fix-attachment-file-format, D5).
 struct AttachmentRowView: View {
 
     /// Shown under the file name of an attachment flagged `wrappedWithPersonalKey`.
     static let personalKeyNote = "Only you can open this file"
+    /// VoiceOver label of the "Prizm format" badge.
+    static let legacyFormatLabel = "Saved in old Prizm format. Other Bitwarden apps can't open it."
 
     let attachment: Attachment
 
@@ -22,13 +25,17 @@ struct AttachmentRowView: View {
     var onDelete:     () -> Void = {}
     /// True once a download found no file for this attachment on the server.
     var isFileMissing: Bool = false
+    var onConvert:    () -> Void = {}
+    /// True when the file should be converted (old layout or personal key).
+    var canConvert:   Bool = false
+    var isConverting: Bool = false
 
     @State private var isHovered = false
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
             // File icon + name + size. Not a `Label`: SwiftUI reads a Label as one element, so
-            // VoiceOver could not reach the note inside it (VoiceOver check 2026-10-30).
+            // VoiceOver could not reach the note and the badge inside it (VoiceOver check 2026-10-30).
             HStack(alignment: .center, spacing: 8) {
                 Image(systemName: "doc")
                     .foregroundStyle(.secondary)
@@ -47,6 +54,9 @@ struct AttachmentRowView: View {
                     if attachment.wrappedWithPersonalKey {
                         personalKeyNote
                     }
+                    if attachment.storedInLegacyPrizmFormat {
+                        legacyFormatBadge
+                    }
                 }
             }
 
@@ -54,8 +64,9 @@ struct AttachmentRowView: View {
 
             if isFileMissing {
                 missingFileActions
-            } else if isHovered {
-                normalActions
+            } else {
+                if canConvert { convertAction }
+                if isHovered && !isConverting { normalActions }
             }
         }
         .padding(.vertical, Spacing.rowVertical)
@@ -81,15 +92,51 @@ struct AttachmentRowView: View {
             .accessibilityIdentifier(AccessibilityID.Attachment.personalKeyNote(attachment.id))
     }
 
+    // MARK: - Old file layout (fix-attachment-file-format, D5)
+
+    private var legacyFormatBadge: some View {
+        Text("Prizm format")
+            .font(Typography.utility)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, Spacing.badgeHorizontal)
+            .padding(.vertical, Spacing.badgeVertical)
+            .overlay(RoundedRectangle(cornerRadius: Spacing.badgeCornerRadius).stroke(Color.secondary.opacity(0.6)))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Self.legacyFormatLabel)
+            .accessibilityIdentifier(AccessibilityID.Attachment.legacyFormatBadge(attachment.id))
+    }
+
+    /// Always visible, not only on hover: the user has to find it to repair the file.
+    /// The action titles are written in capitals instead of using `.textCase(.uppercase)`: SwiftUI
+    /// applies the text case to the button's accessibility label and hint too, and VoiceOver then
+    /// spells words like "IT" letter by letter (VoiceOver check 2026-10-30).
+    @ViewBuilder
+    private var convertAction: some View {
+        if isConverting {
+            ProgressView()
+                .controlSize(.small)
+                .accessibilityLabel("Converting")
+        } else {
+            Button { onConvert() } label: {
+                Text(verbatim: "CONVERT")
+                    .font(.headline)
+                    .foregroundStyle(Color.accentColor)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Convert")
+            .accessibilityHint("Uploads the file again in the standard format so other Bitwarden apps can open it.")
+            .accessibilityIdentifier(AccessibilityID.Attachment.convertButton(attachment.id))
+        }
+    }
+
     // MARK: - Normal actions (hover-activated)
 
     @ViewBuilder
     private var normalActions: some View {
         HStack(spacing: 8) {
             Button { onOpen() } label: {
-                Text("open")
+                Text(verbatim: "OPEN")
                     .font(.headline)
-                    .textCase(.uppercase)
                     .foregroundStyle(Color.accentColor)
             }
             .buttonStyle(.plain)
@@ -97,9 +144,8 @@ struct AttachmentRowView: View {
             .accessibilityIdentifier(AccessibilityID.Attachment.openButton(attachment.id))
 
             Button { onSaveToDisk() } label: {
-                Text("save")
+                Text(verbatim: "SAVE")
                     .font(.headline)
-                    .textCase(.uppercase)
                     .foregroundStyle(Color.accentColor)
             }
             .buttonStyle(.plain)

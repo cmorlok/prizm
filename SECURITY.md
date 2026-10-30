@@ -50,7 +50,7 @@ password itself.
 | Algorithm | Purpose | Implementation |
 |-----------|---------|----------------|
 | AES-256-CBC + PKCS7 | Vault item encryption / decryption | CommonCrypto (`kCCAlgorithmAES128`, 256-bit key) |
-| AES-256-CBC + PKCS7 (Bitwarden binary blob) | File attachment blob encryption | CommonCrypto; blob format: IV(16) ‖ ciphertext ‖ HMAC(32) per Bitwarden Security Whitepaper §4 |
+| AES-256-CBC + PKCS7 (Bitwarden binary blob) | File attachment blob encryption | CommonCrypto; blob format: the official EncArrayBuffer type 2, `0x02` ‖ IV(16) ‖ HMAC(32) ‖ ciphertext (Bitwarden SDK `enc_string/symmetric.rs`). Files written by Prizm up to 1.5.0 (IV ‖ ciphertext ‖ HMAC) are still read and can be converted |
 | HMAC-SHA256 | MAC verification (Encrypt-then-MAC) for both vault items and attachments | CryptoKit `HMAC<SHA256>` |
 | PBKDF2-SHA256 | Master key derivation (PBKDF2 accounts); salt = master password salt, 32-byte output | CommonCrypto `CCKeyDerivationPBKDF` |
 | Argon2id | Master key derivation (Argon2id accounts); version 0x13, Argon2 salt = SHA-256 of the master password salt, memory = server value in MiB × 1024 KiB, 32-byte output, as the Bitwarden SDK | `Argon2Swift` — thin wrapper around the reference C implementation |
@@ -181,7 +181,7 @@ Three encrypted artifacts are produced per attachment:
 
 | Artifact | What it is | How it is encrypted |
 |---|---|---|
-| Encrypted file blob | The full file contents | AES-256-CBC + HMAC-SHA256 using the per-attachment key; binary layout: IV(16) ‖ ciphertext ‖ HMAC(32) |
+| Encrypted file blob | The full file contents | AES-256-CBC + HMAC-SHA256 using the per-attachment key; binary layout: `0x02` ‖ IV(16) ‖ HMAC(32) ‖ ciphertext; the HMAC covers IV ‖ ciphertext and is checked before decryption |
 | Encrypted attachment key | 64-byte random per-attachment key | EncString type-2 (AES-256-CBC + HMAC-SHA256) using the cipher key |
 | Encrypted file name | The original file name | EncString type-2 (AES-256-CBC + HMAC-SHA256) using the cipher key |
 

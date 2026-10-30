@@ -30,6 +30,7 @@ final class AttachmentRowViewModel {
     let attachment:                   Attachment       // accessed by view
     private let downloadUseCase:      any DownloadAttachmentUseCase
     private let deleteUseCase:        any DeleteAttachmentUseCase
+    private let convertUseCase:       any ConvertAttachmentUseCase
     private let tempFileManager:      any TempFileManaging
     /// Injectable file-saver closure. Provided by AppContainer (defaults to NSSavePanel).
     private let fileSaver:            @MainActor (_ suggestedName: String) -> URL?
@@ -48,6 +49,15 @@ final class AttachmentRowViewModel {
     private(set) var actionError: String? = nil
     /// True once a download found no file for this attachment on the server.
     private(set) var isFileMissing = false
+    /// True while the file is converted to the official layout (fix-attachment-file-format, D5).
+    private(set) var isConverting = false
+
+    /// The file is probably in Prizm's old layout, or its key is the personal key on an org item:
+    /// both are repaired by converting it.
+    /// Set by the detail view: an item in the trash offers no conversion (it is not offered by the
+    /// "Convert all" notice either).
+    var itemIsDeleted = false
+    var canConvert: Bool { !itemIsDeleted && (attachment.storedInLegacyPrizmFormat || attachment.wrappedWithPersonalKey) }
 
     static let missingFileNote = "The file is missing on the server"
 
@@ -58,6 +68,7 @@ final class AttachmentRowViewModel {
         attachment:      Attachment,
         downloadUseCase: any DownloadAttachmentUseCase,
         deleteUseCase:   any DeleteAttachmentUseCase,
+        convertUseCase:  any ConvertAttachmentUseCase,
         tempFileManager: any TempFileManaging,
         fileSaver:       @escaping @MainActor (_ suggestedName: String) -> URL?,
         fileOpener:      @escaping @MainActor (_ url: URL) -> Void
@@ -66,6 +77,7 @@ final class AttachmentRowViewModel {
         self.attachment      = attachment
         self.downloadUseCase = downloadUseCase
         self.deleteUseCase   = deleteUseCase
+        self.convertUseCase  = convertUseCase
         self.tempFileManager = tempFileManager
         self.fileSaver       = fileSaver
         self.fileOpener      = fileOpener
@@ -74,7 +86,8 @@ final class AttachmentRowViewModel {
     // MARK: - Open (task 7.2b)
 
     func open() {
-        guard !isLoading else { return }
+        // Not while this file is converted: the conversion replaces it.
+        guard !isLoading, !isConverting else { return }
         isLoading   = true
         actionError = nil
 
@@ -116,7 +129,8 @@ final class AttachmentRowViewModel {
     // MARK: - Save to Disk (task 7.3)
 
     func saveToDisk() {
-        guard !isLoading else { return }
+        // Not while this file is converted: the conversion replaces it.
+        guard !isLoading, !isConverting else { return }
         isLoading   = true
         actionError = nil
 
@@ -144,7 +158,8 @@ final class AttachmentRowViewModel {
     // MARK: - Delete (task 7.4)
 
     func delete() {
-        guard !isLoading else { return }
+        // Not while this file is converted: the conversion replaces it.
+        guard !isLoading, !isConverting else { return }
         isLoading   = true
         actionError = nil
 
@@ -162,6 +177,29 @@ final class AttachmentRowViewModel {
                 self.logger.error("delete failed: \(ErrorLog.describe(error), privacy: .public)")
             }
             self.isLoading = false
+        }
+    }
+
+    // MARK: - Convert (fix-attachment-file-format, D4/D5)
+
+    /// Re-uploads the file in the official layout; the parent refreshes the item afterwards, also
+    /// when only the old copy could not be removed (the item then shows both).
+    func convert() {
+        guard !isLoading, !isConverting else { return }
+        isConverting = true
+        actionError  = nil
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let converted = try await self.convertUseCase.execute(cipherId: self.cipherId, attachment: self.attachment)
+                self.logger.info("convert: \(self.attachment.id, privacy: .public) → \(converted.id, privacy: .public)")
+                self.onAttachmentChanged?()
+            } catch {
+                self.report(error, action: "convert")
+                if case AttachmentError.convertedOldCopyLeft = error { self.onAttachmentChanged?() }
+            }
+            self.isConverting = false
         }
     }
 

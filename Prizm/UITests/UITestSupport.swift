@@ -50,6 +50,8 @@ enum Fixture {
     static let trashed = "zeta"
     static let attachmentId = "att1"
     static let attachmentFileName = "kappa-notes.txt"
+    /// An attachment in Prizm's old file layout on the same item.
+    static let legacyAttachmentId = "att-legacy"
 
     static func password(of id: String) -> String { "pw-\(id)" }
     static func row(_ id: String) -> String { "itemList.row.\(id)" }
@@ -199,8 +201,8 @@ extension XCUIApplication {
     }
 
     /// An element of the attachments section of any type whose label or value contains `text`. A
-    /// row reads its file name and size as one element ("report.pdf, 1 KB"), so the name is not a
-    /// plain static text with exactly that label.
+    /// row reads its file name and size as one element ("report.pdf, 1 KB"), and the badge is an
+    /// element of its own, so neither is a plain static text with exactly that label.
     func attachmentElement(containing text: String) -> XCUIElement {
         descendants(matching: .any).matching(NSPredicate(
             format: "identifier == %@ AND (label CONTAINS %@ OR value CONTAINS %@)",

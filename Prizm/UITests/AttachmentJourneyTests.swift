@@ -56,6 +56,20 @@ final class AttachmentJourneyTests: PrizmUITestCase {
                       "The seeded attachment row must show the file name")
     }
 
+    // MARK: - fix-attachment-file-format 4.4: old file layout
+
+    /// The badge and the Convert action of an attachment in Prizm's old layout, with their VoiceOver
+    /// texts. Converting needs a server; the rig check covers it (task 5.1). Elements in the card
+    /// carry the card's identifier, so they are found by text (`attachmentElement`).
+    func testLegacyAttachment_showsBadgeAndConvert() {
+        _ = openItemWithAttachment()
+        let badge = app.attachmentElement(containing: "Saved in old Prizm format. Other Bitwarden apps can't open it.")
+        XCTAssertTrue(badge.waitForExistence(timeout: 5), "The old-format attachment shows its badge, read by VoiceOver")
+        let converts = app.descendants(matching: .button).matching(NSPredicate(
+            format: "identifier == %@ AND label == %@", AccessibilityID.Attachment.sectionCard, "Convert"))
+        XCTAssertEqual(converts.count, 1, "Convert is visible without hovering, only on the old-format attachment")
+    }
+
     // MARK: - 9.1.4: Open → progress resolves without error
 
     /// Opening downloads the file from the server.

@@ -329,6 +329,27 @@ struct VaultBrowserView: View {
                 )
             )
         }
+        .sheet(isPresented: conversionSheetPresented) {
+            if let conversion = viewModel.attachmentConversion {
+                AttachmentConversionSheet(viewModel: conversion)
+                    // A running "Convert all" ends through Cancel, between files.
+                    .interactiveDismissDisabled(isConverting(conversion))
+            }
+        }
+    }
+
+    // MARK: - Attachment conversion (fix-attachment-file-format, D5)
+
+    private var conversionSheetPresented: Binding<Bool> {
+        Binding(
+            get: { viewModel.attachmentConversion?.phase != nil },
+            set: { if !$0 { viewModel.attachmentConversion?.later() } }
+        )
+    }
+
+    private func isConverting(_ conversion: AttachmentConversionViewModel) -> Bool {
+        if case .converting = conversion.phase { return true }
+        return false
     }
 
     // MARK: - Sync Error Banner

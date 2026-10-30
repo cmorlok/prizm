@@ -7,9 +7,11 @@ import os.log
 
 /// Errors thrown by attachment cryptographic operations.
 nonisolated enum AttachmentCryptoError: Error, Equatable {
-    /// The encrypted blob is too short to contain a valid IV + HMAC header.
-    /// Minimum valid length = 16 (IV) + 1 (ciphertext) + 32 (HMAC) = 49 bytes.
-    case blobTooShort
+    /// The blob's length matches neither supported layout (`AttachmentBlobLayout`).
+    case malformedBlob
+    /// The blob is an EncArrayBuffer of a type Prizm does not decrypt: type 0 (AES-CBC without a
+    /// MAC, refused by the official clients too) or an unknown type byte.
+    case unsupportedEncryptionType
     /// HMAC-SHA256 verification failed — blob may have been tampered with.
     case macMismatch
     /// AES-256-CBC decryption failed.
@@ -22,6 +24,49 @@ nonisolated enum AttachmentCryptoError: Error, Equatable {
     case invalidKeyLength
 }
 
+// MARK: - AttachmentBlobLayout
+
+/// The two attachment file layouts Prizm reads (openspec change fix-attachment-file-format, D2).
+///
+/// - `official`: the EncArrayBuffer every Bitwarden client writes, `0x02 ‖ IV(16) ‖ MAC(32) ‖
+///   ciphertext`. Sources: SDK `crates/bitwarden-crypto/src/enc_string/symmetric.rs`
+///   (`from_buffer`, `to_buffer`), TS `clients/libs/legacy-crypto/src/models/enc-array-buffer.ts`.
+/// - `legacyPrizm`: `IV(16) ‖ ciphertext ‖ MAC(32)`, written by Prizm 1.1.0 to 1.5.x only. Still
+///   read, so those files stay readable and can be converted.
+///
+/// Detection by structure, never by trial decryption: AES-CBC with PKCS#7 always yields a
+/// positive multiple of 16 bytes, so an official blob is `49 + 16k` bytes (`L mod 16 == 1`) and an
+/// old one `48 + 16k` (`L mod 16 == 0`). Byte 0 alone would not do: an old blob starts with a
+/// random IV byte, which is `0x02` for about 1 in 256 files.
+nonisolated enum AttachmentBlobLayout: Equatable, Sendable {
+    case official
+    case legacyPrizm
+
+    /// The EncArrayBuffer type byte of an AES-256-CBC + HMAC-SHA256 blob.
+    static let aesCbcHmacType: UInt8 = 0x02
+    /// The EncArrayBuffer type byte of AES-256-CBC without a MAC.
+    static let aesCbcType: UInt8 = 0x00
+
+    /// - Throws: `AttachmentCryptoError.unsupportedEncryptionType` for type 0 or another type byte
+    ///   on an official-length blob; `.malformedBlob` for any other length.
+    static func of(_ blob: Data) throws -> AttachmentBlobLayout {
+        let length = blob.count
+        switch length % 16 {
+        case 1:
+            guard let type = blob.first else { throw AttachmentCryptoError.malformedBlob }
+            guard type == aesCbcHmacType else { throw AttachmentCryptoError.unsupportedEncryptionType }
+            // type(1) + IV(16) + MAC(32) + at least one block (16).
+            guard length >= 65 else { throw AttachmentCryptoError.malformedBlob }
+            return .official
+        case 0 where length >= 64:
+            // IV(16) + at least one block (16) + MAC(32).
+            return .legacyPrizm
+        default:
+            throw AttachmentCryptoError.malformedBlob
+        }
+    }
+}
+
 // MARK: - Attachment crypto extension on PrizmCryptoServiceImpl
 
 /// Concrete implementations of the six attachment-crypto requirements declared on
@@ -32,13 +77,12 @@ nonisolated enum AttachmentCryptoError: Error, Equatable {
 /// All new methods are `nonisolated` so they can be called from any concurrency context
 /// without hopping onto the actor — they access no actor-isolated state.
 ///
-/// Binary blob format (tasks 2.2 / 2.3):
-///   `IV (16 bytes) ‖ ciphertext (variable) ‖ HMAC-SHA256 (32 bytes)`
-///
-/// This matches the Bitwarden Attachments binary format described in the Bitwarden
-/// Security Whitepaper §4. The HMAC is computed over `IV ‖ ciphertext`
-/// (Encrypt-then-MAC), verifying integrity before decryption to prevent padding-oracle
-/// attacks (Vaudenay, 2002).
+/// Binary blob format: the official EncArrayBuffer type 2, `0x02 ‖ IV(16) ‖ HMAC-SHA256(32) ‖
+/// ciphertext` (see `AttachmentBlobLayout`). Prizm 1.1.0 to 1.5.x wrote `IV ‖ ciphertext ‖ HMAC`
+/// instead, claiming wrongly that this was the whitepaper format (fix-attachment-file-format);
+/// those files are still read. In both layouts the HMAC is computed over `IV ‖ ciphertext`
+/// (Encrypt-then-MAC) and verified before decryption to prevent padding-oracle attacks
+/// (Vaudenay, 2002).
 extension PrizmCryptoServiceImpl {
 
     private static let logger = Logger(subsystem: "com.prizm", category: "attachments")
@@ -77,8 +121,9 @@ extension PrizmCryptoServiceImpl {
     /// - Algorithm: AES-256-CBC per NIST SP 800-38A; HMAC-SHA256 per RFC 2104.
     ///   Key split: `attachmentKey[0..<32]` = AES key; `attachmentKey[32..<64]` = MAC key.
     ///
-    /// - Binary layout: `IV (16 bytes) ‖ ciphertext ‖ HMAC-SHA256 (32 bytes)`.
-    ///   `decryptData` must parse in exactly this order.
+    /// - Binary layout: `0x02 ‖ IV (16 bytes) ‖ HMAC-SHA256 (32 bytes) ‖ ciphertext`, the official
+    ///   EncArrayBuffer (SDK `bitwarden-crypto/src/enc_string/symmetric.rs`, `to_buffer`), so every
+    ///   Bitwarden client can open the file.
     ///
     /// - Parameters:
     ///   - data:          Plaintext file bytes.
@@ -105,47 +150,62 @@ extension PrizmCryptoServiceImpl {
         // HMAC over IV ‖ ciphertext (Encrypt-then-MAC per Bitwarden Security Whitepaper §4).
         let mac = try CryptoKeys.hmacSHA256(key: macKey, data: iv + ciphertext)
 
-        // Layout: IV (16) ‖ ciphertext ‖ HMAC (32)
-        return iv + ciphertext + mac
+        // Layout: type (1) ‖ IV (16) ‖ HMAC (32) ‖ ciphertext
+        return Data([AttachmentBlobLayout.aesCbcHmacType]) + iv + mac + ciphertext
     }
 
     // MARK: - 2.3 decryptData
 
-    /// Decrypts a binary blob produced by `encryptData`.
+    /// Decrypts an attachment file in the official layout or in Prizm's old layout.
     ///
     /// - Security goal: integrity and confidentiality. HMAC verification happens
     ///   BEFORE decryption (Encrypt-then-MAC) to prevent padding-oracle attacks.
     ///
     /// - Algorithm: AES-256-CBC per NIST SP 800-38A; HMAC-SHA256 per RFC 2104.
     ///
-    /// - Binary layout: first 16 bytes = IV, last 32 bytes = HMAC, middle = ciphertext.
-    ///   Minimum valid blob size = 16 + 1 + 32 = 49 bytes (at least one byte of ciphertext).
+    /// - Layout: chosen by `AttachmentBlobLayout.of` from length and type byte; the MAC then
+    ///   confirms it, since a blob written in the other layout fails the MAC.
+    /// - Intentionally NOT done: decrypting type 0 (no MAC). The official clients refuse it too
+    ///   (SDK `symmetric.rs`, `DecryptionNotImplementedForKey`; TS `decryptFileData`), and without
+    ///   a MAC nothing authenticates the bytes before they reach AES-CBC.
+    /// - Why the old layout is still read: only Prizm wrote it, so without this the user's own
+    ///   files would be unreadable everywhere, and they could not be converted.
     ///
     /// - Parameters:
     ///   - data:          Encrypted binary blob.
     ///   - attachmentKey: 64-byte per-attachment key (encKey ‖ macKey).
     /// - Returns: Plaintext file bytes.
-    /// - Throws: `AttachmentCryptoError.blobTooShort` if blob is < 49 bytes.
-    /// - Throws: `AttachmentCryptoError.macMismatch` if HMAC verification fails.
-    /// - Throws: `AttachmentCryptoError.invalidKeyLength` if key is not 64 bytes.
-    /// - Throws: `AttachmentCryptoError.decryptionFailed` on AES failure.
+    /// - Throws: `AttachmentCryptoError.malformedBlob` or `.unsupportedEncryptionType` (see
+    ///   `AttachmentBlobLayout.of`), `.macMismatch` if HMAC verification fails,
+    ///   `.invalidKeyLength` if key is not 64 bytes, `.decryptionFailed` on AES failure.
     nonisolated func decryptData(_ data: Data, attachmentKey: Data) throws -> Data {
         guard attachmentKey.count == 64 else {
             throw AttachmentCryptoError.invalidKeyLength
         }
-        // Minimum: 16 (IV) + 1 (ciphertext) + 32 (HMAC) = 49
-        guard data.count >= 49 else {
-            Self.logger.error("Attachment blob too short to decrypt: \(data.count) bytes (minimum 49)")
-            throw AttachmentCryptoError.blobTooShort
+        let layout: AttachmentBlobLayout
+        do {
+            layout = try AttachmentBlobLayout.of(data)
+        } catch {
+            Self.logger.error("Attachment blob not decrypted: \(ErrorLog.describe(error), privacy: .public), \(data.count, privacy: .public) bytes")
+            throw error
         }
 
-        let encKey = attachmentKey[0..<32]
-        let macKey = attachmentKey[32..<64]
+        let encKey = attachmentKey[attachmentKey.startIndex..<attachmentKey.startIndex.advanced(by: 32)]
+        let macKey = attachmentKey[attachmentKey.startIndex.advanced(by: 32)..<attachmentKey.endIndex]
 
-        // Parse layout: IV ‖ ciphertext ‖ HMAC
-        let iv         = data[data.startIndex..<data.startIndex.advanced(by: 16)]
-        let mac        = data[data.endIndex.advanced(by: -32)..<data.endIndex]
-        let ciphertext = data[data.startIndex.advanced(by: 16)..<data.endIndex.advanced(by: -32)]
+        let start = data.startIndex
+        let iv, mac, ciphertext: Data
+        switch layout {
+        case .official:
+            iv         = data[start.advanced(by: 1)..<start.advanced(by: 17)]
+            mac        = data[start.advanced(by: 17)..<start.advanced(by: 49)]
+            ciphertext = data[start.advanced(by: 49)..<data.endIndex]
+        case .legacyPrizm:
+            Self.logger.info("Attachment blob in Prizm's old layout read")
+            iv         = data[start..<start.advanced(by: 16)]
+            mac        = data[data.endIndex.advanced(by: -32)..<data.endIndex]
+            ciphertext = data[start.advanced(by: 16)..<data.endIndex.advanced(by: -32)]
+        }
 
         // Verify HMAC over IV ‖ ciphertext before decrypting (Encrypt-then-MAC).
         guard CryptoKeys.verifyHmacSHA256(key: macKey, data: iv + ciphertext, expected: mac) else {

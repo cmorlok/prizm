@@ -26,6 +26,13 @@ private final class MockAttachmentRepository: AttachmentRepository {
         deleteCalled = true
         try deleteResult.get()
     }
+    var convertCount = 0
+    var whileConverting: (() async -> Void)?
+    func convertLegacyFormat(cipherId: String, attachment: Attachment, downloadKey: Data, uploadKey: Data) async throws -> Attachment {
+        convertCount += 1
+        await whileConverting?()
+        return try uploadResult.get()
+    }
 }
 
 private final class MockVaultKeyService: VaultKeyService, @unchecked Sendable {
@@ -184,5 +191,38 @@ final class DeleteAttachmentUseCaseTests: XCTestCase {
         // existing init signature, making the violation visible at build time.
         let _impl = DeleteAttachmentUseCaseImpl(repository: mockRepo)
         _ = _impl
+    }
+}
+
+// MARK: - ConvertAttachmentUseCaseImpl Tests
+
+@MainActor
+final class ConvertAttachmentUseCaseTests: XCTestCase {
+
+    /// The row's Convert and "Convert all" share one use case. A second conversion of the same file
+    /// while the first runs would upload a duplicate (review of fix-attachment-file-format,
+    /// 2026-10-30).
+    func test_execute_refusesASecondConversionOfTheSameFileWhileTheFirstRuns() async throws {
+        let repo = MockAttachmentRepository()
+        repo.whileConverting = { try? await Task.sleep(for: .milliseconds(300)) }
+        let sut = ConvertAttachmentUseCaseImpl(repository: repo, vaultKeyService: MockVaultKeyService())
+        let attachment = Attachment(id: "att-old", fileName: "plan.pdf", encryptedKey: "2.k|k|k", size: 64,
+                                    sizeName: "64 B", url: nil, storedInLegacyPrizmFormat: true)
+
+        let first = Task { try await sut.execute(cipherId: "c1", attachment: attachment) }
+        try await Task.sleep(for: .milliseconds(50))
+        do {
+            _ = try await sut.execute(cipherId: "c1", attachment: attachment)
+            XCTFail("A second conversion of the same file must be refused")
+        } catch AttachmentError.conversionAlreadyRunning {
+            // expected
+        }
+        _ = try await first.value
+        XCTAssertEqual(repo.convertCount, 1)
+
+        // Once the first has finished, the file can be converted again (for example after a failure).
+        repo.whileConverting = nil
+        _ = try await sut.execute(cipherId: "c1", attachment: attachment)
+        XCTAssertEqual(repo.convertCount, 2)
     }
 }

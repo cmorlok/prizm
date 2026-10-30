@@ -233,6 +233,7 @@ struct ItemDetailView: View {
                 { [onAttachmentsChanged] attachment in
                     let vm = factory(item.id, attachment)
                     vm.onAttachmentChanged = onAttachmentsChanged
+                    vm.itemIsDeleted = item.isDeleted
                     return vm
                 }
             }
