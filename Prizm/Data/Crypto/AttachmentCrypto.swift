@@ -70,9 +70,8 @@ nonisolated enum AttachmentBlobLayout: Equatable, Sendable {
 // MARK: - Attachment crypto extension on PrizmCryptoServiceImpl
 
 /// Concrete implementations of the six attachment-crypto requirements declared on
-/// `PrizmCryptoService` (see `PrizmCryptoService.swift`).  Placed in an extension on
-/// `PrizmCryptoServiceImpl` rather than on the protocol because the AES-CBC helpers
-/// (`aesCbcEncrypt`/`aesCbcDecrypt`) are private methods on the concrete type.
+/// `PrizmCryptoService` (see `PrizmCryptoService.swift`), in an extension on
+/// `PrizmCryptoServiceImpl`. The AES-CBC work goes through `EncString`'s guarded helpers.
 ///
 /// All new methods are `nonisolated` so they can be called from any concurrency context
 /// without hopping onto the actor — they access no actor-isolated state.
@@ -286,56 +285,26 @@ extension PrizmCryptoServiceImpl {
 
     // MARK: - Private CommonCrypto helpers (AES-256-CBC)
 
-    /// AES-256-CBC encrypt via CommonCrypto.
-    ///
-    /// CommonCrypto is FIPS 140-2 validated. Key: 256 bits (32 bytes).
-    /// Block/IV size: 128 bits (16 bytes). Padding: PKCS#7 (RFC 5652 §6.3).
+    // One guarded CommonCrypto implementation for EncStrings and blobs (fix-encstring-validation,
+    // D3): `EncString`'s helpers refuse an IV that is not 16 bytes or a key that is not 32 bytes.
+    // Their errors become this file's own, which the attachment flow maps to its messages.
+
     nonisolated private func aesCbcEncrypt(key: Data, iv: Data, plaintext: Data) throws -> Data {
-        var outLength  = 0
-        let outCap     = plaintext.count + kCCBlockSizeAES128
-        var outData    = Data(count: outCap)
-        let status = outData.withUnsafeMutableBytes { outPtr in
-            plaintext.withUnsafeBytes { ptPtr in
-                key.withUnsafeBytes { keyPtr in
-                    iv.withUnsafeBytes { ivPtr in
-                        CCCrypt(
-                            CCOperation(kCCEncrypt), CCAlgorithm(kCCAlgorithmAES),
-                            CCOptions(kCCOptionPKCS7Padding),
-                            keyPtr.baseAddress, key.count, ivPtr.baseAddress,
-                            ptPtr.baseAddress, plaintext.count,
-                            outPtr.baseAddress, outCap, &outLength
-                        )
-                    }
-                }
-            }
+        do {
+            return try EncString.aesCbcEncrypt(key: key, iv: iv, plaintext: plaintext)
+        } catch {
+            // Logged before the mapping, so the cause is not lost (§V; code review 2026-10-30).
+            Self.logger.error("Attachment AES-CBC encryption failed: \(ErrorLog.describe(error), privacy: .public)")
+            throw AttachmentCryptoError.encryptionFailed
         }
-        guard status == kCCSuccess else { throw AttachmentCryptoError.encryptionFailed }
-        outData.removeSubrange(outLength...)
-        return outData
     }
 
-    /// AES-256-CBC decrypt via CommonCrypto.
     nonisolated private func aesCbcDecrypt(key: Data, iv: Data, ciphertext: Data) throws -> Data {
-        var outLength = 0
-        let outCap    = ciphertext.count + kCCBlockSizeAES128
-        var outData   = Data(count: outCap)
-        let status = outData.withUnsafeMutableBytes { outPtr in
-            ciphertext.withUnsafeBytes { ctPtr in
-                key.withUnsafeBytes { keyPtr in
-                    iv.withUnsafeBytes { ivPtr in
-                        CCCrypt(
-                            CCOperation(kCCDecrypt), CCAlgorithm(kCCAlgorithmAES),
-                            CCOptions(kCCOptionPKCS7Padding),
-                            keyPtr.baseAddress, key.count, ivPtr.baseAddress,
-                            ctPtr.baseAddress, ciphertext.count,
-                            outPtr.baseAddress, outCap, &outLength
-                        )
-                    }
-                }
-            }
+        do {
+            return try EncString.aesCbcDecrypt(key: key, iv: iv, ciphertext: ciphertext)
+        } catch {
+            Self.logger.error("Attachment AES-CBC decryption failed after a valid MAC: \(ErrorLog.describe(error), privacy: .public)")
+            throw AttachmentCryptoError.decryptionFailed
         }
-        guard status == kCCSuccess else { throw AttachmentCryptoError.decryptionFailed }
-        outData.removeSubrange(outLength...)
-        return outData
     }
 }

@@ -4,19 +4,32 @@ import CryptoKit
 
 // MARK: - EncType
 
-/// The encoding/encryption scheme used by a Bitwarden EncString.
+/// The symmetric types of a Bitwarden EncString, numbered as the wire prefix.
 ///
-/// Values match the numeric type prefix in the wire format
-/// (Bitwarden Security Whitepaper §4: "Cipher String Types").
+/// Names and numbers as in the official enum (`clients/libs/legacy-crypto/src/enums/
+/// encryption-type.enum.ts:3-18`). The RSA types 3–6 "never occur in the same places that the
+/// symmetric ones would"; they are `AsymmetricEncType` and only organization keys use them
+/// (fix-encstring-validation, D2). Type 1 was removed from Bitwarden.
 nonisolated enum EncType: Int {
-    /// Type 0 — AES-256-CBC, Base64 IV + Base64 ciphertext (no MAC).
+    /// Type 0 `AesCbc256_B64`: AES-256-CBC without a MAC. Parsed so the error is precise and a
+    /// stored type-0 name can be recognised, but never decrypted (D1).
     case aes256Cbc_B64             = 0
-    /// Type 2 — AES-256-CBC + HMAC-SHA256, Base64 IV|ciphertext|mac.
+    /// Type 2 `AesCbc256_HmacSha256_B64`: AES-256-CBC + HMAC-SHA256, `iv|ct|mac`. The only type
+    /// Prizm decrypts.
     case aes256Cbc_HmacSha256_B64  = 2
-    /// Type 4 — RSA-2048-OAEP-SHA1, Base64 IV|ciphertext|mac.
-    case rsaOaepSha1_B64           = 4
-    /// Type 6 — RSA-2048-OAEP-SHA256, Base64 ciphertext only.
-    case rsaOaepSha256_B64         = 6
+}
+
+/// The RSA types of a Bitwarden EncString (`encryption-type.enum.ts:3-18`), used only for wrapped
+/// organization keys (`PrizmCryptoServiceImpl.unwrapOrgKey`, D4). Prizm unwraps type 4 only.
+nonisolated enum AsymmetricEncType: Int {
+    /// Type 3 `Rsa2048_OaepSha256_B64`.
+    case rsa2048OaepSha256_B64            = 3
+    /// Type 4 `Rsa2048_OaepSha1_B64`: what current clients write for organization keys.
+    case rsa2048OaepSha1_B64              = 4
+    /// Type 5 `Rsa2048_OaepSha256_HmacSha256_B64`.
+    case rsa2048OaepSha256_HmacSha256_B64 = 5
+    /// Type 6 `Rsa2048_OaepSha1_HmacSha256_B64`.
+    case rsa2048OaepSha1_HmacSha256_B64   = 6
 }
 
 // MARK: - EncStringError
@@ -25,7 +38,7 @@ nonisolated enum EncType: Int {
 nonisolated enum EncStringError: Error, Equatable {
     /// The string does not conform to the "<type>.<segments>" format.
     case malformedEncString
-    /// The numeric type prefix is not one of the supported values (0, 2, 4, 6).
+    /// The type is not a symmetric one Prizm parses (0, 2), or is type 0, which is never decrypted.
     case unsupportedEncType
     /// HMAC-SHA256 verification failed — ciphertext may have been tampered with.
     case macMismatch
@@ -33,88 +46,83 @@ nonisolated enum EncStringError: Error, Equatable {
     case decryptionFailed
     /// AES encryption or IV generation failed.
     case encryptionFailed
-    /// Encrypted data is shorter than the required IV length (16 bytes).
+    /// The IV is not 16 bytes.
     case invalidIVLength
 }
 
 // MARK: - EncString
 
-/// A parsed Bitwarden EncString that can be decrypted into plaintext.
+/// A parsed symmetric Bitwarden EncString.
 ///
-/// The wire format is:  `<type>.<iv_b64>|<ct_b64>[|<mac_b64>]`
-///
-/// Supported types (Bitwarden Security Whitepaper §4, "Cipher String Types"):
-/// - **Type 0** — AES-256-CBC, no MAC.  Deprecated but still appears in old vaults.
-/// - **Type 2** — AES-256-CBC + HMAC-SHA256 (authenticated encryption).  Default for
-///   all new symmetric encryption.
-/// - **Type 4** — RSA-2048-OAEP-SHA1 wrapped AES key.
-/// - **Type 6** — RSA-2048-OAEP-SHA256 wrapped AES key (newer).
+/// The wire format is `<type>.<iv_b64>|<ct_b64>[|<mac_b64>]`. Parsing is at least as strict as the
+/// SDK's (`bitwarden-crypto/src/enc_string/symmetric.rs:139-155`, `mod.rs:36-43`); only type 2 is
+/// ever decrypted (fix-encstring-validation, D1–D3).
 nonisolated struct EncString {
 
     let encType:    EncType
     let iv:         Data
     let ciphertext: Data
-    /// Present only for types 2, 4.
+    /// Present only for type 2.
     let mac:        Data?
+
+    /// Byte lengths fixed by the format.
+    enum Length {
+        static let iv  = kCCBlockSizeAES128
+        static let mac = 32
+        static let key = kCCKeySizeAES256
+    }
 
     // MARK: - Parsing
 
-    /// Parse a Bitwarden EncString from its wire representation.
+    /// Parses a Bitwarden EncString from its wire representation.
     ///
-    /// Format: `<typeInt>.<iv_b64>|<ciphertext_b64>[|<mac_b64>]`
-    ///
-    /// - Throws: `EncStringError.malformedEncString` if the format is wrong.
-    /// - Throws: `EncStringError.unsupportedEncType` if the type integer is unknown.
+    /// - Throws: `EncStringError.unsupportedEncType` for any type other than 0 and 2 (the RSA types
+    ///   3–6, COSE type 7, unknown numbers).
+    /// - Throws: `EncStringError.invalidIVLength` when the IV does not decode to 16 bytes.
+    /// - Throws: `EncStringError.malformedEncString` for a wrong part count, bad Base64, a MAC that
+    ///   is not 32 bytes, or a type-2 ciphertext that is empty or not a multiple of 16 bytes.
     init(string: String) throws {
-        // Split on the first "." to separate type from the rest
-        let dotParts = string.split(separator: ".", maxSplits: 1)
-        guard dotParts.count == 2,
-              let typeInt = Int(dotParts[0]),
-              let type = EncType(rawValue: typeInt) else {
-            if let typeInt = Int(string.split(separator: ".").first ?? ""),
-               EncType(rawValue: typeInt) == nil {
-                throw EncStringError.unsupportedEncType
-            }
+        guard let (typeInt, body) = Self.splitHeader(string) else {
             throw EncStringError.malformedEncString
         }
+        guard let type = EncType(rawValue: typeInt) else {
+            throw EncStringError.unsupportedEncType
+        }
+        let parts = body.split(separator: "|", omittingEmptySubsequences: false)
+            .map { Data(base64Encoded: String($0)) }
+        guard parts.count == (type == .aes256Cbc_HmacSha256_B64 ? 3 : 2),
+              let iv = parts[0], let ciphertext = parts[1] else {
+            throw EncStringError.malformedEncString
+        }
+        guard iv.count == Length.iv else { throw EncStringError.invalidIVLength }
 
-        self.encType = type
-        let segments = dotParts[1].split(separator: "|", omittingEmptySubsequences: false)
-
+        self.encType    = type
+        self.iv         = iv
+        self.ciphertext = ciphertext
         switch type {
         case .aes256Cbc_B64:
-            // Format: <iv>|<ct>  (no MAC)
-            guard segments.count == 2,
-                  let iv  = Data(base64Encoded: String(segments[0])),
-                  let ct  = Data(base64Encoded: String(segments[1])) else {
+            self.mac = nil
+        case .aes256Cbc_HmacSha256_B64:
+            guard let mac = parts[2], mac.count == Length.mac,
+                  !ciphertext.isEmpty, ciphertext.count % kCCBlockSizeAES128 == 0 else {
                 throw EncStringError.malformedEncString
             }
-            self.iv         = iv
-            self.ciphertext = ct
-            self.mac        = nil
-
-        case .aes256Cbc_HmacSha256_B64, .rsaOaepSha1_B64:
-            // Format: <iv>|<ct>|<mac>
-            guard segments.count == 3,
-                  let iv  = Data(base64Encoded: String(segments[0])),
-                  let ct  = Data(base64Encoded: String(segments[1])),
-                  let mac = Data(base64Encoded: String(segments[2])) else {
-                throw EncStringError.malformedEncString
-            }
-            self.iv         = iv
-            self.ciphertext = ct
-            self.mac        = mac
-
-        case .rsaOaepSha256_B64:
-            // Format: <ct>  (IV not used for RSA; first segment is ciphertext)
-            guard segments.count >= 1,
-                  let ct = Data(base64Encoded: String(segments[0])) else {
-                throw EncStringError.malformedEncString
-            }
-            self.iv         = Data()
-            self.ciphertext = ct
-            self.mac        = nil
+            self.mac = mac
         }
+    }
+
+    /// Splits `<type>.<body>` and returns the type number and the body, or `nil` when there is no
+    /// dot or the type is not a plain decimal number. The one header parser for symmetric and RSA
+    /// EncStrings (code review 2026-10-30).
+    ///
+    /// The type must be ASCII digits without sign or leading zero, as the SDK matches the literal
+    /// header (`"2"`, `"4"`); `Int(_:)` alone would also take `+2` or `02`.
+    static func splitHeader(_ string: String) -> (type: Int, body: Substring)? {
+        guard let dot = string.firstIndex(of: ".") else { return nil }
+        let header = string[..<dot]
+        guard !header.isEmpty, header.utf8.allSatisfy({ (0x30...0x39).contains($0) }),
+              header == "0" || header.first != "0", let type = Int(header) else { return nil }
+        return (type, string[string.index(after: dot)...])
     }
 
     // MARK: - Serialise
@@ -129,48 +137,31 @@ nonisolated struct EncString {
         return "\(encType.rawValue).\(ivB64)|\(ctB64)"
     }
 
-    // MARK: - MAC Verification
-
-    /// Verifies the HMAC-SHA256 MAC over `iv || ciphertext`.
-    ///
-    /// Per the Bitwarden Security Whitepaper §4: "Encrypt-then-MAC" — the MAC is
-    /// computed over the IV concatenated with the ciphertext using the MAC key,
-    /// and **must** be verified before any decryption is attempted to prevent
-    /// padding-oracle attacks (Vaudenay, 2002).
-    ///
-    /// - Parameter keys: The symmetric key pair containing `macKey`.
-    /// - Returns: `true` if the computed MAC equals the stored MAC; `false` otherwise.
-    func verifyMac(keys: CryptoKeys) throws -> Bool {
-        guard let mac = mac else { return true }   // Type-0 has no MAC
-        let authenticated = CryptoKeys.verifyHmacSHA256(
-            key:      keys.macKey,
-            data:     iv + ciphertext,
-            expected: mac
-        )
-        return authenticated
-    }
-
     // MARK: - Decryption
 
-    /// Decrypts this EncString using AES-256-CBC and returns the plaintext.
+    /// Decrypts a type-2 EncString: verifies the HMAC-SHA256 over `iv || ciphertext` with the MAC
+    /// key, then decrypts AES-256-CBC with PKCS#7 padding.
     ///
-    /// For Type-2 strings, MAC is verified first (Encrypt-then-MAC).  Decryption
-    /// is performed using CommonCrypto `CCCrypt` with `kCCAlgorithmAES`,
-    /// `kCCOptionPKCS7Padding`, and a 16-byte IV.
+    /// - Security goal: no AES-CBC decryption of data that is not authenticated. A server (or anyone
+    ///   who can change stored data) could otherwise rewrite `2.iv|ct|mac` as `0.iv|ct`, flip
+    ///   ciphertext bits, and have the altered plaintext shown, or use decryption errors as a padding
+    ///   oracle (Vaudenay 2002). The MAC is checked first and in constant time (Encrypt-then-MAC).
+    /// - Algorithm: as the SDK's `decrypt_with_key` (`symmetric.rs:479-511`), which accepts only type
+    ///   2 with an AES-256-CBC-HMAC key.
+    /// - Intentionally NOT done: type 0 is never decrypted, even with the right key; the SDK and the
+    ///   TypeScript clients refuse it too ("Decryption of AesCbc256_B64 encrypted data is disabled").
+    ///   Type 7 (COSE) is not supported.
     ///
-    /// - Parameter keys: The 256-bit encryption key + 256-bit MAC key.
-    /// - Returns: Decrypted plaintext `Data`.
-    /// - Throws: `EncStringError.macMismatch` if MAC verification fails.
+    /// - Throws: `EncStringError.unsupportedEncType` for type 0, before the key is touched.
+    /// - Throws: `EncStringError.macMismatch` if the MAC does not verify.
     /// - Throws: `EncStringError.decryptionFailed` if AES decryption fails.
     func decrypt(keys: CryptoKeys) throws -> Data {
-        // 1. Verify MAC first (Encrypt-then-MAC per Bitwarden Security Whitepaper §4)
-        if encType == .aes256Cbc_HmacSha256_B64 {
-            guard try verifyMac(keys: keys) else {
-                throw EncStringError.macMismatch
-            }
+        guard encType == .aes256Cbc_HmacSha256_B64, let mac else {
+            throw EncStringError.unsupportedEncType
         }
-
-        // 2. AES-256-CBC decrypt via CommonCrypto
+        guard CryptoKeys.verifyHmacSHA256(key: keys.macKey, data: iv + ciphertext, expected: mac) else {
+            throw EncStringError.macMismatch
+        }
         return try Self.aesCbcDecrypt(key: keys.encryptionKey, iv: iv, ciphertext: ciphertext)
     }
 
@@ -209,14 +200,20 @@ nonisolated struct EncString {
         )
     }
 
-    // MARK: - Private CommonCrypto Helpers
+    // MARK: - CommonCrypto Helpers
 
-    /// AES-256-CBC decrypt using CommonCrypto `CCCrypt`.
+    /// AES-256-CBC decrypt using CommonCrypto `CCCrypt`, without authentication: callers verify a
+    /// MAC first (`decrypt(keys:)`, `AttachmentBlobLayout`).
     ///
     /// CommonCrypto is a FIPS 140-2 validated cryptographic library included in macOS.
     /// Key size: 256 bits (32 bytes).  Block size / IV size: 128 bits (16 bytes).
     /// Padding: PKCS#7 (RFC 5652 §6.3).
-    private static func aesCbcDecrypt(key: Data, iv: Data, ciphertext: Data) throws -> Data {
+    ///
+    /// `CCCrypt` reads 16 bytes from the IV pointer and treats a NULL pointer as an all-zero IV, so
+    /// the lengths are checked here as a second line of defence behind the parser (D3).
+    static func aesCbcDecrypt(key: Data, iv: Data, ciphertext: Data) throws -> Data {
+        guard iv.count == Length.iv else { throw EncStringError.invalidIVLength }
+        guard key.count == Length.key else { throw EncStringError.decryptionFailed }
         var outLength = 0
         let outCapacity = ciphertext.count + kCCBlockSizeAES128
         var outData = Data(count: outCapacity)
@@ -247,8 +244,11 @@ nonisolated struct EncString {
         return outData
     }
 
-    /// AES-256-CBC encrypt using CommonCrypto `CCCrypt`.
-    private static func aesCbcEncrypt(key: Data, iv: Data, plaintext: Data) throws -> Data {
+    /// AES-256-CBC encrypt using CommonCrypto `CCCrypt`, with the same length checks as
+    /// `aesCbcDecrypt`. Callers add the MAC.
+    static func aesCbcEncrypt(key: Data, iv: Data, plaintext: Data) throws -> Data {
+        guard iv.count == Length.iv else { throw EncStringError.invalidIVLength }
+        guard key.count == Length.key else { throw EncStringError.encryptionFailed }
         var outLength  = 0
         let outCapacity = plaintext.count + kCCBlockSizeAES128
         var outData    = Data(count: outCapacity)

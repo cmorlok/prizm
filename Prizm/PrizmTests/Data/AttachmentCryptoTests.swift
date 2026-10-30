@@ -159,10 +159,9 @@ final class AttachmentCryptoTests: XCTestCase {
             0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
             0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f
         ])
-        let nistMacKey = CryptoKeys(encryptionKey: key, macKey: Data(repeating: 0x00, count: 32))
-        // Decrypt with Type-0 (no MAC) to validate AES-256-CBC correctness
-        let encType0 = try EncString(string: "0.\(nistIV.base64EncodedString())|\(pkcs7Ciphertext.base64EncodedString())")
-        let decrypted = try encType0.decrypt(keys: nistMacKey)
+        // The AES helper directly: the NIST vector has no MAC, and an EncString without one is
+        // never decrypted (fix-encstring-validation).
+        let decrypted = try EncString.aesCbcDecrypt(key: key, iv: nistIV, ciphertext: pkcs7Ciphertext)
         XCTAssertEqual(decrypted, plaintext,
             "AES-256-CBC decryption must match NIST SP 800-38A Appendix F.2.5 test vector")
     }

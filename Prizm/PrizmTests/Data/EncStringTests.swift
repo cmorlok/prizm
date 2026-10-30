@@ -54,17 +54,7 @@ final class EncStringTests: XCTestCase {
         }
     }
 
-    // MARK: - Type-4: RSA-OAEP-SHA1 + AES-256-CBC
-
-    /// Type 4 format: "4.<iv_b64>|<ct_b64>|<mac_b64>"
-    func testParseType4() throws {
-        let iv  = Data(repeating: 0x11, count: 16)
-        let ct  = Data(repeating: 0x22, count: 256)
-        let mac = Data(repeating: 0x33, count: 32)
-        let str = "4.\(iv.base64EncodedString())|\(ct.base64EncodedString())|\(mac.base64EncodedString())"
-        let enc = try EncString(string: str)
-        XCTAssertEqual(enc.encType, .rsaOaepSha1_B64)
-    }
+    // Types 3–7 are refused at parse: EncStringValidationTests (fix-encstring-validation).
 
     /// Unknown type prefix must throw.
     func testParseUnknownTypeThrows() {
@@ -76,26 +66,9 @@ final class EncStringTests: XCTestCase {
 
     // MARK: - MAC Verification
 
-    /// HMAC-SHA256 verification must pass with correct key + data.
-    /// Vector: mac key = 0xFF×32, iv = 0x01×16, ct = 0x02×32
-    /// Expected MAC = HMAC-SHA256(macKey, iv || ct)
-    func testMacVerificationPassesWithCorrectKey() throws {
-        let macKey = Data(repeating: 0xFF, count: 32)
-        let encKey = Data(repeating: 0xAB, count: 32)
-        let iv     = Data(repeating: 0x01, count: 16)
-        let ct     = Data(repeating: 0x02, count: 32)
-
-        // Compute expected MAC
-        let expectedMac = try CryptoKeys.hmacSHA256(key: macKey, data: iv + ct)
-        let str = "2.\(iv.base64EncodedString())|\(ct.base64EncodedString())|\(expectedMac.base64EncodedString())"
-        let enc = try EncString(string: str)
-
-        let keys = CryptoKeys(encryptionKey: encKey, macKey: macKey)
-        XCTAssertTrue(try enc.verifyMac(keys: keys))
-    }
-
-    /// Tampered MAC must fail verification (not throw — returns false).
-    func testMacVerificationFailsWithWrongMac() throws {
+    /// A tampered MAC fails before any decryption.
+    /// Vector: mac key = 0xFF×32, iv = 0x01×16, ct = 0x02×32, MAC = 0x00×32.
+    func testWrongMac_throwsMacMismatch() throws {
         let macKey = Data(repeating: 0xFF, count: 32)
         let encKey = Data(repeating: 0xAB, count: 32)
         let iv     = Data(repeating: 0x01, count: 16)
@@ -105,7 +78,9 @@ final class EncStringTests: XCTestCase {
         let enc = try EncString(string: str)
 
         let keys = CryptoKeys(encryptionKey: encKey, macKey: macKey)
-        XCTAssertFalse(try enc.verifyMac(keys: keys))
+        XCTAssertThrowsError(try enc.decrypt(keys: keys)) { error in
+            XCTAssertEqual(error as? EncStringError, .macMismatch)
+        }
     }
 
     // MARK: - Decrypt round-trip (Type-2)

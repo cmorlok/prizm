@@ -17,10 +17,11 @@ nonisolated enum EditBlockReason: Equatable, Hashable, Sendable {
     /// section over whatever the server holds.
     case unmappable
 
-    /// The item's name is an EncString of the old type 0 (AES-CBC without a MAC, written by early
-    /// Bitwarden clients). Prizm reads it but never writes it back: a save must prove the key
-    /// against the stored name, and a type-0 name proves nothing because nothing authenticates it
-    /// (`CipherMapper.verifyKey`). The item stays readable; only editing is refused.
+    /// The stored name is an EncString of the old type 0 (AES-CBC without a MAC). Since
+    /// fix-encstring-validation such an item fails to decrypt at sync and is not listed, so this
+    /// reason only guards a save: an item listed by an earlier sync whose stored record has since
+    /// changed to a type-0 name is refused before any key work, because a type-0 name proves no key
+    /// (`CipherMapper.verifyKey`).
     case legacyEncryption
 
     /// An SSH key item without its private or public key (Vaultwarden sends `sshKey: null` for an SSH
@@ -39,7 +40,7 @@ nonisolated enum EditBlockReason: Equatable, Hashable, Sendable {
         case .unmappable:
             return "Some of this item's details are missing, so Prizm can't edit it without losing data. Edit it in the Bitwarden web vault or browser extension."
         case .legacyEncryption:
-            return "Prizm can't edit this item because it uses an older encryption format. Edit it in the Bitwarden web vault or browser extension."
+            return "Prizm can't edit this item because it uses an old encryption format without integrity protection, which current Bitwarden apps don't open either."
         case .incompleteSSHKey:
             return "This SSH key is incomplete and can't be edited in Prizm. Open it in a Bitwarden app to repair it."
         }

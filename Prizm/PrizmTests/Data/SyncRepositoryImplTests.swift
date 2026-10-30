@@ -194,6 +194,59 @@ final class SyncRepositoryImplTests: XCTestCase {
         XCTAssertTrue(mockVault.populatedItems.isEmpty, "and not listed")
     }
 
+    /// An organization whose key cannot be unwrapped (here a type-3 key, fix-encstring-validation D4)
+    /// is not listed, and its items are counted as failed; the rest of the vault syncs.
+    func testSync_orgWhoseKeyFails_isNotListed_andItsItemsAreCounted() async throws {
+        let orgCipher = RawCipher(
+            id: "org-cipher-1", organizationId: "org-3", folderId: nil, type: 2, name: "2.name==",
+            notes: nil, favorite: false, reprompt: nil, deletedDate: nil, creationDate: nil,
+            revisionDate: nil, login: nil, card: nil, identity: nil, secureNote: nil, sshKey: nil,
+            fields: [], key: nil, collectionIds: [], attachments: nil
+        )
+        mockAPI.syncResponse = SyncResponse(
+            profile: RawProfile(id: "pid", email: "test@example.com", name: nil,
+                                key: "2.encKey==", privateKey: "2.encPrivKey=="),
+            ciphers: [orgCipher],
+            folders: [],
+            organizations: [RawOrganization(id: "org-3", name: "Old Key Org", key: "3.rsaSha256==", type: 2)],
+            collections: []
+        )
+        mockCrypto.failingOrgKeys = ["3.rsaSha256=="]
+        mockCrypto.stubbedDecryptList = []
+        mockCrypto.stubbedFailedCount = 0
+
+        let result = try await sut.sync(progress: { _ in })
+
+        XCTAssertTrue(mockVault.populatedOrganizations.isEmpty, "the organization is not listed")
+        XCTAssertEqual(result.failedDecryptionCount, 1, "its item is counted")
+        XCTAssertTrue(mockVault.populatedItems.isEmpty)
+    }
+
+    /// fix-encstring-validation, task 1.4: a collection whose name is type 0 (no MAC) is dropped and
+    /// logged; the other collections of the organization are kept.
+    func testSync_collectionWithAType0Name_isDropped() async throws {
+        let orgKeys = KeyedCipherBuilder.randomKeys()
+        mockCrypto.stubbedOrgKeys["2.orgKey=="] = orgKeys
+        let genuine = KeyedCipherBuilder.encrypt("Team", keys: orgKeys)
+        let parts = genuine.dropFirst(2).split(separator: "|")
+        let type0 = "0.\(parts[0])|\(parts[1])"
+        mockAPI.syncResponse = SyncResponse(
+            profile: RawProfile(id: "pid", email: "test@example.com", name: nil,
+                                key: "2.encKey==", privateKey: "2.encPrivKey=="),
+            ciphers: [],
+            folders: [],
+            organizations: [RawOrganization(id: "org-1", name: "Acme Corp", key: "2.orgKey==", type: 3)],
+            collections: [RawCollection(id: "col-ok", organizationId: "org-1", name: genuine),
+                          RawCollection(id: "col-type0", organizationId: "org-1", name: type0)]
+        )
+        mockCrypto.stubbedDecryptList = []
+
+        _ = try await sut.sync(progress: { _ in })
+
+        XCTAssertEqual(mockVault.populatedCollections.map(\.id), ["col-ok"])
+        XCTAssertEqual(mockVault.populatedCollections.first?.name, "Team")
+    }
+
     // MARK: - Helpers
 
     private func makeSyncResponse(cipherCount: Int) -> SyncResponse {

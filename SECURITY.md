@@ -54,7 +54,7 @@ password itself.
 | HMAC-SHA256 | MAC verification (Encrypt-then-MAC) for both vault items and attachments | CryptoKit `HMAC<SHA256>` |
 | PBKDF2-SHA256 | Master key derivation (PBKDF2 accounts); salt = master password salt, 32-byte output | CommonCrypto `CCKeyDerivationPBKDF` |
 | Argon2id | Master key derivation (Argon2id accounts); version 0x13, Argon2 salt = SHA-256 of the master password salt, memory = server value in MiB × 1024 KiB, 32-byte output, as the Bitwarden SDK | `Argon2Swift` — thin wrapper around the reference C implementation |
-| HKDF-SHA256 | Key stretching | CryptoKit `HKDF<SHA256>` (RFC 5869) |
+| HKDF-SHA256 | Key stretching | HKDF-Expand without Extract (RFC 5869 §2.3), one HMAC-SHA256 block from CryptoKit `HMAC<SHA256>`; tested equal to CryptoKit `HKDF<SHA256>.expand` and the Bitwarden SDK vector |
 | RSA-OAEP-SHA1 | Organisation key unwrapping | `Security.framework` `SecKeyCreateDecryptedData` with `kSecKeyAlgorithmRSAEncryptionOAEPSHA1`; SHA-1 is a Bitwarden protocol requirement (Whitepaper §4), not a free choice |
 
 The **master password salt** is the salt the server sends at prelogin, else the account's
@@ -71,6 +71,19 @@ a server exhaust the Mac's memory. Unknown KDF types, missing, zero or negative 
 too. Nothing is sent to the server when the settings are refused. Iteration counts are not capped
 below what the KDF APIs accept, so a hostile server can keep the CPU busy with a huge count (accepted:
 it costs time, not secrets, and the user can quit Prizm).
+
+**Accepted EncString types.** Encrypted vault values (item fields, item keys, folder and
+collection names, attachment keys and names, the user key, the private key) are decrypted only
+from EncString type 2 (AES-256-CBC + HMAC-SHA256), and the MAC is checked before any decryption.
+Type 0 (AES-CBC without a MAC) is never decrypted, not even with the right key: a server, or anyone
+who can change stored data, could otherwise strip the MAC from a field, flip ciphertext bits and
+have the altered value shown, or use decryption errors as a padding oracle. The official SDK and
+apps refuse type 0 too, so such items are unreadable there as well; Prizm leaves them out of the
+vault and counts them as failed. The RSA types 3–6 and COSE type 7 are refused where a symmetric
+value is expected. IV (16 bytes), MAC (32 bytes) and ciphertext lengths are checked before any
+AES call. Organization keys are unwrapped only from type 4 (RSA-OAEP-SHA1), as current clients
+write them; types 3, 5 and 6 are refused with their type number in the log. The PKCS#8 private key
+is parsed with every length checked, so a malformed key fails instead of crashing.
 
 No hand-rolled cryptographic algorithms are used. All implementations are Apple system
 frameworks or the vendored `Argon2Swift` package (Argon2id is not provided by Apple

@@ -241,11 +241,13 @@ final class EffectiveKeyReadTests: XCTestCase {
         let type2 = try XCTUnwrap(typed.key)
         XCTAssertEqual(try mapper.effectiveKeys(for: typed, activeKeys: vaultKeys).toData(), itemKey.toData())
 
-        // The same IV and ciphertext without the MAC part: type 0 decrypts under the right key, but
-        // nothing authenticates it, so it is never accepted as an item key.
+        // The same IV and ciphertext without the MAC part: nothing authenticates it, so it is never
+        // decrypted, not even under the right key (fix-encstring-validation), nor accepted as an item key.
         let parts = type2.dropFirst(2).split(separator: "|")
         let type0 = "0.\(parts[0])|\(parts[1])"
-        XCTAssertEqual(try EncString(string: type0).decrypt(keys: vaultKeys), itemKey.toData())
+        XCTAssertThrowsError(try EncString(string: type0).decrypt(keys: vaultKeys)) { error in
+            XCTAssertEqual(error as? EncStringError, .unsupportedEncType)
+        }
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(typed)) as? [String: Any])
         json["key"] = type0
         let macLess = try JSONDecoder().decode(RawCipher.self, from: JSONSerialization.data(withJSONObject: json))

@@ -184,7 +184,9 @@ actor SyncRepositoryImpl: SyncRepository {
                             rsaPrivateKey: rsaPrivateKeyBytes
                         )
                     } catch {
-                        logger.fault("Failed to unwrap org key for org \(rawOrg.id.prefix(8), privacy: .public)… — org ciphers will be skipped: \(ErrorLog.describe(error), privacy: .public)")
+                        // `.error`, not `.fault`: one organization failing is recoverable, the
+                        // rest of the vault syncs (fix-encstring-validation, D4).
+                        logger.error("Failed to unwrap org key for org \(rawOrg.id.prefix(8), privacy: .public)… — org ciphers will be skipped: \(ErrorLog.describe(error), privacy: .public)")
                     }
                 }
                 try await ensureStillUnlocked(storeGeneration)
