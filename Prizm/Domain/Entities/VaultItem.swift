@@ -186,6 +186,10 @@ nonisolated struct LoginContent: Equatable, Hashable {
     let totp: String?
     let notes: String?
     let customFields: [CustomField]
+    /// How many websites the read path removed because their integrity checksum was missing or wrong
+    /// (openspec change `uri-checksum-validation`). They are not in `uris`, so nothing shows, searches
+    /// or saves them; the detail view tells the user they were there.
+    var hiddenURICount: Int = 0
 }
 
 nonisolated extension LoginContent {

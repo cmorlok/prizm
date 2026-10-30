@@ -187,6 +187,18 @@ final class VaultBrowserJourneyTests: PrizmUITestCase {
         XCTAssertEqual(openButtons.count, 1, "The file: website must not get an open button")
     }
 
+    /// A website the integrity check hid is announced, never shown (uri-checksum-validation, D4).
+    func testHiddenWebsitesNotice_isShownAndReadable() {
+        openItem(Fixture.gamma)
+        let notice = app.descendants(matching: .any)[Fixture.hiddenWebsitesNotice].firstMatch
+        XCTAssertTrue(notice.waitForExistence(timeout: 5))
+        XCTAssertEqual(notice.label, "1 website hidden because it failed an integrity check")
+
+        openItem(Fixture.kappa)
+        XCTAssertTrue(app.fieldValue("Website").displayedText.waitForText(Fixture.kappaWebsite, timeout: 5))
+        XCTAssertFalse(notice.exists, "Kappa has no hidden website")
+    }
+
     // MARK: - US3 Scenario 7: Item change resets mask state
 
     /// Verifies that navigating to a different item resets the reveal state to masked (FR-027).
