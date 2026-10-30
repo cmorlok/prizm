@@ -133,18 +133,11 @@ actor SyncRepositoryImpl: SyncRepository {
         // Phase 2: Decrypt personal ciphers via the crypto service.
         progress("Decrypting \(totalCiphers) item(s)…")
 
-        var (items, failedCount, cipherKeyMap) = try await crypto.decryptList(ciphers: syncResponse.ciphers)
+        var (items, failedCount, keySources) = try await crypto.decryptList(ciphers: syncResponse.ciphers)
         logger.info("Decrypted \(items.count) cipher(s); \(failedCount) failure(s)")
         if DebugConfig.isEnabled && failedCount > 0 {
             logger.debug("[debug] \(failedCount, privacy: .public) cipher(s) failed to decrypt — check PrizmCryptoService logs for per-cipher errors")
         }
-
-        // Phase 2b: Populate the per-cipher key cache from keys collected during decryptList.
-        // Only ciphers with a per-item key are included; vault-key-only ciphers are handled
-        // by VaultKeyServiceImpl's fallback path.
-        try await ensureStillUnlocked(storeGeneration)
-        await vaultKeyCache.populate(keys: cipherKeyMap)
-        logger.info("VaultKeyCache populated with \(cipherKeyMap.count, privacy: .public) per-item key(s)")
 
         // Phase 2b: Decrypt folder names.
         let (folders, folderFailedCount) = try await crypto.decryptFolders(folders: syncResponse.folders)
@@ -249,7 +242,7 @@ actor SyncRepositoryImpl: SyncRepository {
                             raw: cipher, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot
                         )
                         items.append(item)
-                        if cipher.key != nil { cipherKeyMap[cipher.id] = cipherKey }
+                        keySources[cipher.id] = .of(cipher, effectiveKey: cipherKey)
                     } catch CipherMapperError.organisationCipherSkipped {
                         // Org key not in snapshot — org key unwrap failed for this org.
                         orgCipherFailedCount += 1
@@ -265,10 +258,6 @@ actor SyncRepositoryImpl: SyncRepository {
                         logger.error("Org cipher decryption failed at index \(index, privacy: .public): \(ErrorLog.describe(error), privacy: .public)")
                     }
                 }
-                // Refresh the VaultKeyCache to include per-item keys from org ciphers.
-                try await ensureStillUnlocked(storeGeneration)
-                await vaultKeyCache.populate(keys: cipherKeyMap)
-
                 logger.info("Org sync: \(organizations.count) org(s), \(collections.count) collection(s), \(orgCipherFailedCount, privacy: .public) org cipher(s) skipped")
             } catch {
                 logger.error("Org key sync failed — org ciphers unavailable this session: \(ErrorLog.describe(error), privacy: .public)")
@@ -289,6 +278,13 @@ actor SyncRepositoryImpl: SyncRepository {
             }
         }
 
+        // Phase 2d: Replace the key cache once, with the source of every item, personal and org
+        // (fix-org-attachment-key, D2). Until here the previous sync's sources stay, so an org item
+        // still listed from that sync keeps its key while this one runs.
+        try await ensureStillUnlocked(storeGeneration)
+        await vaultKeyCache.populate(sources: keySources)
+        logger.info("VaultKeyCache populated with \(keySources.count, privacy: .public) key source(s)")
+
         // Phase 3: Populate the in-memory vault store.
         let syncedAt = Date()
         try await ensureStillUnlocked(storeGeneration)
@@ -306,6 +302,10 @@ actor SyncRepositoryImpl: SyncRepository {
             logger.info("Sync discarded: the vault was cleared while it ran")
             throw PrizmCryptoServiceError.vaultLocked
         }
+        // How many org attachments earlier versions wrapped with the personal key, so users can
+        // report it (fix-org-attachment-key, D3 Open Question 1). A count only, no names.
+        let personalKeyAttachments = items.reduce(0) { $0 + $1.attachments.filter(\.wrappedWithPersonalKey).count }
+        logger.info("Attachments wrapped with the personal key on org items: \(personalKeyAttachments, privacy: .public)")
         await vaultRepository.populate(
             items:         items,
             folders:       folders,

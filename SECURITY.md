@@ -185,8 +185,13 @@ Three encrypted artifacts are produced per attachment:
 | Encrypted attachment key | 64-byte random per-attachment key | EncString type-2 (AES-256-CBC + HMAC-SHA256) using the cipher key |
 | Encrypted file name | The original file name | EncString type-2 (AES-256-CBC + HMAC-SHA256) using the cipher key |
 
-The **cipher key** is either the vault symmetric key or a per-item key (if the cipher has
-one). The **attachment key** is a freshly generated 64-byte random value for each upload.
+The **cipher key** is the item's own key if it has one, otherwise the organization key for an
+organization item, otherwise the vault symmetric key, as in the official clients. Sync and create
+record which of the three applies to every item; an item without a record, or an organization item
+whose organization key is missing, fails with an error instead of falling back to the vault key.
+Attachments that Prizm versions before this rule wrapped with the vault key on organization items
+stay listed, open with the vault key, and are marked "Only you can open this file". The
+**attachment key** is a freshly generated 64-byte random value for each upload.
 
 ### Key locations
 

@@ -66,8 +66,8 @@ actor MockPrizmCryptoService: PrizmCryptoService {
                           macKey: Data(Array(stubbedVaultKeys.macKey)))
     }
 
-    func decryptList(ciphers: [RawCipher]) async throws -> (items: [VaultItem], failedCount: Int, cipherKeys: [String: Data]) {
-        (items: stubbedDecryptList, failedCount: stubbedFailedCount, cipherKeys: [:])
+    func decryptList(ciphers: [RawCipher]) async throws -> (items: [VaultItem], failedCount: Int, keySources: [String: CipherKeySource]) {
+        (items: stubbedDecryptList, failedCount: stubbedFailedCount, keySources: [:])
     }
 
     func decryptFolders(folders: [RawFolder]) async throws -> (folders: [Folder], failedCount: Int) {

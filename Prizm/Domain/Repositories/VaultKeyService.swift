@@ -13,15 +13,20 @@ import Foundation
 /// imports belong in the Domain layer.
 protocol VaultKeyService: Sendable {
 
-    /// Returns the 64-byte effective cipher key for the vault item identified by `cipherId`.
-    ///
-    /// - If the cipher has a per-item key stored in `VaultKeyCache` (populated at sync time),
-    ///   that key is returned.
-    /// - If the cache has no entry (cipher was created after last sync, or has no per-item key),
-    ///   the vault-level key is returned as a fallback.
+    /// Returns the 64-byte effective cipher key for the vault item identified by `cipherId`:
+    /// the item's own key if it has one, otherwise the organization key for an organization item,
+    /// otherwise the personal vault key (fix-org-attachment-key, D1). Never a different key.
     ///
     /// - Parameter cipherId: The ID of the vault item.
     /// - Returns: 64-byte `Data` (encryptionKey ‖ macKey).
-    /// - Throws: `VaultError.vaultLocked` when the vault is locked and no fallback is available.
+    /// - Throws: `VaultError.cipherKeyUnavailable` for an item the last sync or create did not
+    ///   record, `VaultError.organizationKeyUnavailable` when the item's organization key is
+    ///   missing, `VaultError.vaultLocked` when a personal item's key is needed while locked.
     func cipherKey(for cipherId: String) async throws -> Data
+
+    /// Returns the 64-byte personal vault key. Only for attachments flagged
+    /// `wrappedWithPersonalKey`, whose key was wrapped with it by mistake (design D3).
+    ///
+    /// - Throws: `VaultError.vaultLocked` when the vault is locked.
+    func personalKey() async throws -> Data
 }

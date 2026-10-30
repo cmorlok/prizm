@@ -24,6 +24,8 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
     // allows the actor init to be called from @MainActor without an actor hop.
     nonisolated private let mapper: CipherMapper
     private let orgKeyCache: OrgKeyCache
+    /// Gets the key source of a new item right after its create (fix-org-attachment-key, D2).
+    private let vaultKeyCache: VaultKeyCache
     /// The profile id of the last sync, sent as `encryptedFor` on creates and full updates.
     private let profileIds: ProfileIdCache
     /// The last server record of each item; filled by sync, create and update, emptied here.
@@ -77,7 +79,9 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
         // No default: one holder is shared with `SyncRepositoryImpl`, which fills it.
         profileIds:  ProfileIdCache,
         // No default: one store is shared with `SyncRepositoryImpl`, which fills it.
-        recordStore: RawCipherStore
+        recordStore: RawCipherStore,
+        // No default: one cache is shared with `SyncRepositoryImpl` and the key service.
+        vaultKeyCache: VaultKeyCache
     ) {
         self.apiClient         = apiClient
         self.crypto            = crypto
@@ -85,6 +89,7 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
         self.orgKeyCache       = orgKeyCache
         self.profileIds        = profileIds
         self.recordStore       = recordStore
+        self.vaultKeyCache     = vaultKeyCache
 
         // Pre-populate static keys with zero counts so itemCounts() returns 0 (not nil)
         // before the first populate() / buildIndexes() call (e.g. empty-vault tests).
@@ -635,6 +640,7 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
         // lands while the request runs makes the store write and the cache write below refuse. A
         // token read at the write would always be current.
         let storeGeneration = recordStore.currentGeneration()
+        let keyCacheGeneration = await vaultKeyCache.generation
 
         let vaultKeys: CryptoKeys
         do {
@@ -680,13 +686,23 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
         }
         await storeRecord(createdRaw, ifCurrent: storeGeneration)
 
+        // Checked before the answer is decrypted with keys captured before a lock.
+        guard recordStore.isCurrent(storeGeneration) else {
+            logger.info("Save finished after lock, dropped: \(createdRaw.id, privacy: .public)")
+            throw VaultError.vaultLocked
+        }
+        let (createdItem, cipherKey) = try mapper.map(raw: createdRaw, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot)
+        // An attachment added before the next sync needs the new item's key source; without it the
+        // key service refuses (fix-org-attachment-key, D2). The cache ignores it when a lock
+        // cleared the cache since the request began, so it never reaches the next session; a lock
+        // in this await is caught by the check below for the item cache.
+        await vaultKeyCache.record(.of(createdRaw, effectiveKey: cipherKey), for: createdRaw.id,
+                                   ifGeneration: keyCacheGeneration)
         // Last check before the cache write: everything below is synchronous.
         guard recordStore.isCurrent(storeGeneration) else {
             logger.info("Save finished after lock, dropped: \(createdRaw.id, privacy: .public)")
             throw VaultError.vaultLocked
         }
-        // Discard cipherKey — newly created items are picked up by the next sync.
-        let (createdItem, _) = try mapper.map(raw: createdRaw, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot)
         items.append(createdItem)
         buildIndexes()
         logger.info("Vault item created: \(createdItem.id, privacy: .public)")

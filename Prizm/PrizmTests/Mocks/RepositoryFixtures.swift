@@ -52,13 +52,15 @@ enum RepositoryFixtures {
         mapper:      CipherMapper = CipherMapper(),
         orgKeyCache: OrgKeyCache = OrgKeyCache(),
         profileIds:  ProfileIdCache? = nil,
-        recordStore: RawCipherStore? = nil
+        recordStore: RawCipherStore? = nil,
+        vaultKeyCache: VaultKeyCache = VaultKeyCache()
     ) async -> VaultRepositoryImpl {
         let holder: ProfileIdCache
         if let profileIds { holder = profileIds } else { holder = await Self.profileIds() }
         return VaultRepositoryImpl(
             apiClient: apiClient, crypto: crypto, mapper: mapper,
-            orgKeyCache: orgKeyCache, profileIds: holder, recordStore: recordStore ?? RawCipherStore()
+            orgKeyCache: orgKeyCache, profileIds: holder, recordStore: recordStore ?? RawCipherStore(),
+            vaultKeyCache: vaultKeyCache
         )
     }
 

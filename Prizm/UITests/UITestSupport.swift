@@ -198,6 +198,15 @@ extension XCUIApplication {
             AccessibilityID.Attachment.sectionCard, text, text)).firstMatch
     }
 
+    /// An element of the attachments section of any type whose label or value contains `text`. A
+    /// row reads its file name and size as one element ("report.pdf, 1 KB"), so the name is not a
+    /// plain static text with exactly that label.
+    func attachmentElement(containing text: String) -> XCUIElement {
+        descendants(matching: .any).matching(NSPredicate(
+            format: "identifier == %@ AND (label CONTAINS %@ OR value CONTAINS %@)",
+            AccessibilityID.Attachment.sectionCard, text, text)).firstMatch
+    }
+
     /// The unlock screen's subtitle, which names the stored account ("Enter the password for
     /// <email> to unlock."). The screen has no separate email field since ba1cd07 (#39).
     var unlockSubtitle: XCUIElement {

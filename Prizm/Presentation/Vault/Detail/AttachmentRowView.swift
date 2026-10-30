@@ -6,7 +6,12 @@ import SwiftUI
 ///
 /// When a download found no file on the server, the row says so and offers only Delete
 /// (fix-attachment-transfer-flow, D2). Otherwise Open, Save to Disk and Delete show on hover.
+/// An org attachment that earlier versions wrapped with the personal key carries a note that only
+/// this user can open it (fix-org-attachment-key, D4).
 struct AttachmentRowView: View {
+
+    /// Shown under the file name of an attachment flagged `wrappedWithPersonalKey`.
+    static let personalKeyNote = "Only you can open this file"
 
     let attachment: Attachment
 
@@ -22,20 +27,27 @@ struct AttachmentRowView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
-            // File icon + name + size
-            Label {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(attachment.fileName)
-                        .font(Typography.fieldValue)
-                        .lineLimit(1)
-                        .foregroundStyle(.primary)
-                    Text(attachment.sizeName)
-                        .font(Typography.listSubtitle)
-                        .foregroundStyle(.secondary)
-                }
-            } icon: {
+            // File icon + name + size. Not a `Label`: SwiftUI reads a Label as one element, so
+            // VoiceOver could not reach the note inside it (VoiceOver check 2026-10-30).
+            HStack(alignment: .center, spacing: 8) {
                 Image(systemName: "doc")
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(attachment.fileName)
+                            .font(Typography.fieldValue)
+                            .lineLimit(1)
+                            .foregroundStyle(.primary)
+                        Text(attachment.sizeName)
+                            .font(Typography.listSubtitle)
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                    if attachment.wrappedWithPersonalKey {
+                        personalKeyNote
+                    }
+                }
             }
 
             Spacer()
@@ -55,6 +67,18 @@ struct AttachmentRowView: View {
             }
         }
         .accessibilityIdentifier(AccessibilityID.Attachment.row(attachment.id))
+    }
+
+    // MARK: - Wrapped with the personal key (fix-org-attachment-key, D4)
+
+    private var personalKeyNote: some View {
+        Label(Self.personalKeyNote, systemImage: "person.badge.key")
+            .font(Typography.utility)
+            .foregroundStyle(.orange)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Self.personalKeyNote)
+            .accessibilityHint("It was saved with your personal key, so other members of the organization can't open it.")
+            .accessibilityIdentifier(AccessibilityID.Attachment.personalKeyNote(attachment.id))
     }
 
     // MARK: - Normal actions (hover-activated)

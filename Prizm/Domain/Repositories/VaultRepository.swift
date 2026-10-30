@@ -156,6 +156,9 @@ nonisolated enum VaultError: Error, LocalizedError {
     /// An org item was to be saved but its organization key is not available. Raised instead of
     /// encrypting with the personal key (fix-org-key-required-on-write).
     case organizationKeyUnavailable
+    /// The key cache has no entry for this item, so its key source is unknown. Raised instead of
+    /// guessing the personal key (fix-org-attachment-key, D1).
+    case cipherKeyUnavailable
     /// A collection's access list could not be read, so a rename was not sent: sending a list
     /// Prizm did not read would replace everyone's access (fix-collection-access-on-rename).
     case collectionAccessUnreadable
@@ -207,6 +210,8 @@ nonisolated enum VaultError: Error, LocalizedError {
             return "Couldn't create the collection. Your membership in this organization could not be read."
         case .organizationKeyUnavailable:
             return "This item's organization can't be accessed right now. Lock and unlock Prizm, then try again."
+        case .cipherKeyUnavailable:
+            return "Prizm doesn't have the key for this item yet. Sync and try again."
         case .profileIdUnavailable:
             return "Prizm couldn't confirm which account this item belongs to. Lock and unlock Prizm, then try again."
         case .itemNotEditable(let reason):

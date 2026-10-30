@@ -171,7 +171,7 @@ final class RawCipherStoreTests: XCTestCase {
         rig.api.whileFetchingSync = {
             await vault.clearVault()
             await orgKeys.replaceAll(with: nextSessionOrgKeys)
-            await itemKeys.populate(keys: ["next-cipher": Data(repeating: 0x33, count: 64)])
+            await itemKeys.populate(sources: ["next-cipher": .itemKey(Data(repeating: 0x33, count: 64))])
         }
 
         do {
