@@ -231,6 +231,8 @@ protocol RootViewModelDependencies: AnyObject {
     var clipboard: any ClipboardService { get }
     /// Folder of opened attachment files; emptied on lock, sign-out and quit.
     var attachmentTempFiles: any TempFileManaging { get }
+    /// Website icon loader; pointed at the signed-in server, cleared on lock and sign-out.
+    var faviconLoader: FaviconLoader { get }
     func makeLoginViewModel() -> LoginViewModel
     func makeUnlockViewModel(account: Account) -> UnlockViewModel
     func makeVaultBrowserViewModel() -> VaultBrowserViewModel
@@ -499,6 +501,9 @@ final class RootViewModel: ObservableObject {
             // be written under the fallback empty-email key. Should not occur in normal flow.
             logger.error("\(caller, privacy: .public)(.vault): no stored account; sync timestamp not re-scoped")
         }
+        // Icons come only from this account's server; UI-test runs have no real server (D1).
+        let iconsBase = UITestFixtures.isEnabled ? nil : container.authRepo.storedAccount()?.serverEnvironment.iconsURL
+        container.faviconLoader.configure(iconsBase: iconsBase)
         vaultBrowserVM.beginSession()
         screen = .vault
         // Defer handleSyncCompleted to the next run-loop cycle so that the initial
@@ -574,7 +579,12 @@ final class RootViewModel: ObservableObject {
         lockGeneration += 1
         // Drop the vault browser's decrypted copies right away, not after the awaits below.
         vaultBrowserVM.clearSession()
+        // No icon request from here on, not only after the teardown below, which may wait for the
+        // network (fix-website-icons-privacy, D1; code review 2026-10-30).
+        container.faviconLoader.configure(iconsBase: nil)
         Task {
+            // No icon of this account kept (D4).
+            await container.faviconLoader.reset()
             do {
                 try await container.authRepo.signOut()
             } catch {
@@ -611,7 +621,11 @@ final class RootViewModel: ObservableObject {
         isLocking = true
         // Drop the vault browser's decrypted copies right away, not after the awaits below.
         vaultBrowserVM.clearSession()
+        // No icon request while locked, from the start of the lock (fix-website-icons-privacy, D1).
+        container.faviconLoader.configure(iconsBase: nil)
         Task {
+            // No icon kept (D4).
+            await container.faviconLoader.reset()
             // Zeroes and clears every key cache (Constitution §III): one teardown path in the
             // Data layer for lock and sign-out (harden-key-lifecycle-and-logging, D1).
             await container.authRepo.lockVault()

@@ -83,7 +83,7 @@ struct VerificationCodesListView: View {
     @ViewBuilder
     private func row(for item: VaultItem) -> some View {
         HStack(spacing: 10) {
-            FaviconView(domain: primaryDomain(for: item), itemType: .login, loader: faviconLoader, size: 26)
+            FaviconView(domain: WebsiteIconHost.host(for: item), itemType: .login, loader: faviconLoader, size: 26)
             if let state = codes.states[item.id] {
                 TOTPCodeRowView(itemId: item.id, name: item.name, state: state, showsName: true,
                                 subtitle: username(for: item), showsCountdown: false, onCopy: onCopy)
@@ -105,8 +105,5 @@ struct VerificationCodesListView: View {
         return l.username
     }
 
-    private func primaryDomain(for item: VaultItem) -> String? {
-        guard case .login(let l) = item.content, let first = l.firstAddress else { return nil }
-        return URL(string: first)?.host
-    }
+    /// The icon host of the login's first website with an address (fix-website-icons-privacy, D3).
 }

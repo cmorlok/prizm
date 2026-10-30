@@ -4,8 +4,9 @@ import SwiftUI
 
 /// Displays a favicon for a given domain, falling back to a per-type SF Symbol (FR-009, FR-032).
 ///
-/// The image is loaded asynchronously via `FaviconLoader`. If the load fails or
-/// the domain is nil, the SF Symbol for `itemType` is shown instead.
+/// The image is loaded asynchronously via `FaviconLoader`. If the load fails, the domain is nil or
+/// "Show website icons" is off, the SF Symbol for `itemType` is shown instead
+/// (fix-website-icons-privacy, D2).
 ///
 /// Usage:
 /// ```swift
@@ -20,6 +21,20 @@ struct FaviconView: View {
     var size:     CGFloat = 16
 
     @State private var image: NSImage? = nil
+
+    @AppStorage(WebsiteIconSettings.showIconsKey)
+    private var showsIcons: Bool = WebsiteIconSettings.showIconsDefault
+
+    /// The `.task(id:)` key: a change of domain or of the setting reloads the icon.
+    nonisolated struct TaskKey: Equatable {
+        let domain: String?
+        let showsIcons: Bool
+    }
+
+    /// The host to load, or `nil` when there is none or icons are off.
+    nonisolated static func loadTarget(domain: String?, showsIcons: Bool) -> String? {
+        showsIcons ? domain : nil
+    }
 
     var body: some View {
         Group {
@@ -37,12 +52,13 @@ struct FaviconView: View {
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)
-        .task(id: domain) {
-            guard let domain else {
+        .task(id: TaskKey(domain: domain, showsIcons: showsIcons)) {
+            // Clears an icon already on screen when the setting is turned off.
+            guard let target = Self.loadTarget(domain: domain, showsIcons: showsIcons) else {
                 image = nil
                 return
             }
-            image = await loader.favicon(for: domain)
+            image = await loader.favicon(for: target)
         }
     }
 }

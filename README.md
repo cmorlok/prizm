@@ -107,6 +107,8 @@ All cryptography runs locally on your device:
 - **RSA-OAEP-SHA1 organisation key unwrapping** (Security.framework) — organisation symmetric keys are RSA-wrapped per member; Prizm unwraps them at sync time using your account's private key, following the Bitwarden protocol
 - **macOS Keychain** storage (device-only, `WhenUnlockedThisDeviceOnly`) — session keys never touch iCloud
 
+**Website icons** come from your own server's icon service (`/icons` on your server), never from a third party. The server sees which websites your logins are for, and its icon service may contact those websites. Icons are kept in memory only and dropped on lock. Turn them off in Settings → Privacy → "Show website icons". If your server forwards icon requests to an outside icon service (Vaultwarden's `ICON_SERVICE` setting), Prizm refuses that redirect unless you turn on "Allow icons from other services" (and follows it only over `https`); that service then sees the website addresses and your IP address.
+
 The app is open source. Verify these claims by reading the code. See [SECURITY.md](SECURITY.md) for the full threat model, algorithm specifications, and what the app does not protect against. See [ACCESSIBILITY.md](ACCESSIBILITY.md) for the WCAG 2.1 conformance statement.
 
 ## Shortcuts

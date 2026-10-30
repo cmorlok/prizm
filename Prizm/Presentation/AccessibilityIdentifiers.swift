@@ -59,6 +59,13 @@ nonisolated enum AccessibilityID {
         static let settingsButton    = "vault.settings"
     }
 
+    // MARK: - Settings window
+
+    enum Settings {
+        static let showWebsiteIcons   = "settings.icons.showWebsiteIcons"
+        static let allowOtherServices = "settings.icons.allowOtherServices"
+    }
+
     // MARK: - Sidebar (US3)
 
     enum Sidebar {

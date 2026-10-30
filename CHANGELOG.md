@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Fix: website icons are now loaded from your own server's icon service. Before, Prizm sent the
+  website of every login to Bitwarden's icon service (icons.bitwarden.net), whatever server you
+  use, and kept the answers in a disk cache. Icons are now kept in memory only and dropped when
+  the vault locks.
+- Added: Settings → Privacy, with "Show website icons" (on) and "Allow icons from other services"
+  (off). If your server forwards icon requests to an outside service, Prizm shows the item's type
+  icon instead, unless you allow it (and then only over https).
 - Security: Prizm no longer decrypts vault data that has no integrity check (the old AES-CBC
   format without a MAC, or values marked with a wrong type), as the official Bitwarden apps do.
   Items with such data are not shown, and the sync reports them as not readable. Encrypted values
