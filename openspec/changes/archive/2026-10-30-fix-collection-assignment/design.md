@@ -50,8 +50,8 @@ endpoint in `crates/bitwarden-api-api/src/apis/ciphers_api.rs:1008-1018`).
   → 200, `unavailable: false`, cipher in the body, item in W1, W2, R; posting the unchanged
   `[W1, R]` → 400 "No rights to modify the collection". So the source reading above was wrong
   about unchanged read-only collections: any read-only id in the list fails the request, and a
-  read-only assignment that is left out is kept. Prizm therefore leaves read-only (and unknown)
-  ids out of the request (D2). The Prizm live check confirmed it: before the change, adding W3 to
+  read-only assignment that is left out is kept. Prizm therefore leaves read-only ids out of the
+  request (D2); unknown ids are sent back. The Prizm live check confirmed it: before the change, adding W3 to
   an item in W1 and R failed with "the collection change failed" while Vaultwarden had still
   added W3 (it does not roll back).
 - Org create with no collections fails for members without full access
@@ -180,7 +180,8 @@ admin view of unassigned items, so such an item would vanish from Prizm too.
 - The original set is the `collectionIds` of the stored server record the save is built on (the
   record `fix-cipher-edit-data-loss` keeps per item). It is what the server holds, so it is also
   right after a partly failed save and a retry, where the sheet's own snapshot moved on.
-- If `Set(draft.collectionIds) == Set(record.collectionIds)`, no collections call is sent. The PUT
+- If the D2a list (the user's change applied to the record's collections) has the same set as
+  `record.collectionIds`, no collections call is sent. The PUT
   answer is then the item's record, as for a personal item.
 - Otherwise it calls `PUT /api/ciphers/{id}/collections_v2` with the D2a list minus read-only ids (D2) and decodes
   `{unavailable, cipher?}`.
@@ -241,6 +242,45 @@ because Vaultwarden refuses any read-only id in it (rig result in Context). It l
   become writable is left out of the request, and the server removes the item from it without an
   error. → Accepted: it needs a permission change between the last sync and the save; a sync
   before editing avoids it. The official clients send their cached list the same way.
+
+## Review
+
+Independent review on 2026-10-30 (fresh reviewer, read only), no blockers, five should-fix findings
+and three nits:
+- Fixed: collections Prizm does not know (their name did not decrypt) were left out of the request,
+  so the server could remove them. They are now sent back; only collections the last sync lists as
+  read-only are left out (D2, `testUnknownCollection_isSentBack`).
+- Fixed: a sync while the sheet was open could turn a plain edit into a removal, because the draft
+  was compared with the newer stored record. The user's change is now applied to the stored
+  collections (D2a, `CollectionAssignment.rebased`). The rig showed that Vaultwarden 1.37.4 does not
+  change the item's revision on a collection change, so the conflict check cannot catch this.
+- Fixed: the Domain helper comment, proposal and design still said read-only ids are sent back.
+- Fixed: no test pinned the empty request when the last writable collection is unchecked
+  (`testUncheckingTheLastWritable_sendsAnEmptyList_andKeepsTheReadOnlyOne`).
+- Fixed (nit): D3 now says an item in a read-only collection can still be saved.
+- Accepted and documented under Risks: a collection that was read-only at the last sync and has
+  since become writable is left out of the request, and the server removes the item from it. It
+  needs a permission change between the last sync and the save; the official clients send their
+  cached list the same way.
+- Declined (nit): filtering read-only ids on create in the repository. The sheet never offers one,
+  and the server refuses such a create with an error, so nothing is lost.
+- Declined (nit): caching the collections from the server's answer. The answer already becomes the
+  stored record through `refreshRecord`; the remaining case is the accepted risk above.
+- Not changed: the XCUITest does not save and reopen, because UI-test mode has no server. The live
+  rig covers save and reopen (task 6.1).
+
+**Security review (task 6.2).** No write to a read-only collection: the edit request leaves out
+every collection the last sync lists as read-only (`VaultRepositoryImpl.requestCollectionIds`), the
+sheet offers only writable collections as checkboxes, and the create sheet pre-fills only a
+writable one. No removal the user did not ask for: the saved list is the user's change (checked and
+unchecked collections against the list at open time) applied to the collections of the stored
+record, so read-only, unknown and other organizations' assignments and another member's change that
+a sync brought in are kept; a save without a collection change sends no collections request at all.
+One gap remains, recorded under Risks: a collection that became writable after the last sync. Error
+paths keep the cache truthful: a failed collections request keeps the saved fields with the
+collections the PUT answer reports and refreshes the record; `unavailable: true` removes the item
+from the cache and the record store behind the lock and generation checks; a lock during the save
+drops every write. Logs carry item ids only, never names or keys.
 
 ## Open Questions
 

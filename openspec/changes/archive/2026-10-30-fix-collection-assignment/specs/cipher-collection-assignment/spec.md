@@ -64,7 +64,7 @@ The system SHALL NOT allow saving an org item, on create or on edit, when its re
 - **THEN** Save SHALL be disabled
 
 ### Requirement: The collections endpoint is called only when assignments change
-After updating an org item, the system SHALL call `PUT /api/ciphers/{id}/collections_v2` only when the set of collection ids differs from the set in the server record the edit is based on. When the call fails after the item itself was saved, the system SHALL keep the saved fields with the original collections in the local vault and SHALL show "Your changes were saved, but the collection change failed. Try again."
+After updating an org item, the system SHALL call `PUT /api/ciphers/{id}/collections_v2` only when the item's resulting collection list (the user's change applied to the record Prizm holds at save time) differs, as a set, from the collections of that record. When the call fails after the item itself was saved, the system SHALL keep the saved fields with the original collections in the local vault and SHALL show "Your changes were saved, but the collection change failed. Try again."
 
 #### Scenario: Edit without collection change
 - **GIVEN** an org item in collection "A"

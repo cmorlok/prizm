@@ -5,7 +5,7 @@ Choose folder and collection when creating or editing an item.
 ## Requirements
 
 ### Requirement: Edit and create sheets include a folder picker
-The system SHALL display a "Folder" picker in both the item edit sheet and the item create sheet when folders exist, for personal and organization items alike (folders are personal; see `org-items-in-folders`). The picker SHALL list all folders sorted alphabetically by name, plus a "None" option at the top. For existing items, the picker SHALL pre-select the item's current folder (or "None" if unfoldered). For new items, the picker SHALL default to "None". The selected folder SHALL be included as `folderId` in the cipher payload when saving. When no folders exist, the folder picker SHALL NOT be displayed. For an organization item it SHALL appear below the collection picker.
+The system SHALL display a "Folder" picker in both the item edit sheet and the item create sheet when folders exist, for personal and organization items alike (folders are personal; see `org-items-in-folders`). The picker SHALL list all folders sorted alphabetically by name, plus a "None" option at the top. For existing items, the picker SHALL pre-select the item's current folder (or "None" if unfoldered). For new items, the picker SHALL default to "None". The selected folder SHALL be included as `folderId` in the cipher payload when saving. When no folders exist, the folder picker SHALL NOT be displayed. For an organization item it SHALL appear below the Collections card.
 
 #### Scenario: Folder picker shown in edit sheet for personal item
 - **WHEN** the user opens the edit sheet for an existing personal item
@@ -18,7 +18,7 @@ The system SHALL display a "Folder" picker in both the item edit sheet and the i
 #### Scenario: Folder picker shown for org items
 - **GIVEN** folders exist and the user opens the edit or create sheet for an item belonging to an organization
 - **WHEN** the sheet renders
-- **THEN** a "Folder" picker SHALL be displayed below the collection picker
+- **THEN** a "Folder" picker SHALL be displayed below the Collections card
 
 #### Scenario: Current folder pre-selected on edit
 - **GIVEN** a personal item is assigned to folder "Work"
@@ -33,19 +33,20 @@ The system SHALL display a "Folder" picker in both the item edit sheet and the i
 ---
 
 ### Requirement: Create and edit sheets include an org collection picker for org items
-The system SHALL display an organization name (read-only) and a "Collection" picker in the item edit sheet when the item belongs to an organization. In the create sheet, when the sidebar context is `.collection(id)`, the org and collection SHALL be pre-selected (passed via `selectedCollectionId` from `VaultBrowserViewModel`). The collection picker SHALL list all `OrgCollection` entries for the item's organization, sorted alphabetically. The selected collection's id SHALL be included in `collectionIds[]` in the cipher payload when saving.
+The system SHALL display a "Collections" card in the item edit sheet and the item create sheet when the item belongs to an organization, with one checkbox per collection as defined in `cipher-collection-assignment`. In the create sheet, when the sidebar context is `.collection(id)` and the user can write that collection, it SHALL be pre-checked (passed via `selectedCollectionId` from `VaultBrowserViewModel`); a collection the user can only view SHALL NOT be pre-checked. The checked collections SHALL be included in `collectionIds[]` in the cipher payload when creating an item.
 
-#### Scenario: Collection picker shown in edit sheet for org item
+#### Scenario: Collections card shown in edit sheet for org item
 - **WHEN** the user opens the edit sheet for an org item
-- **THEN** a "Collection" picker SHALL be displayed showing collections from the item's organization
+- **THEN** a "Collections" card SHALL be displayed with a checkbox for each collection of the item's organization that the user can write
 
 #### Scenario: Collection pre-selected when creating from collection context
 - **GIVEN** the user clicked `+` with `.collection("col1")` active in the sidebar
+- **AND** the user can write "col1"
 - **WHEN** the create sheet opens
 - **THEN** the org and collection "col1" SHALL be pre-selected
 
-#### Scenario: Collection selection included in save payload
-- **GIVEN** the user selects collection "Infrastructure" in the picker
+#### Scenario: Checked collections included in the create payload
+- **GIVEN** the user checks collection "Infrastructure" in the create sheet
 - **WHEN** the user saves
 - **THEN** the cipher payload SHALL include `collectionIds = ["<infrastructure-id>"]`
 

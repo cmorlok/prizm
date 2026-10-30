@@ -81,10 +81,9 @@ Vaultwarden as soon as that fix ships.
   collection.
 
 ### Modified Capabilities
-_None in this change._ `openspec/specs/vault-item-create/spec.md:31-46` ("Create and edit sheets
-include an org collection picker") describes a single "Collection" picker. At archive time, replace
-it with this change's requirement. That spec also names the old behaviour in its scenario
-"Collection selection included in save payload".
+- `vault-item-create` (edited at archive time, task 6.4): the org collection requirement describes the Collections card with
+  checkboxes (details in `cipher-collection-assignment`) instead of a single "Collection" picker,
+  and pre-fills only a writable collection on create.
 
 ## Non-Goals
 
