@@ -23,6 +23,26 @@ nonisolated enum PrizmCryptoServiceError: Error, Equatable {
     case insufficientKdfParameters
     /// The KDF settings are unusable (missing, zero, negative or out of range); nothing was derived.
     case invalidKdfParameters
+    /// An organization key of RSA type 3, 5 or 6, which Prizm does not unwrap (only type 4;
+    /// fix-encstring-validation, D4). The associated value is the type number.
+    case unsupportedOrgKeyType(Int)
+    /// An organization key that is not a one-part type-4 EncString with valid Base64.
+    case malformedOrgKey
+    /// The decrypted private key is not a well-formed PKCS#8 RSA key (D5).
+    case malformedPrivateKey
+    /// RSA-OAEP decryption of a type-4 organization key failed: it was not wrapped for this
+    /// user's key, or it is corrupted. The user key itself is fine (code review 2026-10-30).
+    case orgKeyUnwrapFailed
+}
+
+extension PrizmCryptoServiceError: LogSafeError {
+    /// The case name, and for `unsupportedOrgKeyType` the type number; never key material.
+    nonisolated var logDescription: String {
+        switch self {
+        case .unsupportedOrgKeyType(let type): return "PrizmCryptoServiceError.unsupportedOrgKeyType(\(type))"
+        default: return "PrizmCryptoServiceError.\(self)"
+        }
+    }
 }
 
 // MARK: - PrizmCryptoService Protocol
@@ -161,8 +181,9 @@ protocol PrizmCryptoService: Actor {
     ///
     /// - PKCS#8 stripping: Bitwarden stores the RSA private key as a PKCS#8-wrapped DER blob.
     ///   `SecKeyCreateWithData` requires the raw RSA key material without the PKCS#8 header.
-    ///   The header is stripped by skipping the outer SEQUENCE → SEQUENCE (AlgorithmIdentifier)
-    ///   → BITSTRING wrapper to reach the raw PKCS#1 RSAPrivateKey DER bytes.
+    ///   `stripPKCS8Header` reads the outer SEQUENCE, the version, the AlgorithmIdentifier (which
+    ///   must be rsaEncryption) and returns the content of the OCTET STRING: the PKCS#1
+    ///   RSAPrivateKey DER bytes (RFC 5208 §5).
     ///
     /// - What is NOT done: This function does not cache the RSA private key — callers must
     ///   pass the already-decrypted key bytes and zero them immediately after use.
@@ -455,9 +476,10 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
             logger.error("Failed to parse encUserKey EncString: \(ErrorLog.describe(error), privacy: .public)")
             throw PrizmCryptoServiceError.invalidEncUserKey
         }
-        // The one place the user key's type is checked (fix-encstring-validation, D1). A type-0
-        // user key is a legacy account, which official clients refuse ("legacyEncryptionUnsupported");
-        // `account-scope-and-unsupported-features` is to give it a named message here.
+        // Defence in depth: `decrypt` refuses every type but 2 too; this check logs the type the
+        // server sent (fix-encstring-validation, D1). A type-0 user key is a legacy account, which
+        // official clients refuse ("legacyEncryptionUnsupported"); `account-scope-and-unsupported-features`
+        // is to give it a named message here.
         guard enc.encType == .aes256Cbc_HmacSha256_B64 else {
             logger.error("encUserKey is EncString type \(enc.encType.rawValue, privacy: .public), not 2")
             throw PrizmCryptoServiceError.invalidEncUserKey
@@ -542,12 +564,14 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
     ///   We skip the outer SEQUENCE + INTEGER + SEQUENCE (AlgorithmIdentifier) + OCTET STRING
     ///   header bytes to reach the raw PKCS#1 content.
     ///
-    /// - Type-4 EncString: org key EncStrings use type "4." followed by base64-encoded
-    ///   RSA ciphertext. There is no IV or MAC — the authentication is provided by the
-    ///   RSA-OAEP padding scheme itself.
+    /// - Type-4 EncString only: `4.<base64 RSA ciphertext>`, one part, no IV or MAC (RSA-OAEP's
+    ///   padding is the integrity check). Current clients write type 4 for organization keys
+    ///   (SDK `enc_string/asymmetric.rs:184-198`).
+    /// - Intentionally NOT done: types 3, 5 and 6 (OAEP-SHA256, and the variants with an HMAC part)
+    ///   are refused with `unsupportedOrgKeyType` before any RSA work. No current writer of them was
+    ///   found; unwrapping them can be added if such keys turn up (fix-encstring-validation, D4).
     func unwrapOrgKey(encOrgKey: String, rsaPrivateKey: Data) throws -> CryptoKeys {
-        // Parse Type-4 EncString: "4.<base64-ciphertext>"
-        let rsaCiphertext = try parseType4EncString(encOrgKey)
+        let rsaCiphertext = try parseOrgKeyEncString(encOrgKey)
 
         // Strip PKCS#8 wrapper to obtain raw PKCS#1 RSAPrivateKey DER bytes.
         let pkcs1Bytes = try stripPKCS8Header(from: rsaPrivateKey)
@@ -562,8 +586,8 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
         ]
         guard let secKey = SecKeyCreateWithData(pkcs1Bytes as CFData, keyAttributes as CFDictionary, &importError) else {
             let err = importError?.takeRetainedValue()
-            logger.fault("unwrapOrgKey: SecKeyCreateWithData failed: \(err.debugDescription, privacy: .public)")
-            throw PrizmCryptoServiceError.invalidEncUserKey
+            logger.error("unwrapOrgKey: SecKeyCreateWithData failed: \(err.debugDescription, privacy: .public)")
+            throw PrizmCryptoServiceError.malformedPrivateKey
         }
 
         // Decrypt org key bytes using RSA-OAEP-SHA1.
@@ -576,12 +600,12 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
             &decryptError
         ) as Data? else {
             let err = decryptError?.takeRetainedValue()
-            logger.fault("unwrapOrgKey: RSA-OAEP-SHA1 decryption failed: \(err.debugDescription, privacy: .public)")
-            throw PrizmCryptoServiceError.invalidEncUserKey
+            logger.error("unwrapOrgKey: RSA-OAEP-SHA1 decryption failed: \(err.debugDescription, privacy: .public)")
+            throw PrizmCryptoServiceError.orgKeyUnwrapFailed
         }
 
         guard orgKeyData.count == 64 else {
-            logger.fault("unwrapOrgKey: decrypted org key has wrong length \(orgKeyData.count, privacy: .public) (expected 64)")
+            logger.error("unwrapOrgKey: decrypted org key has wrong length \(orgKeyData.count, privacy: .public) (expected 64)")
             throw PrizmCryptoServiceError.invalidSymmetricKeyLength
         }
 
@@ -594,81 +618,88 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
         )
     }
 
-    /// Parses a Type-4 EncString ("4.<base64>") and returns the raw ciphertext bytes.
+    /// Parses an organization key EncString and returns the RSA ciphertext of a type-4 key.
     ///
-    /// Type-4 is used for RSA-encrypted payloads (org keys). Unlike Type-2 (AES-CBC),
-    /// it has no IV or MAC — the format is simply "4." followed by base64.
-    private func parseType4EncString(_ encString: String) throws -> Data {
-        guard encString.hasPrefix("4.") else {
-            logger.error("parseType4EncString: expected type-4 prefix, got \(String(encString.prefix(4)), privacy: .public)")
-            throw PrizmCryptoServiceError.invalidEncUserKey
+    /// Part counts as in the official enum (`encryption-type.enum.ts:41-49`): 3 and 4 have one part,
+    /// 5 and 6 two. Only a one-part type 4 with valid Base64 is accepted.
+    private func parseOrgKeyEncString(_ encString: String) throws -> Data {
+        guard let (number, body) = EncString.splitHeader(encString),
+              let type = AsymmetricEncType(rawValue: number) else {
+            logger.error("Org key is not an RSA EncString")
+            throw PrizmCryptoServiceError.malformedOrgKey
         }
-        let b64 = String(encString.dropFirst(2))
-        guard let data = Data(base64Encoded: b64) else {
-            logger.error("parseType4EncString: base64 decoding failed")
-            throw PrizmCryptoServiceError.invalidEncUserKey
+        guard type == .rsa2048OaepSha1_B64 else {
+            logger.error("Org key has unsupported EncString type \(number, privacy: .public)")
+            throw PrizmCryptoServiceError.unsupportedOrgKeyType(number)
         }
-        return data
+        let parts = body.split(separator: "|", omittingEmptySubsequences: false)
+        guard parts.count == 1, let ciphertext = Data(base64Encoded: String(parts[0])), !ciphertext.isEmpty else {
+            logger.error("Org key of type 4 is malformed")
+            throw PrizmCryptoServiceError.malformedOrgKey
+        }
+        return ciphertext
     }
 
-    /// Strips the PKCS#8 outer wrapper from DER-encoded RSA private key bytes.
+    /// Strips the PKCS#8 wrapper (RFC 5208 §5) from a DER-encoded RSA private key and returns the
+    /// PKCS#1 `RSAPrivateKey` inside, which `SecKeyCreateWithData` needs; no Apple API imports
+    /// PKCS#8 RSA keys directly.
     ///
-    /// PKCS#8 format: SEQUENCE { INTEGER(0), SEQUENCE{OID, NULL}, OCTET STRING { <PKCS#1> } }
-    /// We need the raw PKCS#1 RSAPrivateKey DER bytes inside the OCTET STRING.
+    /// `SEQUENCE { INTEGER version, SEQUENCE { OID rsaEncryption, NULL }, OCTET STRING { PKCS#1 } }`
     ///
-    /// DER tag-length-value parsing:
-    /// - 0x30 = SEQUENCE
-    /// - 0x02 = INTEGER
-    /// - 0x30 = SEQUENCE (AlgorithmIdentifier)
-    /// - 0x04 = OCTET STRING (contains PKCS#1 content)
+    /// - Security goal: the bytes come from the server (decrypted with the vault key), so they are
+    ///   untrusted input. Every length is checked against the bytes that remain, long-form lengths
+    ///   are at most 4 bytes, the indefinite form is refused, each element must end inside the
+    ///   outer SEQUENCE, and the algorithm must be rsaEncryption (1.2.840.113549.1.1.1). Any
+    ///   violation throws `malformedPrivateKey`; nothing traps (fix-encstring-validation, D5).
+    /// - Intentionally NOT done: a general ASN.1 parser or a library for it; this reads framing
+    ///   only, it is not a cryptographic algorithm (§VI).
     ///
-    /// This parser is minimal and only handles the exact PKCS#8 structure Bitwarden produces.
-    /// It does not attempt to handle all DER variants.
+    /// Returns a slice of `pkcs8`, not a copy: it shares the caller's buffer, so zeroing the
+    /// decrypted private key also zeroes the PKCS#1 bytes, and no other copy of the key is made
+    /// (Constitution §III; code review 2026-10-30).
     private func stripPKCS8Header(from pkcs8: Data) throws -> Data {
-        var idx = pkcs8.startIndex
+        let range = try pkcs8.withUnsafeBytes { raw -> Range<Int> in
+            try Self.pkcs1Range(in: raw.bindMemory(to: UInt8.self))
+        }
+        return pkcs8[(pkcs8.startIndex + range.lowerBound)..<(pkcs8.startIndex + range.upperBound)]
+    }
 
-        // Helper: advance past a TLV tag and length, returning the content start and length.
-        func readTLV(expectedTag: UInt8) throws -> (contentStart: Data.Index, contentLength: Int) {
-            guard idx < pkcs8.endIndex, pkcs8[idx] == expectedTag else {
-                throw PrizmCryptoServiceError.invalidEncUserKey
-            }
-            idx = pkcs8.index(after: idx)
+    /// The offsets of the PKCS#1 key inside a PKCS#8 DER buffer, read in place.
+    private static func pkcs1Range(in bytes: UnsafeBufferPointer<UInt8>) throws -> Range<Int> {
+        var index = 0
 
-            // Read length (BER/DER short or long form).
-            guard idx < pkcs8.endIndex else { throw PrizmCryptoServiceError.invalidEncUserKey }
-            var length: Int
-            let lenByte = pkcs8[idx]
-            idx = pkcs8.index(after: idx)
-            if lenByte & 0x80 == 0 {
-                length = Int(lenByte)
-            } else {
-                let numBytes = Int(lenByte & 0x7F)
-                length = 0
-                for _ in 0..<numBytes {
-                    guard idx < pkcs8.endIndex else { throw PrizmCryptoServiceError.invalidEncUserKey }
-                    length = (length << 8) | Int(pkcs8[idx])
-                    idx = pkcs8.index(after: idx)
+        /// Reads a tag and its length; returns the content range, which lies inside `limit`.
+        func readElement(tag: UInt8, limit: Int) throws -> Range<Int> {
+            guard index < limit, bytes[index] == tag else { throw PrizmCryptoServiceError.malformedPrivateKey }
+            index += 1
+            guard index < limit else { throw PrizmCryptoServiceError.malformedPrivateKey }
+            let first = bytes[index]
+            index += 1
+            var length = Int(first)
+            if first & 0x80 != 0 {
+                let count = Int(first & 0x7F)
+                guard (1...4).contains(count), count <= limit - index else {
+                    throw PrizmCryptoServiceError.malformedPrivateKey
                 }
+                length = bytes[index..<(index + count)].reduce(0) { $0 << 8 | Int($1) }
+                index += count
             }
-            return (idx, length)
+            guard length <= limit - index else { throw PrizmCryptoServiceError.malformedPrivateKey }
+            return index..<(index + length)
         }
 
-        // Outer SEQUENCE
-        let (outerContent, _) = try readTLV(expectedTag: 0x30)
-        _ = outerContent  // idx is already at content start
-
-        // INTEGER (version = 0)
-        let (_, intLen) = try readTLV(expectedTag: 0x02)
-        idx = pkcs8.index(idx, offsetBy: intLen)  // skip version value
-
-        // SEQUENCE (AlgorithmIdentifier)
-        let (_, algLen) = try readTLV(expectedTag: 0x30)
-        idx = pkcs8.index(idx, offsetBy: algLen)  // skip AlgorithmIdentifier
-
-        // OCTET STRING containing PKCS#1 RSAPrivateKey
-        let (pkcs1Start, pkcs1Length) = try readTLV(expectedTag: 0x04)
-        let pkcs1End = pkcs8.index(pkcs1Start, offsetBy: pkcs1Length)
-        return pkcs8[pkcs1Start..<pkcs1End]
+        let outer = try readElement(tag: 0x30, limit: bytes.count)
+        let version = try readElement(tag: 0x02, limit: outer.upperBound)
+        index = version.upperBound
+        let algorithm = try readElement(tag: 0x30, limit: outer.upperBound)
+        let oid = try readElement(tag: 0x06, limit: algorithm.upperBound)
+        guard Array(bytes[oid]) == [0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x01] else {
+            throw PrizmCryptoServiceError.malformedPrivateKey
+        }
+        index = algorithm.upperBound
+        let pkcs1 = try readElement(tag: 0x04, limit: outer.upperBound)
+        guard !pkcs1.isEmpty else { throw PrizmCryptoServiceError.malformedPrivateKey }
+        return pkcs1
     }
 
     // MARK: - PBKDF2-SHA256 (CommonCrypto)
