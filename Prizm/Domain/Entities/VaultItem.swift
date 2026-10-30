@@ -23,6 +23,11 @@ nonisolated enum EditBlockReason: Equatable, Hashable, Sendable {
     /// (`CipherMapper.verifyKey`). The item stays readable; only editing is refused.
     case legacyEncryption
 
+    /// An SSH key item without its private or public key (Vaultwarden sends `sshKey: null` for an SSH
+    /// item it considers invalid, while the server still holds the key). A save would write the
+    /// missing key over the stored one (openspec change `fix-ssh-key-roundtrip`, design D3).
+    case incompleteSSHKey
+
     /// Plain language plus a next step, no jargon. Shown in the detail pane, read by VoiceOver as
     /// the Edit button's hint, and used as the error text when a save is refused.
     var userMessage: String {
@@ -35,6 +40,8 @@ nonisolated enum EditBlockReason: Equatable, Hashable, Sendable {
             return "Some of this item's details are missing, so Prizm can't edit it without losing data. Edit it in the Bitwarden web vault or browser extension."
         case .legacyEncryption:
             return "Prizm can't edit this item because it uses an older encryption format. Edit it in the Bitwarden web vault or browser extension."
+        case .incompleteSSHKey:
+            return "This SSH key is incomplete and can't be edited in Prizm. Open it in a Bitwarden app to repair it."
         }
     }
 }
@@ -292,6 +299,12 @@ nonisolated struct SSHKeyContent: Equatable, Hashable {
     let keyFingerprint: String?
     let notes: String?
     let customFields: [CustomField]
+
+    /// True when both the private and the public key are present and not empty. The fingerprint may
+    /// be missing: SSH keys created by earlier Prizm versions have none (fix-ssh-key-roundtrip, D3).
+    var hasKeyMaterial: Bool {
+        privateKey?.isEmpty == false && publicKey?.isEmpty == false
+    }
 }
 
 nonisolated extension VaultItem {

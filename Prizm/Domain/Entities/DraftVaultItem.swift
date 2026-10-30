@@ -179,14 +179,14 @@ nonisolated struct DraftSecureNoteContent: Equatable {
     }
 }
 
-/// Mutable mirror of `SSHKeyContent` used exclusively within the edit flow.
-///
-/// `keyFingerprint` is excluded because it is auto-derived from the private key and is
-/// not sent to the API — showing it as editable would be misleading.
+/// Mirror of `SSHKeyContent` used exclusively within the edit flow. All three key fields are
+/// read-only and sent back unchanged.
 nonisolated struct DraftSSHKeyContent: Equatable {
-    var privateKey: String?
-    var publicKey: String?
-    /// Read-only display value. Auto-derived from `privateKey`; never sent to the API.
+    /// Read-only, like the public key and the fingerprint: the three are written together, as in
+    /// the official clients, so an edit cannot leave a fingerprint that describes another key
+    /// (openspec change `fix-ssh-key-roundtrip`, design D2). An edit sends them back unchanged.
+    let privateKey: String?
+    let publicKey: String?
     let keyFingerprint: String?
     var notes: String?
     var customFields: [DraftCustomField]

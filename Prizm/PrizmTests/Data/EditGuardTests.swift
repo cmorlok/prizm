@@ -242,7 +242,8 @@ final class EditGuardTests: XCTestCase {
     // MARK: - Missing type section
 
     func testMissingStructuredObject_isUnmappable() throws {
-        let sections: [(type: Int, name: String)] = [(1, "login"), (3, "card"), (4, "identity"), (5, "sshKey")]
+        // An SSH key item without its object is `incompleteSSHKey` (SSHKeyIntegrityTests).
+        let sections: [(type: Int, name: String)] = [(1, "login"), (3, "card"), (4, "identity")]
         for (type, name) in sections {
             let absent = try payload(type: type, sections: "")
             let null = try payload(type: type, sections: #""\#(name)": null"#)
@@ -253,7 +254,8 @@ final class EditGuardTests: XCTestCase {
     }
 
     func testStructuredObjectPresent_doesNotBlock() throws {
-        let sections: [(type: Int, name: String)] = [(1, "login"), (3, "card"), (4, "identity"), (5, "sshKey")]
+        // An empty SSH key object has no key, so it blocks (SSHKeyIntegrityTests).
+        let sections: [(type: Int, name: String)] = [(1, "login"), (3, "card"), (4, "identity")]
         for (type, name) in sections {
             XCTAssertNil(mapper.editBlock(for: try payload(type: type, sections: #""\#(name)": {}"#)), "type \(type)")
         }
@@ -335,15 +337,18 @@ final class EditGuardTests: XCTestCase {
     // MARK: - Messages
 
     func testReasonMessages_arePlainLanguageWithANextStep() {
-        let reasons: [EditBlockReason] = [.unsupportedFormat, .partiallyAvailable, .unmappable, .legacyEncryption]
+        let reasons: [EditBlockReason] = [.unsupportedFormat, .partiallyAvailable, .unmappable, .legacyEncryption,
+                                          .incompleteSSHKey]
         for reason in reasons {
             // Exhaustive on purpose: a new reason does not compile until it is listed above.
             switch reason {
-            case .unsupportedFormat, .partiallyAvailable, .unmappable, .legacyEncryption: break
+            case .unsupportedFormat, .partiallyAvailable, .unmappable, .legacyEncryption, .incompleteSSHKey: break
             }
             let message = reason.userMessage
 
-            XCTAssertTrue(message.contains("Edit it in the Bitwarden web vault or browser extension."), "\(reason)")
+            // The next step: where to edit or repair the item.
+            XCTAssertTrue(message.contains("Bitwarden web vault or browser extension.") || message.contains("Bitwarden app"),
+                          "\(reason)")
             for jargon in ["blob", "partialData", "format_version", "JSON", "cipher"] {
                 XCTAssertFalse(message.localizedCaseInsensitiveContains(jargon), "\(reason) mentions \"\(jargon)\"")
             }

@@ -341,7 +341,7 @@ struct ItemEditView: View {
                     return c
                 },
                 set:  { newContent in viewModel.draft.content = .sshKey(newContent) }
-            ))
+            ), itemId: viewModel.draft.id)
         }
     }
 
