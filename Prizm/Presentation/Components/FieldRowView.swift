@@ -49,10 +49,7 @@ struct FieldRowView: View {
                     }
                     Text(value ?? "—")
                         .font(Typography.fieldValue.monospaced())
-                        .textSelection(.enabled)
-                        // A selectable Text keeps the accessibility value it was created with;
-                        // without this, VoiceOver read the previous item's value after switching.
-                        .accessibilityValue(spokenValue ?? value ?? "—")
+                        .selectableValueText(value ?? "—", spokenAs: spokenValue)
                         .accessibilityHint(copyHint)
                 }
                 Spacer()
@@ -65,9 +62,7 @@ struct FieldRowView: View {
                 Text(value ?? "—")
                     .font(Typography.fieldValue.monospaced())
                     .lineLimit(1)
-                    .textSelection(.enabled)
-                    // See the multi-line case above.
-                    .accessibilityValue(spokenValue ?? value ?? "—")
+                    .selectableValueText(value ?? "—", spokenAs: spokenValue)
                     .accessibilityHint(copyHint)
                 browserLink
             }

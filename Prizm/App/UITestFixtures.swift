@@ -247,6 +247,10 @@ enum UITestFixtures {
             login(id: "kappa", name: "Kappa Login", totp: nil, isFavorite: true, attachments: [
                 Attachment(id: "att1", fileName: "kappa-notes.txt", encryptedKey: "", size: 1024,
                            sizeName: "1 KB", url: nil, isUploadIncomplete: false),
+            ], uris: [
+                // A second item with websites, so switching from Gamma reuses the Website rows.
+                // Without a scheme it has no host, so no UI run asks the icon service for it.
+                LoginURI(uri: "kappa.example.com/login", matchType: nil),
             ]),
             item(id: "card1", name: "Test Card", content: .card(CardContent(
                 cardholderName: "Test Holder", brand: "Visa", number: "4111111111111111",

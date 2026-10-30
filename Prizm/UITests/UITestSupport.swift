@@ -1,4 +1,5 @@
 import XCTest
+import ApplicationServices
 
 // Shared helpers for the UI journeys (openspec change `fix-ui-test-target`).
 
@@ -40,6 +41,8 @@ enum Fixture {
     static let gamma = "gamma"
     /// The only favourite; it also carries the only attachment.
     static let kappa = "kappa"
+    /// Kappa's only website. Gamma's first website is `file:///Applications/Calculator.app`.
+    static let kappaWebsite = "kappa.example.com/login"
     static let card = "card1"
     static let identity = "ident1"
     static let note = "note1"
@@ -234,5 +237,71 @@ extension XCUIElement {
         let predicate = NSPredicate(format: "label == %@ OR value == %@", text, text)
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: self)
         return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
+    }
+}
+
+// MARK: - What VoiceOver reads by text range
+
+/// Reads a text the way VoiceOver can: through its character data (`AXNumberOfCharacters` and
+/// `AXStringForRange`), not its accessibility value. XCUITest only sees the value, which a selectable
+/// text keeps current while its character data kept the old text (fix-selectable-text-voiceover).
+///
+/// Needs the accessibility permission for the test runner (`PrizmUITests-Runner`). macOS ties it to
+/// the runner binary, so it is lost whenever the UI test code changes; without it the tests skip.
+enum AccessibilityTextProbe {
+
+    static var isAvailable: Bool { AXIsProcessTrusted() }
+
+    static let unavailableMessage = "Needs the accessibility permission for PrizmUITests-Runner "
+        + "(System Settings, Privacy & Security, Accessibility); macOS drops it whenever the UI test code changes"
+
+    /// Asserts that the value text at the centre of `element` holds `expected` in its character data
+    /// too. Of the element hit there and its parent, only those whose accessibility value is
+    /// `expected` are checked: they are the value texts, so a hover overlay or a container is never
+    /// checked by mistake. At least one must exist, so the assertion can't pass vacuously.
+    static func assertTexts(of element: XCUIElement, equal expected: String,
+                            file: StaticString = #filePath, line: UInt = #line) {
+        let texts = textsByRange(at: element.frame, showing: expected)
+        XCTAssertFalse(texts.isEmpty, "No text showing \"\(expected)\" with character data at \(element.frame)",
+                       file: file, line: line)
+        for text in texts {
+            XCTAssertEqual(text, expected, "VoiceOver can read this text by range", file: file, line: line)
+        }
+    }
+
+    private static func textsByRange(at frame: CGRect, showing shown: String) -> [String] {
+        var hit: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(), Float(frame.midX),
+                                               Float(frame.midY), &hit) == .success,
+              let hit else { return [] }
+        return [hit, parent(of: hit)].compactMap { $0 }
+            .filter { value(of: $0) == shown }
+            .compactMap(textByRange)
+    }
+
+    private static func value(of element: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value) == .success
+        else { return nil }
+        return value as? String
+    }
+
+    private static func parent(of element: AXUIElement) -> AXUIElement? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXParentAttribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return (value as! AXUIElement)
+    }
+
+    private static func textByRange(of element: AXUIElement) -> String? {
+        var count: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXNumberOfCharactersAttribute as CFString, &count) == .success,
+              let length = count as? Int else { return nil }
+        var range = CFRange(location: 0, length: length)
+        guard let rangeValue = AXValueCreate(.cfRange, &range) else { return nil }
+        var text: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(element, kAXStringForRangeParameterizedAttribute as CFString,
+                                                         rangeValue, &text) == .success else { return nil }
+        return text as? String
     }
 }
