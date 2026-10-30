@@ -13,6 +13,7 @@ final class KeyLifecycleTests: XCTestCase {
     private var keychain: MockKeychainService!
     private var vaultKeyCache: VaultKeyCache!
     private var orgKeyCache: OrgKeyCache!
+    private var defaults: UserDefaults!
     private var zeroed: [AuthRepositoryImpl.ZeroedKey] = []
 
     private let env = ServerEnvironment(base: URL(string: "https://vault.example.com")!, overrides: nil)
@@ -24,9 +25,11 @@ final class KeyLifecycleTests: XCTestCase {
         keychain = MockKeychainService()
         vaultKeyCache = VaultKeyCache()
         orgKeyCache = OrgKeyCache()
+        defaults = makePrivateDefaults()
         sut = AuthRepositoryImpl(apiClient: api, crypto: crypto, keychain: keychain,
                                  biometricKeychain: MockBiometricKeychainService(),
-                                 vaultKeyCache: vaultKeyCache, orgKeyCache: orgKeyCache)
+                                 vaultKeyCache: vaultKeyCache, orgKeyCache: orgKeyCache,
+                                 defaults: defaults)
         zeroed = []
         sut.zeroedKeyObserver = { [weak self] in self?.zeroed.append($0) }
         try await sut.setServerEnvironment(env)
@@ -93,7 +96,8 @@ final class KeyLifecycleTests: XCTestCase {
         await vaultKeyCache.populate(sources: ["c1": .itemKey(Data(repeating: 3, count: 64))])
         let unlock = UnlockViewModel(auth: sut, sync: MockSyncUseCase(),
                                      account: Account(userId: "u1", email: "a@example.com", name: nil,
-                                                      serverEnvironment: env))
+                                                      serverEnvironment: env),
+                                     defaults: defaults)
 
         unlock.signInWithDifferentAccount()
         let deadline = ContinuousClock.now + .seconds(5)

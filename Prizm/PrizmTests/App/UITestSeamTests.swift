@@ -13,6 +13,21 @@ final class UITestSeamTests: XCTestCase {
         XCTAssertNil(UITestFixtures.launchState(from: ["Prizm", "--debug-mode"]))
     }
 
+    /// fix-biometric-test-isolation, code review 2026-10-30: the unit tests run inside the app, which
+    /// must then not use the developer's keychain or show their unlock screen (whose Touch ID path
+    /// writes the real preferences).
+    func test_unitTestHost_isDetected() {
+        XCTAssertTrue(UITestFixtures.isUnitTestHost(environment: ProcessInfo.processInfo.environment,
+                                                   arguments: CommandLine.arguments))
+        XCTAssertFalse(UITestFixtures.isUnitTestHost(environment: [:], arguments: []))
+        XCTAssertFalse(UITestFixtures.isUnitTestHost(environment: ["XCTestConfigurationFilePath": "/x"],
+                                                    arguments: ["--ui-test-locked"]))
+    }
+
+    func test_appContainer_inTheUnitTestHost_hasNoStoredSession() {
+        XCTAssertNil(AppContainer().authRepository.storedAccount())
+    }
+
     func test_launchState_parsesEachState() {
         XCTAssertEqual(UITestFixtures.launchState(from: ["Prizm", "--ui-test-vault"]), .vault)
         XCTAssertEqual(UITestFixtures.launchState(from: ["Prizm", "--ui-test-locked"]), .locked)
@@ -41,7 +56,8 @@ final class UITestSeamTests: XCTestCase {
                 keychain: keychain,
                 biometricKeychain: InMemoryBiometricKeychainService(),
                 vaultKeyCache: VaultKeyCache(),
-                orgKeyCache: OrgKeyCache()
+                orgKeyCache: OrgKeyCache(),
+                defaults: makePrivateDefaults()
             )
             let account = try XCTUnwrap(auth.storedAccount(), "state \(state)")
             XCTAssertEqual(account.email, UITestFixtures.accountEmail)

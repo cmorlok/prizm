@@ -34,9 +34,11 @@ final class BiometricUnlockToggleViewModel {
         }
     }
 
-    init(authRepository: any AuthRepository) {
+    /// - Parameter defaults: the store holding `biometricUnlockEnabled`; required so tests pass a
+    ///   private store (fix-biometric-test-isolation, D1).
+    init(authRepository: any AuthRepository, defaults: UserDefaults) {
         self.authRepository = authRepository
-        self.isEnabled = UserDefaults.standard.bool(forKey: "biometricUnlockEnabled")
+        self.isEnabled = defaults.bool(forKey: BiometricPreferenceKey.unlockEnabled)
         // Deliberately no side effects here beyond this. `BiometricUnlockToggle` constructs
         // this type inside a `State(initialValue:)` expression, which SwiftUI can evaluate
         // more than once per view identity (discarding all but the first result) — a

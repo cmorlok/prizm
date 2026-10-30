@@ -30,7 +30,7 @@ final class RootViewModelCopyCodeTests: XCTestCase {
 
     override func setUp() async throws {
         try await super.setUp()
-        let deps = MockRootDependencies(auth: MockAuthRepository(), vault: MockVaultRepository())
+        let deps = MockRootDependencies(auth: MockAuthRepository(), vault: MockVaultRepository(), defaults: makePrivateDefaults())
         deps.generateTOTPCode = FixedGenerator()
         sut = RootViewModel(container: deps)
         pasteboard = deps.fakePasteboard
@@ -109,7 +109,7 @@ final class RootViewModelCopyCodeTests: XCTestCase {
     }
 
     func test_copyCode_lockedWhileGenerating_copiesNothing() async throws {
-        let deps = MockRootDependencies(auth: MockAuthRepository(), vault: MockVaultRepository())
+        let deps = MockRootDependencies(auth: MockAuthRepository(), vault: MockVaultRepository(), defaults: makePrivateDefaults())
         sut = RootViewModel(container: deps)
         pasteboard = deps.fakePasteboard
         deps.generateTOTPCode = InterruptingGenerator { [weak self] in self?.sut.screen = .unlock }

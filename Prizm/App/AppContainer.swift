@@ -62,6 +62,9 @@ final class AppContainer: ObservableObject {
     let emptyTrashUseCase:               EmptyTrashUseCaseImpl
     /// The one clipboard service: every copy of a secret goes through it (clipboard-hardening).
     let clipboardService = ClipboardServiceImpl()
+    /// The store of the Touch ID preferences, passed to every type that reads or writes them
+    /// (fix-biometric-test-isolation, D1).
+    let preferences: UserDefaults
     var clipboard: any ClipboardService { clipboardService }
     let createCollectionUseCase:         CreateCollectionUseCaseImpl
     let renameCollectionUseCase:         RenameCollectionUseCaseImpl
@@ -85,6 +88,8 @@ final class AppContainer: ObservableObject {
     // MARK: - Init
 
     init() {
+        let preferences   = UserDefaults.standard
+        self.preferences  = preferences
         let api           = PrizmAPIClientImpl()
         let crypto        = PrizmCryptoServiceImpl()
         let keychain: any KeychainService
@@ -96,6 +101,10 @@ final class AppContainer: ObservableObject {
             keychain          = UITestFixtures.keychain(for: testState)
             biometricKeychain = InMemoryBiometricKeychainService()
             UITestFixtures.isolateBiometricDefaults()
+        } else if UITestFixtures.isUnitTestHost {
+            // Signed out, with nothing to read: the unit tests bring their own stores.
+            keychain          = UITestFixtures.keychain(for: .signedOut)
+            biometricKeychain = InMemoryBiometricKeychainService()
         } else {
             keychain          = KeychainServiceImpl()
             biometricKeychain = BiometricKeychainServiceImpl()
@@ -119,7 +128,8 @@ final class AppContainer: ObservableObject {
             keychain:  keychain,
             biometricKeychain: biometricKeychain,
             vaultKeyCache: keyCache,
-            orgKeyCache:   orgKeyCache
+            orgKeyCache:   orgKeyCache,
+            defaults:      preferences
         )
         let sync = SyncRepositoryImpl(
             apiClient:       api,
@@ -230,7 +240,8 @@ final class AppContainer: ObservableObject {
 
     /// Creates an `UnlockViewModel` for a returning user with a stored session.
     func makeUnlockViewModel(account: Account) -> UnlockViewModel {
-        UnlockViewModel(auth: authRepository, sync: syncUseCase, account: account, embeddedBiometric: authRepository)
+        UnlockViewModel(auth: authRepository, sync: syncUseCase, account: account, embeddedBiometric: authRepository,
+                        defaults: preferences)
     }
 
     /// Creates the once-per-second tracker that keeps displayed TOTP codes current.

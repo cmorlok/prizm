@@ -224,6 +224,7 @@
 		229F4957F20D04456182853A /* URILaunchTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21A9990FFB396404B3E52BBE /* URILaunchTarget.swift */; };
 		7C86BF8D70EA0A284B3D72C2 /* ItemFieldNormalisation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FBECAE1E5694389ADDC6E6 /* ItemFieldNormalisation.swift */; };
 		44BE1F38B5E3AC4E55C29F31 /* ErrorLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F70EE2487F39ED7E35E20DA /* ErrorLog.swift */; };
+		F95BDF9B02911AAF3DE19037 /* BiometricPreferenceKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D4A710EAAAC5D9E4B14AB8B /* BiometricPreferenceKey.swift */; };
 		8679692C77C9640959B1FF58 /* CollectionAssignment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 618E961E36BF711B2CCF2CB0 /* CollectionAssignment.swift */; };
 /* End PBXBuildFile section */
 
@@ -464,6 +465,7 @@
 		21A9990FFB396404B3E52BBE /* URILaunchTarget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = URILaunchTarget.swift; sourceTree = "<group>"; };
 		41FBECAE1E5694389ADDC6E6 /* ItemFieldNormalisation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ItemFieldNormalisation.swift; sourceTree = "<group>"; };
 		5F70EE2487F39ED7E35E20DA /* ErrorLog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ErrorLog.swift; sourceTree = "<group>"; };
+		9D4A710EAAAC5D9E4B14AB8B /* BiometricPreferenceKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiometricPreferenceKey.swift; sourceTree = "<group>"; };
 		618E961E36BF711B2CCF2CB0 /* CollectionAssignment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionAssignment.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -926,6 +928,7 @@
 				C59C831065292C38D59EDA39 /* WebsiteIconSettings.swift */,
 				41FBECAE1E5694389ADDC6E6 /* ItemFieldNormalisation.swift */,
 				5F70EE2487F39ED7E35E20DA /* ErrorLog.swift */,
+				9D4A710EAAAC5D9E4B14AB8B /* BiometricPreferenceKey.swift */,
 				618E961E36BF711B2CCF2CB0 /* CollectionAssignment.swift */,
 			);
 			path = Utilities;
@@ -1380,6 +1383,7 @@
 				229F4957F20D04456182853A /* URILaunchTarget.swift in Sources */,
 				7C86BF8D70EA0A284B3D72C2 /* ItemFieldNormalisation.swift in Sources */,
 				44BE1F38B5E3AC4E55C29F31 /* ErrorLog.swift in Sources */,
+				F95BDF9B02911AAF3DE19037 /* BiometricPreferenceKey.swift in Sources */,
 				8679692C77C9640959B1FF58 /* CollectionAssignment.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

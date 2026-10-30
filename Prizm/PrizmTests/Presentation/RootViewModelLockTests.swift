@@ -27,7 +27,7 @@ final class RootViewModelLockTests: XCTestCase {
         try await super.setUp()
         mockAuth = MockAuthRepository()
         mockVault = MockVaultRepository()
-        deps = MockRootDependencies(auth: mockAuth, vault: mockVault)
+        deps = MockRootDependencies(auth: mockAuth, vault: mockVault, defaults: makePrivateDefaults())
         sut = RootViewModel(container: deps)
     }
 
@@ -224,7 +224,7 @@ final class RootViewModelLockTests: XCTestCase {
     }
 
     func testLockVault_clearsACopiedSecret() async throws {
-        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault)
+        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault, defaults: makePrivateDefaults())
         let root = RootViewModel(container: deps)
         root.vaultBrowserVM.copy("hunter2")
         XCTAssertEqual(deps.fakePasteboard.string, "hunter2")
@@ -238,7 +238,7 @@ final class RootViewModelLockTests: XCTestCase {
     }
 
     func testSignOut_clearsACopiedSecret() async throws {
-        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault)
+        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault, defaults: makePrivateDefaults())
         let root = RootViewModel(container: deps)
         root.vaultBrowserVM.copy("hunter2")
         XCTAssertEqual(deps.fakePasteboard.string, "hunter2")
@@ -253,7 +253,7 @@ final class RootViewModelLockTests: XCTestCase {
     /// Quitting clears a secret Prizm copied, and leaves what another app copied since
     /// (clipboard-hardening, scenario "Quit with a foreign clipboard value").
     func testQuit_clearsOnlyAnOwnedSecret() {
-        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault)
+        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault, defaults: makePrivateDefaults())
         let root = RootViewModel(container: deps)
         root.vaultBrowserVM.copy("hunter2")
         NotificationCenter.default.post(name: NSApplication.willTerminateNotification, object: nil)
@@ -268,7 +268,7 @@ final class RootViewModelLockTests: XCTestCase {
     // MARK: - Opened attachment files (fix-attachment-transfer-flow, D7)
 
     func testLockVault_sweepsOpenedAttachmentFiles() async throws {
-        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault)
+        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault, defaults: makePrivateDefaults())
         let root = RootViewModel(container: deps)
         mockAuth.stubbedStoredAccount = stubAccount
         root.screen = .vault
@@ -280,7 +280,7 @@ final class RootViewModelLockTests: XCTestCase {
     }
 
     func testSignOut_sweepsOpenedAttachmentFiles() async throws {
-        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault)
+        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault, defaults: makePrivateDefaults())
         let root = RootViewModel(container: deps)
         root.screen = .vault
 
@@ -354,7 +354,7 @@ final class RootViewModelLockTests: XCTestCase {
     }
 
     func testQuit_sweepsOpenedAttachmentFiles() {
-        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault)
+        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault, defaults: makePrivateDefaults())
         let root = RootViewModel(container: deps)
         NotificationCenter.default.post(name: NSApplication.willTerminateNotification, object: nil)
         XCTAssertEqual(deps.tempFiles.sweepCount, 1)
@@ -367,7 +367,7 @@ final class RootViewModelLockTests: XCTestCase {
             .appendingPathComponent("prizm-locktest-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: folder) }
         let tempFiles = AttachmentTempFileManager(folder: folder)
-        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault)
+        let deps = MockRootDependencies(auth: mockAuth, vault: mockVault, defaults: makePrivateDefaults())
         deps.attachmentTempFiles = tempFiles
         mockAuth.stubbedStoredAccount = stubAccount
         let root = RootViewModel(container: deps)
@@ -437,7 +437,7 @@ final class RootViewModelLockDuringSyncTests: XCTestCase {
         mockAuth = MockAuthRepository()
         mockAuth.stubbedStoredAccount = account
         mockAuth.stubbedLoginResult = .success(account)
-        deps = MockRootDependencies(auth: mockAuth, vault: MockVaultRepository())
+        deps = MockRootDependencies(auth: mockAuth, vault: MockVaultRepository(), defaults: makePrivateDefaults())
         sut = RootViewModel(container: deps)
     }
 
@@ -686,11 +686,15 @@ final class MockRootDependencies: RootViewModelDependencies {
     /// Shared by every unlock view model it makes; tests can hold its sync with `onExecute`.
     let mockSyncUseCase = MockSyncUseCase()
     private let mockVault: MockVaultRepository
+    private let defaults: UserDefaults
 
-    init(auth: MockAuthRepository, vault: MockVaultRepository) {
+    /// - Parameter defaults: the Touch ID preferences of the unlock view models it makes; a test's
+    ///   private store (fix-biometric-test-isolation, D2).
+    init(auth: MockAuthRepository, vault: MockVaultRepository, defaults: UserDefaults) {
         self.authRepo = auth
         self.vaultRepo = vault
         self.mockVault = vault
+        self.defaults = defaults
     }
 
     func makeLoginViewModel() -> LoginViewModel {
@@ -698,7 +702,8 @@ final class MockRootDependencies: RootViewModelDependencies {
     }
 
     func makeUnlockViewModel(account: Account) -> UnlockViewModel {
-        UnlockViewModel(auth: authRepo as! MockAuthRepository, sync: mockSyncUseCase, account: account)
+        UnlockViewModel(auth: authRepo as! MockAuthRepository, sync: mockSyncUseCase, account: account,
+                        defaults: defaults)
     }
 
     func makeVaultBrowserViewModel() -> VaultBrowserViewModel {

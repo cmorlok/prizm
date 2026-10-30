@@ -57,6 +57,11 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
     private let vaultKeyCache: VaultKeyCache
     private let orgKeyCache:   OrgKeyCache
 
+    /// Holds the Touch ID preferences (`biometricUnlockEnabled`, `biometricEnrollmentPromptShown`).
+    /// Required, with no `.standard` default, so a unit test cannot write the developer's real
+    /// settings by leaving it out (fix-biometric-test-isolation, D1).
+    private let defaults: UserDefaults
+
     // MARK: - Init
 
     init(
@@ -65,7 +70,8 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         keychain:  any KeychainService,
         biometricKeychain: any BiometricKeychainService,
         vaultKeyCache: VaultKeyCache,
-        orgKeyCache:   OrgKeyCache
+        orgKeyCache:   OrgKeyCache,
+        defaults:      UserDefaults
     ) {
         self.apiClient = apiClient
         self.crypto    = crypto
@@ -73,6 +79,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         self.biometricKeychain = biometricKeychain
         self.vaultKeyCache = vaultKeyCache
         self.orgKeyCache   = orgKeyCache
+        self.defaults      = defaults
     }
 
     // MARK: - Locks during a login or unlock
@@ -593,7 +600,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
     var biometricUnlockAvailable: Bool {
         // Fast synchronous check for UI binding (design Decision 5).
         // Actual Keychain item existence is verified only inside unlockWithBiometrics().
-        guard UserDefaults.standard.bool(forKey: "biometricUnlockEnabled") else { return false }
+        guard defaults.bool(forKey: BiometricPreferenceKey.unlockEnabled) else { return false }
         var error: NSError?
         let available = LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
         logBiometricAvailabilityFailure(error)
@@ -632,7 +639,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
             data: data,
             key: KeychainKey.biometricVaultKey(userId)
         )
-        UserDefaults.standard.set(true, forKey: "biometricUnlockEnabled")
+        defaults.set(true, forKey: BiometricPreferenceKey.unlockEnabled)
         logger.info("Biometric unlock enabled")
     }
 
@@ -640,7 +647,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         if let userId = try? readString(key: KeychainKey.activeUserId) {
             try? biometricKeychain.deleteBiometric(key: KeychainKey.biometricVaultKey(userId))
         }
-        UserDefaults.standard.set(false, forKey: "biometricUnlockEnabled")
+        defaults.set(false, forKey: BiometricPreferenceKey.unlockEnabled)
         logger.info("Biometric unlock disabled")
     }
 
@@ -671,8 +678,8 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
             // NOT a fingerprint-change. Degrade silently: clear the flag and reset
             // the enrollment gate so re-enrollment is offered after next password unlock.
             // UnlockViewModel must NOT show an error for this case (spec §degradation).
-            UserDefaults.standard.set(false, forKey: "biometricUnlockEnabled")
-            UserDefaults.standard.set(false, forKey: "biometricEnrollmentPromptShown")
+            defaults.set(false, forKey: BiometricPreferenceKey.unlockEnabled)
+            defaults.set(false, forKey: BiometricPreferenceKey.enrollmentPromptShown)
             throw AuthError.biometricItemNotFound
         } catch let laError as LAError {
             switch laError.code {
@@ -693,8 +700,8 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
                     throw error
                 }
             }
-            UserDefaults.standard.set(false, forKey: "biometricUnlockEnabled")
-            UserDefaults.standard.set(false, forKey: "biometricEnrollmentPromptShown")
+            defaults.set(false, forKey: BiometricPreferenceKey.unlockEnabled)
+            defaults.set(false, forKey: BiometricPreferenceKey.enrollmentPromptShown)
             throw AuthError.biometricInvalidated
         }
 
@@ -765,8 +772,8 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
             )
         } catch let error as KeychainError where error == .itemNotFound {
             // Same silent-degradation path as the non-embedded overload above.
-            UserDefaults.standard.set(false, forKey: "biometricUnlockEnabled")
-            UserDefaults.standard.set(false, forKey: "biometricEnrollmentPromptShown")
+            defaults.set(false, forKey: BiometricPreferenceKey.unlockEnabled)
+            defaults.set(false, forKey: BiometricPreferenceKey.enrollmentPromptShown)
             throw AuthError.biometricItemNotFound
         } catch {
             // Let LAError (cancel, lockout) propagate — caller handles re-arming.

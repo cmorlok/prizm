@@ -18,8 +18,9 @@ struct BiometricUnlockToggle: View {
     // corruption crash from repeated add/remove churn around lock/unlock).
     @State private var viewModel: BiometricUnlockToggleViewModel
 
-    init(authRepository: any AuthRepository) {
-        _viewModel = State(initialValue: BiometricUnlockToggleViewModel(authRepository: authRepository))
+    init(authRepository: any AuthRepository, preferences: UserDefaults) {
+        _viewModel = State(initialValue: BiometricUnlockToggleViewModel(authRepository: authRepository,
+                                                                        defaults: preferences))
     }
 
     var body: some View {
