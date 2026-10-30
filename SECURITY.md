@@ -33,7 +33,7 @@ unlocked and only on this specific device, excluded from iCloud Keychain and bac
 | Master password | Never stored anywhere; used transiently during KDF and then discarded |
 | Encrypted user key (`encUserKey`) | AES-256-CBC encrypted by the stretched master key; stored in Keychain |
 | Access and refresh tokens | Stored in Keychain under `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` |
-| KDF parameters | Stored in Keychain; required for offline unlock |
+| KDF parameters and master password salt | Stored in Keychain; required for offline unlock |
 
 ### Data in transit
 
@@ -52,10 +52,25 @@ password itself.
 | AES-256-CBC + PKCS7 | Vault item encryption / decryption | CommonCrypto (`kCCAlgorithmAES128`, 256-bit key) |
 | AES-256-CBC + PKCS7 (Bitwarden binary blob) | File attachment blob encryption | CommonCrypto; blob format: IV(16) ‖ ciphertext ‖ HMAC(32) per Bitwarden Security Whitepaper §4 |
 | HMAC-SHA256 | MAC verification (Encrypt-then-MAC) for both vault items and attachments | CryptoKit `HMAC<SHA256>` |
-| PBKDF2-SHA256 | Master key derivation (PBKDF2 accounts) | CommonCrypto `CCKeyDerivationPBKDF` |
-| Argon2id | Master key derivation (Argon2id accounts) | `Argon2Swift` — thin wrapper around the reference C implementation |
+| PBKDF2-SHA256 | Master key derivation (PBKDF2 accounts); salt = master password salt, 32-byte output | CommonCrypto `CCKeyDerivationPBKDF` |
+| Argon2id | Master key derivation (Argon2id accounts); version 0x13, Argon2 salt = SHA-256 of the master password salt, memory = server value in MiB × 1024 KiB, 32-byte output, as the Bitwarden SDK | `Argon2Swift` — thin wrapper around the reference C implementation |
 | HKDF-SHA256 | Key stretching | CryptoKit `HKDF<SHA256>` (RFC 5869) |
 | RSA-OAEP-SHA1 | Organisation key unwrapping | `Security.framework` `SecKeyCreateDecryptedData` with `kSecKeyAlgorithmRSAEncryptionOAEPSHA1`; SHA-1 is a Bitwarden protocol requirement (Whitepaper §4), not a free choice |
+
+The **master password salt** is the salt the server sends at prelogin, else the account's
+email; it is trimmed and lowercased before use, as the Bitwarden SDK does. Prizm stores the salt
+and KDF settings that decrypted the user key and uses them for unlock.
+
+**KDF minimums.** Before deriving a key, at login and at unlock, Prizm checks the KDF settings
+against the minimums of the Bitwarden SDK: PBKDF2 at least 5 000 iterations; Argon2id at least
+2 iterations, 16 MiB memory and parallelism 1. Below them it refuses to sign in or unlock ("too weak"), as the
+official clients do, so a malicious server can't obtain a cheap password hash by sending weak
+settings. Prizm is stricter than the SDK in one way: Argon2id memory above 1 024 MiB and parallelism
+above 16 are refused as unusable, because no server lets an account store them and they would let
+a server exhaust the Mac's memory. Unknown KDF types, missing, zero or negative values are refused
+too. Nothing is sent to the server when the settings are refused. Iteration counts are not capped
+below what the KDF APIs accept, so a hostile server can keep the CPU busy with a huge count (accepted:
+it costs time, not secrets, and the user can quit Prizm).
 
 No hand-rolled cryptographic algorithms are used. All implementations are Apple system
 frameworks or the vendored `Argon2Swift` package (Argon2id is not provided by Apple
@@ -78,12 +93,13 @@ frameworks).
 | Biometric vault key (64 bytes) | macOS Keychain (biometric-gated) | Created on user opt-in; deleted on sign-out, disable, or biometric invalidation |
 | Access token | macOS Keychain | Persisted across sessions; deleted on sign-out |
 | Refresh token | macOS Keychain | Persisted across sessions; deleted on sign-out |
-| KDF parameters | macOS Keychain | Persisted across sessions; deleted on sign-out |
+| KDF parameters | macOS Keychain | The settings that decrypted the user key; persisted across sessions; deleted on sign-out |
+| Master password salt (`masterPasswordSalt`) | macOS Keychain | The salt that decrypted the user key; persisted across sessions; deleted on sign-out. Installs from before it was stored use the email |
 | Device identifier (UUID) | macOS Keychain | Stable across sessions; kept on sign-out, as in the official clients, so the server keeps recognising the device |
 
 ### Key lifecycle
 
-1. **Login** — master password + email → KDF (PBKDF2 or Argon2id) → master key →
+1. **Login** — master password + salt (server salt or email) → KDF check → KDF (PBKDF2 or Argon2id) → master key →
    HKDF → stretched keys → decrypt `encUserKey` → vault symmetric keys. All in memory.
 2. **Sync (organisation keys)** — `SyncRepositoryImpl.sync()` performs additional key
    setup when the account belongs to one or more organisations:

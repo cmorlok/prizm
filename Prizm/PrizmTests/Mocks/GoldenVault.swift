@@ -71,7 +71,7 @@ enum GoldenVault {
 
         let crypto = PrizmCryptoServiceImpl()
         let master = try await crypto.makeMasterKey(
-            password: Data(password.utf8), email: email,
+            password: Data(password.utf8), salt: email,
             kdf: KdfParams(type: .pbkdf2, iterations: 600_000, memory: nil, parallelism: nil)
         )
         let stretched = try await crypto.stretchKey(masterKey: master)

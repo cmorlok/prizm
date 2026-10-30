@@ -42,6 +42,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         let email:         String
         let passwordHash:  String
         let kdfParams:     KdfParams
+        let salt:          String
         // `var` so cancelTwoFactor() can zero the key buffers before releasing the struct
         // (Constitution §III). Swift ARC does not guarantee immediate deallocation on nil.
         var stretchedKeys: CryptoKeys
@@ -173,7 +174,10 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
 
     // MARK: - Login
 
-    func loginWithPassword(email: String, masterPassword: Data) async throws -> LoginResult {
+    func loginWithPassword(email typedEmail: String, masterPassword: Data) async throws -> LoginResult {
+        // Normalized once, as the official clients do (`email.trim().toLowerCase()`), and used for
+        // prelogin, the salt fallback and the token `username` (fix-kdf-derivation-and-validation, D3).
+        let email = Self.normalized(typedEmail)
         logger.info("Login attempt for \(email, privacy: .private)")
         let epoch = lockEpoch
         guard let env = serverEnvironment else {
@@ -185,19 +189,21 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         // Step 1: Fetch KDF params.
         logger.info("Step 1: fetching KDF params for \(email, privacy: .private)")
         let preLogin   = try await apiClient.preLogin(email: email)
-        let kdfParams  = preLogin.kdfParams
+        guard let kdfParams = preLogin.kdfParams else {
+            logger.error("Login refused: prelogin sent no usable KDF settings")
+            throw AuthError.invalidKdfSettings
+        }
+        // The server's salt when it sends one, else the email: the SDK's rule
+        // (`password_prelogin_response.rs`), D3. Equal to the email for every account today.
+        let salt = preLogin.salt.map(Self.normalized).flatMap { $0.isEmpty ? nil : $0 } ?? email
         if DebugConfig.isEnabled {
-            logger.debug("[debug] KDF params → type=\(String(describing: kdfParams.type), privacy: .public) iterations=\(kdfParams.iterations, privacy: .public) memory=\(kdfParams.memory.map(String.init) ?? "nil", privacy: .public) parallelism=\(kdfParams.parallelism.map(String.init) ?? "nil", privacy: .public)")
+            logger.debug("[debug] KDF type=\(String(describing: kdfParams.type), privacy: .public) serverSalt=\(salt != email, privacy: .public)")
         }
 
         // Step 2: Derive master key locally — never sent to server.
         // `masterPassword` is `Data` so we can zero it after the KDF call (Constitution §III).
         logger.info("Step 2: deriving master key (KDF)")
-        var masterKey  = try await crypto.makeMasterKey(
-            password: masterPassword,
-            email:    email.lowercased(),
-            kdf:      kdfParams
-        )
+        var masterKey  = try await deriveMasterKey(password: masterPassword, salt: salt, kdf: kdfParams)
         defer { zero(&masterKey, "masterKey") }
         if DebugConfig.isEnabled {
             logger.debug("[debug] master key derived (\(masterKey.count, privacy: .public) bytes)")
@@ -255,6 +261,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
                     email:         email,
                     passwordHash:  serverHash,
                     kdfParams:     kdfParams,
+                    salt:          salt,
                     stretchedKeys: stretched,
                     deviceId:      deviceId
                 )
@@ -277,6 +284,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
                 email:         email,
                 passwordHash:  serverHash,
                 kdfParams:     kdfParams,
+                salt:          salt,
                 stretchedKeys: stretched,
                 deviceId:      deviceId
             )
@@ -288,11 +296,13 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         // Step 6: Finalize the session with the token response.
         logger.info("Step 6: finalizing session")
         if DebugConfig.isEnabled {
-            logger.debug("[debug] token response fields present → key=\(tokenResp.key != nil, privacy: .public) kdf=\(tokenResp.kdf != nil, privacy: .public) userId=\(tokenResp.userId != nil, privacy: .public) email=\(tokenResp.email != nil, privacy: .public) refreshToken=\(tokenResp.refreshToken != nil, privacy: .public)")
+            logger.debug("[debug] token response fields present → key=\(tokenResp.key != nil, privacy: .public) kdf=\(tokenResp.kdfSettings != nil, privacy: .public) userId=\(tokenResp.userId != nil, privacy: .public) email=\(tokenResp.email != nil, privacy: .public) refreshToken=\(tokenResp.refreshToken != nil, privacy: .public)")
         }
         let account = try await finalizeSession(
             tokenResp:    tokenResp,
             stretched:    stretched,
+            kdf:          kdfParams,
+            salt:         salt,
             environment:  env,
             startedAt:    epoch
         )
@@ -340,13 +350,16 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         // The two-factor step ends here, whether the session can be finalized or not. The keys
         // move out of the stored struct into this local, its only owner, so a cancel or sign-out
         // during the await below finds nothing to zero and cannot zero a mere copy.
-        guard var stretched = pendingTwoFactor?.stretchedKeys else { throw AuthError.invalidCredentials }
+        guard var stretched = pendingTwoFactor?.stretchedKeys,
+              let kdf  = pendingTwoFactor?.kdfParams,
+              let salt = pendingTwoFactor?.salt else { throw AuthError.invalidCredentials }
         pendingTwoFactor = nil
         defer {
             zero(&stretched.encryptionKey, "pendingEncryptionKey")
             zero(&stretched.macKey, "pendingMacKey")
         }
-        return try await finalizeSession(tokenResp: tokenResp, stretched: stretched, environment: env, startedAt: epoch)
+        return try await finalizeSession(tokenResp: tokenResp, stretched: stretched, kdf: kdf,
+                                         salt: salt, environment: env, startedAt: epoch)
     }
 
     // MARK: - Unlock
@@ -404,15 +417,27 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
             throw AuthError.invalidCredentials
         }
 
-        if DebugConfig.isEnabled {
-            logger.debug("[debug] unlock: KDF type=\(String(describing: kdfParams.type), privacy: .public) iterations=\(kdfParams.iterations, privacy: .public) encUserKey prefix=\(String(encUserKey.prefix(2)), privacy: .public)")
+        // The salt that worked at login; installs from before fix-kdf-derivation-and-validation
+        // stored none, and their salt is the email (D3).
+        // Only a missing entry falls back: deriving from the wrong salt after a Keychain failure
+        // would look like a wrong password.
+        let storedSalt: String?
+        do {
+            storedSalt = try readString(key: KeychainKey.user(userId, "masterPasswordSalt"))
+        } catch KeychainError.itemNotFound {
+            storedSalt = nil
+        } catch {
+            logger.error("Stored salt unreadable in Keychain: \(ErrorLog.describe(error), privacy: .public)")
+            throw AuthError.invalidCredentials
         }
-        // `masterPassword` is already `Data`; pass directly to KDF (Constitution §III).
-        var masterKey  = try await crypto.makeMasterKey(
-            password: masterPassword,
-            email:    restoredAccount.email.lowercased(),
-            kdf:      kdfParams
-        )
+        let salt = storedSalt ?? Self.normalized(restoredAccount.email)
+
+        if DebugConfig.isEnabled {
+            logger.debug("[debug] unlock: KDF type=\(String(describing: kdfParams.type), privacy: .public) storedSalt=\(storedSalt != nil, privacy: .public) encUserKey prefix=\(String(encUserKey.prefix(2)), privacy: .public)")
+        }
+        // `masterPassword` is already `Data`; pass directly to KDF (Constitution §III). The stored
+        // settings are checked again there, so a weakened Keychain entry is refused too (D2).
+        var masterKey  = try await deriveMasterKey(password: masterPassword, salt: salt, kdf: kdfParams)
         defer { zero(&masterKey, "masterKey") }
         var stretched  = try await crypto.stretchKey(masterKey: masterKey)
         defer {
@@ -505,7 +530,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
 
         // Clear per-user keys first — best-effort, log failures.
         if !userId.isEmpty {
-            for suffix in ["accessToken", "refreshToken", "encUserKey", "kdfParams",
+            for suffix in ["accessToken", "refreshToken", "encUserKey", "kdfParams", "masterPasswordSalt",
                            "email", "name", "serverEnvironment"] {
                 do {
                     try keychain.delete(key: KeychainKey.user(userId, suffix))
@@ -784,9 +809,15 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
     // MARK: - Private helpers
 
     /// Completes a successful token exchange: decrypts vault key, stores credentials, returns Account.
+    ///
+    /// - Parameters:
+    ///   - kdf, salt: the settings and salt the master key was derived with. They just decrypted the
+    ///     user key, so they are the ones stored for unlock, not the token response's (D6).
     private func finalizeSession(
         tokenResp:   TokenResponse,
         stretched:   CryptoKeys,
+        kdf:         KdfParams,
+        salt:        String,
         environment: ServerEnvironment,
         startedAt epoch: Int
     ) async throws -> Account {
@@ -841,9 +872,13 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
             try writeString(name,     key: KeychainKey.user(userId, "name"))
         }
 
-        // Persist KDF params for offline unlock.
-        let kdfJSON = try JSONEncoder().encode(tokenResp.kdfParams(environment: environment))
+        // Persist the KDF settings and salt that decrypted the user key, for offline unlock (D6).
+        if let reported = tokenResp.masterPasswordUnlock?.kdf, reported.kdfParams != kdf {
+            logger.error("Token response reports other KDF settings than prelogin; storing the ones that worked")
+        }
+        let kdfJSON = try JSONEncoder().encode(kdf)
         try keychain.write(data: kdfJSON, key: KeychainKey.user(userId, "kdfParams"))
+        try writeString(salt, key: KeychainKey.user(userId, "masterPasswordSalt"))
 
         // Persist server environment for unlock.
         let envJSON = try JSONEncoder().encode(environment)
@@ -940,6 +975,26 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         return json
     }
 
+    /// Trimmed and lowercased, as the Bitwarden SDK (`kdf.rs` `derive`) and the TS clients
+    /// (`email.trim().toLowerCase()`) do (fix-kdf-derivation-and-validation, D3).
+    private static func normalized(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    /// Derives the master key, mapping a refused KDF setting to the error the user sees. Nothing is
+    /// derived and nothing is sent to `/connect/token` when the settings are refused (D2).
+    private func deriveMasterKey(password: Data, salt: String, kdf: KdfParams) async throws -> Data {
+        do {
+            return try await crypto.makeMasterKey(password: password, salt: salt, kdf: kdf)
+        } catch PrizmCryptoServiceError.insufficientKdfParameters {
+            logger.error("Refused: KDF settings below the minimums")
+            throw AuthError.kdfSettingsTooWeak
+        } catch PrizmCryptoServiceError.invalidKdfParameters {
+            logger.error("Refused: unusable KDF settings")
+            throw AuthError.invalidKdfSettings
+        }
+    }
+
     /// Maps a list of Bitwarden 2FA provider type numbers to a `TwoFactorMethod`.
     ///
     /// Only TOTP (provider 0) is supported in v1.  Any other combination returns `.unsupported`.
@@ -947,21 +1002,6 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         if providers.contains(0) { return .authenticatorApp }
         let names = providers.map { String($0) }.joined(separator: ", ")
         return .unsupported(name: names)
-    }
-}
-
-// MARK: - TokenResponse helpers
-
-private extension TokenResponse {
-    /// Extracts `KdfParams` from the token response fields.
-    func kdfParams(environment _: ServerEnvironment) -> KdfParams {
-        let type: KdfType = (kdf == 1) ? .argon2id : .pbkdf2
-        return KdfParams(
-            type:        type,
-            iterations:  kdfIterations ?? 600_000,
-            memory:      kdfMemory,
-            parallelism: kdfParallelism
-        )
     }
 }
 

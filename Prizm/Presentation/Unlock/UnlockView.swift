@@ -104,6 +104,10 @@ struct UnlockView: View {
         }
         .frame(minWidth: 480, minHeight: 400)
         .onAppear { passwordFocused = true }
+        // The error is shown under the focused password field; VoiceOver would not read it.
+        .onChange(of: viewModel.errorMessage) { _, error in
+            if let error { Self.announce(error) }
+        }
         // .task(id:) re-fires whenever biometricContextVersion changes (re-arm).
         // By the time the task runs, SwiftUI has re-rendered EmbeddedTouchIDView
         // with the new LAContext — so evaluatePolicy routes inline, not to a modal.
@@ -149,5 +153,18 @@ struct UnlockView: View {
         }
     }
 
+
+    // MARK: - Announcements
+
+    /// Posts through AppKit at high priority: macOS VoiceOver ignores the priority that SwiftUI's
+    /// `AccessibilityNotification.Announcement` carries, and a default one is cut off when focus
+    /// moves (same as `ItemEditView.announce`).
+    private static func announce(_ text: String) {
+        NSAccessibility.post(
+            element: NSApp as Any,
+            notification: .announcementRequested,
+            userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue]
+        )
+    }
 }
 

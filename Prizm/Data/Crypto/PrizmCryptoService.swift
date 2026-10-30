@@ -19,6 +19,10 @@ nonisolated enum PrizmCryptoServiceError: Error, Equatable {
     case invalidSymmetricKeyLength
     /// The vault is locked — no key material is available.
     case vaultLocked
+    /// The KDF settings are below the Bitwarden minimums (`KdfValidator`); nothing was derived.
+    case insufficientKdfParameters
+    /// The KDF settings are unusable (missing, zero, negative or out of range); nothing was derived.
+    case invalidKdfParameters
 }
 
 // MARK: - PrizmCryptoService Protocol
@@ -46,10 +50,13 @@ protocol PrizmCryptoService: Actor {
     ///
     /// - Parameters:
     ///   - password: The user's master password as UTF-8 bytes.
-    ///   - email:    The user's lowercase email address (used as the PBKDF2 salt).
-    ///   - kdf:      KDF parameters (algorithm, iterations, optional memory/parallelism).
+    ///   - salt:     The master password salt: the server's `salt`, else the email. Trimmed and
+    ///               lowercased here, as the Bitwarden SDK's `derive` does.
+    ///   - kdf:      KDF parameters (algorithm, iterations, optional memory/parallelism). Checked by
+    ///               `KdfValidator` before anything is derived.
     /// - Returns: 32-byte master key `Data`.
-    func makeMasterKey(password: Data, email: String, kdf: KdfParams) async throws -> Data
+    /// - Throws: `insufficientKdfParameters` or `invalidKdfParameters` before deriving.
+    func makeMasterKey(password: Data, salt: String, kdf: KdfParams) async throws -> Data
 
     /// Stretches a 32-byte master key into a 64-byte `CryptoKeys` pair using HKDF
     /// (RFC 5869) with independent "enc" and "mac" info labels.
@@ -348,32 +355,49 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
 
     // MARK: - makeMasterKey
 
-    func makeMasterKey(password: Data, email: String, kdf: KdfParams) async throws -> Data {
-        guard let emailData = email.lowercased().data(using: .utf8) else {
-            throw PrizmCryptoServiceError.kdfFailed
+    /// Master key derivation as the Bitwarden SDK does it (`bitwarden-crypto/src/keys/kdf.rs`;
+    /// openspec change `fix-kdf-derivation-and-validation`, design D1–D3).
+    ///
+    /// - Security goal: the same master key, and so the same server hash, as every official client
+    ///   for the same password, salt and settings; and no derivation at all with settings a server
+    ///   could use to obtain a cheap hash (`KdfValidator`, checked first, at login and at unlock).
+    /// - Salt: trimmed and lowercased, as SDK `derive` does, so a typed space or capital letter
+    ///   cannot change the key.
+    /// - PBKDF2-SHA256 (RFC 8018 §5.2) over the salt's UTF-8 bytes, 32-byte output.
+    /// - Argon2id (RFC 9106): see `argon2idDerive`.
+    func makeMasterKey(password: Data, salt: String, kdf: KdfParams) async throws -> Data {
+        switch KdfValidator.check(kdf) {
+        case .tooWeak?:
+            logger.error("KDF settings below the minimums; derivation refused")
+            throw PrizmCryptoServiceError.insufficientKdfParameters
+        case .invalid?:
+            logger.error("KDF settings unusable; derivation refused")
+            throw PrizmCryptoServiceError.invalidKdfParameters
+        case nil:
+            break
         }
+        let saltData = Data(salt.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().utf8)
 
-        logger.debug("KDF: using \(String(describing: kdf.type)) with \(kdf.iterations) iterations")
+        logger.debug("KDF: using \(String(describing: kdf.type), privacy: .public)")
 
         switch kdf.type {
         case .pbkdf2:
             return try pbkdf2SHA256(
                 password: password,
-                salt:     emailData,
-                rounds:   UInt32(kdf.iterations),
+                salt:     saltData,
+                rounds:   UInt32(kdf.iterations),  // in range: KdfValidator
                 keyLen:   32
             )
         case .argon2id:
-            // Argon2id requires memory + parallelism params
             guard let memory      = kdf.memory,
                   let parallelism = kdf.parallelism else {
-                throw PrizmCryptoServiceError.kdfFailed
+                throw PrizmCryptoServiceError.invalidKdfParameters  // unreachable: KdfValidator
             }
             return try argon2idDerive(
                 password:    password,
-                salt:        emailData,
+                salt:        saltData,
                 iterations:  kdf.iterations,
-                memory:      memory,
+                memoryMiB:   memory,
                 parallelism: parallelism
             )
         }
@@ -685,25 +709,28 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
 
     /// Derives a key using Argon2id via the vendored `Argon2Swift` library.
     ///
-    /// Argon2id (RFC 9106) is the recommended password hashing algorithm for
-    /// memory-hard key derivation.  Bitwarden uses it as an alternative to PBKDF2
-    /// for accounts that have opted in.  Parameters are stored in `KdfParams`.
+    /// Argon2id (RFC 9106), version 0x13, 32-byte output, as the Bitwarden SDK
+    /// (`bitwarden-crypto/src/keys/kdf.rs`). Two Bitwarden-specific inputs, both needed for the
+    /// server to accept the resulting hash (fix-kdf-derivation-and-validation, D1):
+    /// - the Argon2 salt is the SHA-256 of the salt bytes, not the bytes themselves. Bitwarden
+    ///   hashes it (SDK `kdf.rs`), so the Argon2 salt is always 32 bytes, whatever the salt string;
+    /// - the server sends memory in MiB; Argon2 takes KiB, so it is multiplied by 1024.
     ///
     /// Note: The raw hash bytes are extracted (not the Argon2 encoded string) because
     /// only the 32-byte derived key material is needed, not the self-describing hash.
     ///
     /// - Parameters:
     ///   - password:    Password bytes.
-    ///   - salt:        Salt bytes (typically the lowercased email).
+    ///   - salt:        Salt bytes (the normalized salt string); hashed here.
     ///   - iterations:  Time cost (number of passes).
-    ///   - memory:      Memory cost in KiB.
+    ///   - memoryMiB:   Memory cost in MiB, as the server sends it (checked by `KdfValidator`).
     ///   - parallelism: Degree of parallelism (number of threads).
     /// - Throws: `PrizmCryptoServiceError.kdfFailed` if Argon2Swift returns an error.
     private func argon2idDerive(
         password:    Data,
         salt:        Data,
         iterations:  Int,
-        memory:      Int,
+        memoryMiB:   Int,
         parallelism: Int
     ) throws -> Data {
         // Argon2Swift is imported from the local vendored package.
@@ -714,9 +741,9 @@ actor PrizmCryptoServiceImpl: PrizmCryptoService {
         // `length: 32` produces a 256-bit derived key suitable for AES-256 key material.
         let result = try Argon2Swift.hashPasswordBytes(
             password:    password,
-            salt:        Salt(bytes: salt),
+            salt:        Salt(bytes: Data(SHA256.hash(data: salt))),
             iterations:  iterations,
-            memory:      memory,
+            memory:      memoryMiB * 1024,
             parallelism: parallelism,
             length:      32,
             type:        .id

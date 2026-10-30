@@ -81,9 +81,9 @@ final class EntityValidationTests: XCTestCase {
     }
 
     func testKdfParamsArgon2idHasMemoryAndParallelism() {
-        let params = KdfParams(type: .argon2id, iterations: 3, memory: 65536, parallelism: 4)
+        let params = KdfParams(type: .argon2id, iterations: 3, memory: 64, parallelism: 4)
         XCTAssertEqual(params.type, .argon2id)
-        XCTAssertEqual(params.memory, 65536)
+        XCTAssertEqual(params.memory, 64)
         XCTAssertEqual(params.parallelism, 4)
     }
 

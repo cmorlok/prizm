@@ -16,12 +16,16 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
 
     nonisolated(unsafe) var preLoginResponse: PreLoginResponse?
     nonisolated(unsafe) var preLoginShouldThrow: Error?
+    /// The email of every prelogin request, in order.
+    nonisolated(unsafe) var preLoginEmails: [String] = []
 
     // MARK: - Stubs: identityToken
 
     nonisolated(unsafe) var tokenResponse: TokenResponse?
     nonisolated(unsafe) var tokenShouldThrow: Error?
     nonisolated(unsafe) var tokenTwoFactorProviders: [Int]?
+    /// The `username` (email) of every token request, in order.
+    nonisolated(unsafe) var identityTokenEmails: [String] = []
 
     // MARK: - Stubs: fetchSync
 
@@ -63,6 +67,7 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     }
 
     func preLogin(email: String) async throws -> PreLoginResponse {
+        preLoginEmails.append(email)
         if let err = preLoginShouldThrow { throw err }
         return preLoginResponse ?? PreLoginResponse(
             kdf: 0, kdfIterations: 600_000, kdfMemory: nil, kdfParallelism: nil
@@ -80,6 +85,7 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
         twoFactorProvider: Int?,
         twoFactorRemember: Bool
     ) async throws -> TokenResponse {
+        identityTokenEmails.append(email)
         await whileRequestingToken?()
         if let err = tokenShouldThrow { throw err }
 

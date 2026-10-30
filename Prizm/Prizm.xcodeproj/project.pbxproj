@@ -142,6 +142,8 @@
 		BB100D1E00000000000000F1 /* ProfileIdCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100D1E00000000000000F1 /* ProfileIdCache.swift */; };
 		BB100D1E00000000000000F3 /* RawCipherStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100D1E00000000000000F3 /* RawCipherStore.swift */; };
 		BB100D1E00000000000000F2 /* JSONValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100D1E00000000000000F2 /* JSONValue.swift */; };
+		175CE5C87A85D04465249B93 /* WireKdfSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5077DEE7ABDAD6E15AE5457 /* WireKdfSettings.swift */; };
+		890CF8A6B6C13E4DD0C96BA2 /* FirstLetterCaseInsensitiveKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03031A37BBA04C7B5454CDB /* FirstLetterCaseInsensitiveKey.swift */; };
 		BB100B00000000000000000B /* VaultKeyServiceImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100B00000000000000000B /* VaultKeyServiceImpl.swift */; };
 		BB100C00000000000000000C /* AttachmentMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100C00000000000000000C /* AttachmentMapper.swift */; };
 		BB100D00000000000000000D /* UploadAttachmentUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100D00000000000000000D /* UploadAttachmentUseCaseImpl.swift */; };
@@ -163,6 +165,7 @@
 		C3D4E5F607182940B5C6D7E8 /* EditVaultItemUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F6071829304AC6D7E8F9 /* EditVaultItemUseCase.swift */; };
 		C3D4E5F6A7B849C0D1E2F3A4 /* PrizmCryptoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8D710BEABBB4ADD9ADFCD1F /* PrizmCryptoService.swift */; };
 		F2D65751D6B415E1BA084524 /* SSHKeyServiceImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30E3733CF45E47BD6C748AB1 /* SSHKeyServiceImpl.swift */; };
+		B115E88CD8DCF07E42182D97 /* KdfValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06113E3C262E85B293ABA759 /* KdfValidator.swift */; };
 		C3DDB598E8834E85833D86FE /* VaultBrowserViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5F177A6089741F69C02E285 /* VaultBrowserViewModel.swift */; };
 		C8951B673C224D76A33775A1 /* UnlockViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AFBFFDE4FCE4BD28D3C8E9A /* UnlockViewModel.swift */; };
 		C8D9E0F1A2B34895C9D0E1F2 /* SyncStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9E0F1A2B3C44895D0E1F2A3 /* SyncStatusView.swift */; };
@@ -196,6 +199,8 @@
 		FE3145A0627D44CABC58ADCE /* MaskedFieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8197007AA7E412D96A52B14 /* MaskedFieldView.swift */; };
 		FF0FFCD0FDD849318EBBFF77 /* FaviconLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50445584AD814B6EBD971FDA /* FaviconLoader.swift */; };
 		960765B0AB097AD5A024293E /* LegacyPreloginEndpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFDBB17F6E2AA8597455939D /* LegacyPreloginEndpoint.swift */; };
+		5DF16C9D6534C4005EA888F7 /* LegacyTokenUserKeyFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12B13DCFA3F09DB8B8DAEBF1 /* LegacyTokenUserKeyFields.swift */; };
+		7FF4F8DF427DE5B4A1FD329A /* LegacyPreloginKdfFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2EA196E567C8A1C74672A3C /* LegacyPreloginKdfFields.swift */; };
 		DB6006E4E878A9C9C893C91A /* SetFavoriteUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33F70D5AD25DD2A43576733F /* SetFavoriteUseCase.swift */; };
 		918757C4B8FDA02ACD662167 /* SetFavoriteUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47EF6BBB6170F5C4F6D7AB9B /* SetFavoriteUseCaseImpl.swift */; };
 		5FB03807205EB54F055B4317 /* CollectionAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C7F64FECEB4D5C21395C438 /* CollectionAccess.swift */; };
@@ -334,6 +339,8 @@
 		AA100D1E00000000000000F1 /* ProfileIdCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileIdCache.swift; sourceTree = "<group>"; };
 		AA100D1E00000000000000F3 /* RawCipherStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawCipherStore.swift; sourceTree = "<group>"; };
 		AA100D1E00000000000000F2 /* JSONValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONValue.swift; sourceTree = "<group>"; };
+		C5077DEE7ABDAD6E15AE5457 /* WireKdfSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireKdfSettings.swift; sourceTree = "<group>"; };
+		C03031A37BBA04C7B5454CDB /* FirstLetterCaseInsensitiveKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstLetterCaseInsensitiveKey.swift; sourceTree = "<group>"; };
 		AA100B00000000000000000B /* VaultKeyServiceImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultKeyServiceImpl.swift; sourceTree = "<group>"; };
 		AA100C00000000000000000C /* AttachmentMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentMapper.swift; sourceTree = "<group>"; };
 		AA100D00000000000000000D /* UploadAttachmentUseCaseImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadAttachmentUseCaseImpl.swift; sourceTree = "<group>"; };
@@ -373,6 +380,7 @@
 		D7C2BEABB748471395CEC2C6 /* RawFolder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawFolder.swift; sourceTree = "<group>"; };
 		D8D710BEABBB4ADD9ADFCD1F /* PrizmCryptoService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrizmCryptoService.swift; sourceTree = "<group>"; };
 		30E3733CF45E47BD6C748AB1 /* SSHKeyServiceImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHKeyServiceImpl.swift; sourceTree = "<group>"; };
+		06113E3C262E85B293ABA759 /* KdfValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KdfValidator.swift; sourceTree = "<group>"; };
 		D9E0F1A2B3C44895D0E1F2A3 /* SyncStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStatusView.swift; sourceTree = "<group>"; };
 		DF8949A6D242488CBEC15CC0 /* ItemListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemListView.swift; sourceTree = "<group>"; };
 		E25C290F2D7A470EB4AB8698 /* KdfParams.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KdfParams.swift; sourceTree = "<group>"; };
@@ -418,6 +426,8 @@
 		FEE3CE5476C5402F9BC3FF76 /* OrgKeyCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrgKeyCache.swift; sourceTree = "<group>"; };
 		FF00112233445566778899AA /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		BFDBB17F6E2AA8597455939D /* LegacyPreloginEndpoint.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LegacyPreloginEndpoint.swift; sourceTree = "<group>"; };
+		12B13DCFA3F09DB8B8DAEBF1 /* LegacyTokenUserKeyFields.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyTokenUserKeyFields.swift; sourceTree = "<group>"; };
+		A2EA196E567C8A1C74672A3C /* LegacyPreloginKdfFields.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyPreloginKdfFields.swift; sourceTree = "<group>"; };
 		33F70D5AD25DD2A43576733F /* SetFavoriteUseCase.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SetFavoriteUseCase.swift; sourceTree = "<group>"; };
 		47EF6BBB6170F5C4F6D7AB9B /* SetFavoriteUseCaseImpl.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SetFavoriteUseCaseImpl.swift; sourceTree = "<group>"; };
 		0C7F64FECEB4D5C21395C438 /* CollectionAccess.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CollectionAccess.swift; sourceTree = "<group>"; };
@@ -596,6 +606,7 @@
 				3FBB82A6241244DD890E615C /* EncString.swift */,
 				D8D710BEABBB4ADD9ADFCD1F /* PrizmCryptoService.swift */,
 				30E3733CF45E47BD6C748AB1 /* SSHKeyServiceImpl.swift */,
+				06113E3C262E85B293ABA759 /* KdfValidator.swift */,
 				AA1007000000000000000007 /* AttachmentCrypto.swift */,
 				4A8CDB6FE9CEBD93707A3468 /* OneTimeCodeHMAC.swift */,
 			);
@@ -618,6 +629,8 @@
 			children = (
 				95E5FF4D219144A18C2BC5AA /* RawCipher.swift */,
 				AA100D1E00000000000000F2 /* JSONValue.swift */,
+				C5077DEE7ABDAD6E15AE5457 /* WireKdfSettings.swift */,
+				C03031A37BBA04C7B5454CDB /* FirstLetterCaseInsensitiveKey.swift */,
 				15F3A553820942CF9B3935FD /* SyncResponse.swift */,
 				D7C2BEABB748471395CEC2C6 /* RawFolder.swift */,
 				AA1008000000000000000008 /* AttachmentDTO.swift */,
@@ -963,6 +976,8 @@
 			isa = PBXGroup;
 			children = (
 				BFDBB17F6E2AA8597455939D /* LegacyPreloginEndpoint.swift */,
+				12B13DCFA3F09DB8B8DAEBF1 /* LegacyTokenUserKeyFields.swift */,
+				A2EA196E567C8A1C74672A3C /* LegacyPreloginKdfFields.swift */,
 			);
 			path = Legacy;
 			sourceTree = "<group>";
@@ -1196,8 +1211,11 @@
 				B2C3D4E5F6A748B9C0D1E2F3 /* EncString.swift in Sources */,
 				C3D4E5F6A7B849C0D1E2F3A4 /* PrizmCryptoService.swift in Sources */,
 				F2D65751D6B415E1BA084524 /* SSHKeyServiceImpl.swift in Sources */,
+				B115E88CD8DCF07E42182D97 /* KdfValidator.swift in Sources */,
 				D4E5F6A7B8C94AD1E2F3A4B5 /* RawCipher.swift in Sources */,
 				BB100D1E00000000000000F2 /* JSONValue.swift in Sources */,
+				175CE5C87A85D04465249B93 /* WireKdfSettings.swift in Sources */,
+				890CF8A6B6C13E4DD0C96BA2 /* FirstLetterCaseInsensitiveKey.swift in Sources */,
 				E5F6A7B8C9D04BE2F3A4B5C6 /* SyncResponse.swift in Sources */,
 				F6A7B8C9D0E14CF3A4B5C6D7 /* CipherMapper.swift in Sources */,
 				A2B3C4D5E6F74718B9C0D1E2 /* KeychainService.swift in Sources */,
@@ -1300,6 +1318,8 @@
 				EC92BFB78809ACD1946D76CB /* VerificationCodeCard.swift in Sources */,
 				0710CED60B2C5AE731226A72 /* VerificationCodesListView.swift in Sources */,
 				960765B0AB097AD5A024293E /* LegacyPreloginEndpoint.swift in Sources */,
+				5DF16C9D6534C4005EA888F7 /* LegacyTokenUserKeyFields.swift in Sources */,
+				7FF4F8DF427DE5B4A1FD329A /* LegacyPreloginKdfFields.swift in Sources */,
 				DB6006E4E878A9C9C893C91A /* SetFavoriteUseCase.swift in Sources */,
 				918757C4B8FDA02ACD662167 /* SetFavoriteUseCaseImpl.swift in Sources */,
 				5FB03807205EB54F055B4317 /* CollectionAccess.swift in Sources */,

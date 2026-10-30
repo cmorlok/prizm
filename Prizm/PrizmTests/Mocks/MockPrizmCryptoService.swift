@@ -30,8 +30,18 @@ actor MockPrizmCryptoService: PrizmCryptoService {
 
     // Fresh buffers on every call, as the real service returns: a shared buffer would make every
     // caller's in-place zeroing a copy-on-write copy instead (harden-key-lifecycle-and-logging).
-    func makeMasterKey(password: Data, email: String, kdf: KdfParams) async throws -> Data {
-        Data(Array(stubbedMasterKey))
+    /// Every derivation that ran: the salt and settings it used. A refused one is not recorded.
+    nonisolated(unsafe) var derivations: [(salt: String, kdf: KdfParams)] = []
+
+    /// Refuses settings with the real `KdfValidator`, as the real service does before deriving.
+    func makeMasterKey(password: Data, salt: String, kdf: KdfParams) async throws -> Data {
+        switch KdfValidator.check(kdf) {
+        case .tooWeak?: throw PrizmCryptoServiceError.insufficientKdfParameters
+        case .invalid?: throw PrizmCryptoServiceError.invalidKdfParameters
+        case nil:       break
+        }
+        derivations.append((salt, kdf))
+        return Data(Array(stubbedMasterKey))
     }
 
     func stretchKey(masterKey: Data) async throws -> CryptoKeys {
