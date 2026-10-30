@@ -222,6 +222,31 @@ final class SyncRepositoryImplTests: XCTestCase {
         XCTAssertTrue(mockVault.populatedItems.isEmpty)
     }
 
+    /// fix-encstring-validation, task 1.4: a collection whose name is type 0 (no MAC) is dropped and
+    /// logged; the other collections of the organization are kept.
+    func testSync_collectionWithAType0Name_isDropped() async throws {
+        let orgKeys = KeyedCipherBuilder.randomKeys()
+        mockCrypto.stubbedOrgKeys["2.orgKey=="] = orgKeys
+        let genuine = KeyedCipherBuilder.encrypt("Team", keys: orgKeys)
+        let parts = genuine.dropFirst(2).split(separator: "|")
+        let type0 = "0.\(parts[0])|\(parts[1])"
+        mockAPI.syncResponse = SyncResponse(
+            profile: RawProfile(id: "pid", email: "test@example.com", name: nil,
+                                key: "2.encKey==", privateKey: "2.encPrivKey=="),
+            ciphers: [],
+            folders: [],
+            organizations: [RawOrganization(id: "org-1", name: "Acme Corp", key: "2.orgKey==", type: 3)],
+            collections: [RawCollection(id: "col-ok", organizationId: "org-1", name: genuine),
+                          RawCollection(id: "col-type0", organizationId: "org-1", name: type0)]
+        )
+        mockCrypto.stubbedDecryptList = []
+
+        _ = try await sut.sync(progress: { _ in })
+
+        XCTAssertEqual(mockVault.populatedCollections.map(\.id), ["col-ok"])
+        XCTAssertEqual(mockVault.populatedCollections.first?.name, "Team")
+    }
+
     // MARK: - Helpers
 
     private func makeSyncResponse(cipherCount: Int) -> SyncResponse {
