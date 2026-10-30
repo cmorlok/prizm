@@ -176,6 +176,88 @@ user's knowledge, can use a lot of bandwidth, and changes attachment IDs that ot
 - **[Low] Size hint wrong** on a server that reports other sizes. → D2 is the real check; nothing
   is changed when the hint is wrong.
 
+## Review
+
+Independent review on 2026-10-30 (a fresh reviewer, read only): no blockers; the crypto core
+(layout detection, MAC before decrypt, type 0 refused, the keys used for conversion) is correct.
+Three should-fix findings and five nits. Fixes: red `20261030T131443Z` (compile), green
+`20261030T131621Z` (1165 unit tests).
+
+- Fixed (S1): a lock during "Convert all" could break the next session. The old run carried on
+  after the lock, so pressing "Convert All" again in the next session converted the same files a
+  second time, and the old run's result replaced the new notice. Each run now keeps the session
+  it started in and stops after the current file when a lock or sign-out ends that session. Test
+  `testLockDuringConvertAll_stopsThatRun_andLeavesTheNextSessionAlone`.
+- Fixed (S2): one file could be converted twice (a second press of "Convert All", or a row's
+  Convert overlapping "Convert all"). "Convert all" starts only from the notice, and the use case
+  refuses a second conversion of a file that is being converted (`conversionAlreadyRunning`).
+  Tests `testConvertAll_twice_runsOnce`, `test_execute_refusesASecondConversionOfTheSameFileWhileTheFirstRuns`.
+- Fixed (S3): task 3.2 was only partly tested. New tests: the local attachment list after a
+  conversion holds only the new attachment, and a conversion the server refuses reports the
+  server's message and keeps the old file.
+- Fixed (nit): Open, Save and Delete stayed available while a row converted; deleting then made
+  the conversion report "old copy could not be removed". They are hidden and refused while the
+  row converts.
+- Fixed (nit): an item in the trash offered Convert. It no longer does (the notice already left
+  such items out).
+- Fixed (nit): design D2 said "anything else → `malformedBlob`"; the code throws
+  `unsupportedEncryptionType` for any type byte other than `0x02` on a blob of official length.
+  D2 now says so.
+- Accepted (nit): if a server reports a size that is a multiple of 16 for a file that is already
+  official, the badge stays and the notice comes back after each unlock, while Convert answers
+  "already in the standard format" and changes nothing. D3 treats the size as a hint only; both
+  servers report the stored encrypted size (Context, task 1.2), so this needs a server that does
+  not.
+- Declined (nit): raw `.font(.headline)` on CONVERT and raw `minWidth: 420` on the sheet. CONVERT
+  matches the existing OPEN and SAVE buttons, which already use it; changing all three belongs in
+  a design-system change, not here.
+
+VoiceOver hand check 2026-10-30 (Christian): the badge and the notice message could not be
+reached, and the Convert hint was spelled out in capitals. Fixed: the row is no `Label` (name and
+size are one element, the badge its own; this part moved into fix-org-attachment-key at the
+squash, which has the same problem with its note), the notice message is one element and is
+announced when the sheet opens, "Later" says when Prizm asks again, and the CONVERT, OPEN and
+SAVE titles are written in capitals instead of `.textCase(.uppercase)`, which also upper-cased
+the accessibility label and hint. Re-check: all read correctly.
+
+Security review (task 5.2), on the code as it is now:
+
+- **Parsing bounds:** `AttachmentBlobLayout.of` accepts `65 + 16k` bytes starting with `0x02`
+  (official) or `64 + 16k` bytes (Prizm's old layout). Type 0, any other type byte on an
+  official-length blob, and every other length are refused before any slicing, so no length can
+  index out of range. The two layouts' lengths never overlap, so detection never needs a trial
+  decryption. Slices use the buffer's `startIndex`.
+- **MAC before decrypt:** in both layouts HMAC-SHA256 over `IV ‖ ciphertext` is checked in
+  constant time before AES-CBC runs, so there is no padding oracle. Type 0 has no MAC and is
+  refused, as by the SDK and the TypeScript clients. Download errors reach the user as
+  "unsupported format" or "could not be decrypted", without detail about which check failed.
+- **Keys:** a converted file gets a new attachment key from `SecRandomCopyBytes`, through the
+  normal upload path. The old attachment key is unwrapped with the key it was wrapped with (the
+  personal key for an attachment flagged `wrappedWithPersonalKey`), and the new one is wrapped
+  with the item's effective key, so an organization file moves to the organization key (tested).
+- **Zeroing:** the downloaded blob, the plaintext and both attachment keys are zeroed on every
+  path. The 64-byte item, organization or vault key copies handed to the repository are not
+  zeroed by the use case, the same as for upload and download today.
+- **Data loss and races:** the old file is deleted only after the new upload succeeded; a failed
+  or refused upload rolls back the new record and keeps the old one. A file is never converted
+  twice at once, and a lock ends a running "Convert all" after the current file. The new upload is
+  not downloaded again to check it, like the SDK's `upgrade_attachment`.
+- **Logs:** attachment and item IDs, byte counts and error kinds only; file names appear only in
+  the sheet's failure list, never in logs.
+- **Open:** sizes on Bitwarden self-hosted are unconfirmed (no rig); its server code stores the
+  real blob size, like Vaultwarden.
+
+**Archive pass (2026-10-30, `/opsx:verify`).**
+- Fixed: `SECURITY.md` still stated the old layout `IV ‖ ciphertext ‖ HMAC`; it now gives the
+  official layout and says old files are still read and can be converted.
+- Fixed: the main spec `attachment-crypto` stated Prizm's own layout as the Bitwarden format. A
+  MODIFIED delta now refers to `attachment-file-format` (task 6.4).
+- Reworded: the scenarios and task 5.1 name "an official Bitwarden client" instead of the browser
+  extension; the rig used the `bw` CLI, which uses the same SDK. Bitwarden self-hosted was not
+  checked (task 1.2, D3), as agreed for the batch.
+- Reworded: D5 says which items the notice counts (not in the trash, old layout or flagged), and
+  task 4.4 says what the UI test checks; converting is covered by the rig.
+
 ## Open Questions
 
 1. Should Prizm keep reading the old layout forever, or remove it in a later major version? This
