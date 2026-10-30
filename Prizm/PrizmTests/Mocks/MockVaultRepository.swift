@@ -96,6 +96,10 @@ final class MockVaultRepository: VaultRepository {
             return []
         case .archive:
             return populatedItems.filter { !$0.isDeleted && $0.isArchived }
+        case .noFolder:
+            return populatedItems.filter { $0.isActive && $0.folderId == nil }
+        case .myVault:
+            return populatedItems.filter { $0.isActive && $0.organizationId == nil }
         case .organization(let orgId):
             let orgColIds = Set(populatedCollections.filter { $0.organizationId == orgId }.map(\.id))
             return populatedItems.filter { $0.collectionIds.contains(where: { orgColIds.contains($0) }) }

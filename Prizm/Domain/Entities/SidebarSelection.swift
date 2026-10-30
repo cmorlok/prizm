@@ -62,6 +62,10 @@ nonisolated enum SidebarSelection {
     case newCollection(organizationId: String)
     /// Archived items that are not in Trash (archived-items). Shown only while it lists any.
     case archive
+    /// Active items without a folder; shown only while the user has a folder (vault-browsing-parity).
+    case noFolder
+    /// Active personal items; shown only while the user belongs to an organization.
+    case myVault
 }
 
 extension SidebarSelection {
@@ -78,6 +82,8 @@ extension SidebarSelection {
         case .collection:                    return "Collection"
         case .newCollection:                 return "New Collection"
         case .archive:                       return "Archive"
+        case .noFolder:                      return "No Folder"
+        case .myVault:                       return "My Vault"
         }
     }
 }
@@ -97,6 +103,9 @@ nonisolated extension SidebarSelection: Hashable {
         case (.newCollection(let a), .newCollection(let b)):             return a == b
         // Listed here by hand: the `default` below would otherwise make `.archive != .archive`.
         case (.archive, .archive):                                       return true
+        // Listed here by hand: the `default` below would otherwise make each unequal to itself.
+        case (.noFolder, .noFolder):                                     return true
+        case (.myVault, .myVault):                                       return true
         default:                                                         return false
         }
     }
@@ -114,6 +123,9 @@ nonisolated extension SidebarSelection: Hashable {
         case .newCollection(let orgId):          hasher.combine(8); hasher.combine(orgId)
         case .verificationCodes:                 hasher.combine(9)
         case .archive:                           hasher.combine(10)
+        // 10 is `.archive` (archived-items).
+        case .noFolder:                          hasher.combine(11)
+        case .myVault:                           hasher.combine(12)
         }
     }
 }

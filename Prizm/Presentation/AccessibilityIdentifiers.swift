@@ -73,6 +73,8 @@ nonisolated enum AccessibilityID {
         static let allItems          = "sidebar.allItems"
         static let favorites         = "sidebar.favorites"
         static let trash             = "sidebar.trash"
+        static let noFolder          = "sidebar.noFolder"
+        static let myVault           = "sidebar.myVault"
         static func type(_ name: String) -> String { "sidebar.type.\(name)" }
     }
 

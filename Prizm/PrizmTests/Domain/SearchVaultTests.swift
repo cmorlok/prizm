@@ -133,9 +133,9 @@ final class SearchVaultTests: XCTestCase {
         XCTAssertEqual(results.map(\.id), ["4"])
     }
 
-    // MARK: - SecureNote and SSHKey: name only
+    // MARK: - SecureNote and SSHKey: name, notes and fingerprint (vault-browsing-parity)
 
-    func testSearchSecureNote_matchesNameOnly() async throws {
+    func testSearchSecureNote_matchesNameAndNotes() async throws {
         let results = try await sut.execute(query: "secret", in: .allItems)
         XCTAssertEqual(results.map(\.id), ["5"])
     }
@@ -145,9 +145,11 @@ final class SearchVaultTests: XCTestCase {
         XCTAssertEqual(results.map(\.id), ["6"])
     }
 
-    func testSearchSSHKey_doesNotMatchFingerprint() async throws {
+    /// Official clients search the fingerprint (it is the SSH key's subtitle); vault-browsing-parity
+    /// adds it, so this test was inverted.
+    func testSearchSSHKey_matchesFingerprint() async throws {
         let results = try await sut.execute(query: "SHA256", in: .allItems)
-        XCTAssertTrue(results.isEmpty, "SSH key search should only match name, not fingerprint")
+        XCTAssertEqual(results.map(\.id), ["6"])
     }
 
     // MARK: - Category scoping
