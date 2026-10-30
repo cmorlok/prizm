@@ -215,7 +215,7 @@ The system SHALL keep the last server record of each item only in memory, as rec
 - **AND** no item SHALL be decrypted from the sync's answer
 
 ### Requirement: Items Prizm cannot write back losslessly cannot be edited
-When an item's stored server record is in a format Prizm cannot write back without loss (an encrypted blob, partial data, a shape the system cannot map, or a name in an old encryption format without a MAC), the system SHALL disable Edit and its keyboard shortcut for the item, and SHALL show a short plain-language note that explains why and where the item can be edited. The Edit button SHALL carry the note as its accessibility hint, and the detail pane SHALL show the same note as visible text.
+When an item's stored server record is in a format Prizm cannot write back without loss (an encrypted blob, partial data, a shape the system cannot map, or a name in an old encryption format without a MAC), the system SHALL disable Edit and its keyboard shortcut for the item, and SHALL show a plain-language note that explains why and, if possible, where to edit it. The Edit button SHALL carry the note as its accessibility hint, and the detail pane SHALL show the same note as visible text.
 
 #### Scenario: Blob item
 - **GIVEN** an item whose stored record is an encrypted blob
@@ -235,12 +235,6 @@ When an item's stored server record is in a format Prizm cannot write back witho
 - **THEN** Edit SHALL be disabled and the detail pane SHALL show that some of the item's details are missing
 - **AND** a secure note without its `secureNote` object SHALL stay editable
 - **AND** an SSH key item without its `sshKey` object SHALL be blocked as an incomplete SSH key (`ssh-key-integrity`)
-
-#### Scenario: Item with a name in an old encryption format
-- **GIVEN** an item whose stored name is an encrypted string without a MAC (EncString type 0)
-- **WHEN** the user selects it
-- **THEN** the item SHALL be listed and readable, and Edit and its keyboard shortcut SHALL be disabled
-- **AND** the detail pane SHALL show "Prizm can't edit this item because it uses an older encryption format. Edit it in the Bitwarden web vault or browser extension."
 
 #### Scenario: Legacy data alone
 - **GIVEN** an item whose stored record has a `data` value without a `format_version` and a `partialData` of `null`, as the official server sends on every item (source-reviewed, not tested)

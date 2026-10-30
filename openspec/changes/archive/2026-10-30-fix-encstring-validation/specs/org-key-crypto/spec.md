@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Organization symmetric keys are unwrapped at sync time
-For each organization returned in the sync response, the system SHALL unwrap the organization's symmetric key from an EncString of type 4 with exactly one part, using RSA-OAEP-SHA1 and the user's in-memory RSA private key, and SHALL accept only a 64-byte result. Types 3, 5 and 6 SHALL be rejected with an unsupported-org-key-type error naming the type, and any other form with a malformed-org-key error, both before any RSA operation. Unwrapped org keys SHALL be stored in `OrgKeyCache` keyed by `organizationId`, and zeroed on removal from the cache (Constitution §III). Algorithm: `SecKeyCreateDecryptedData` with `kSecKeyAlgorithmRSAEncryptionOAEPSHA1` (`Security.framework`).
+For each organization in the sync response, the system SHALL unwrap the organization's symmetric key from a one-part EncString of type 4 with RSA-OAEP-SHA1 (`SecKeyCreateDecryptedData`) and the user's in-memory RSA private key, and SHALL accept only a 64-byte result. Any other type or form SHALL be rejected before any RSA operation. Unwrapped keys SHALL be stored in `OrgKeyCache` by `organizationId` and zeroed on removal (Constitution §III).
 
 #### Scenario: Org key unwrapped and cached at sync
 - **WHEN** a sync response containing one or more organizations with type-4 keys is processed

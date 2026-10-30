@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Security: Prizm no longer decrypts vault data that has no integrity check (the old AES-CBC
+  format without a MAC, or values marked with a wrong type), as the official Bitwarden apps do.
+  Items with such data are not shown, and the sync reports them as not readable. Encrypted values
+  must also have the exact IV, MAC and block lengths, and organization keys are accepted only in
+  the RSA-OAEP format the server uses for them.
+- Fix: a damaged private key can no longer crash Prizm during sync. An organization whose key
+  can't be read is left out and the reason is logged (without key material).
 - Fix: attachments now use the standard Bitwarden file format. Prizm 1.1.0 to 1.5.x saved files
   in a layout other Bitwarden apps can't open, and Prizm couldn't open files that other Bitwarden
   apps attached. Prizm still opens its old files, marks them "Prizm format" and can convert them:
