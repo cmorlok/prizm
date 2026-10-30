@@ -328,11 +328,17 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     nonisolated(unsafe) var uploadBitwardenHostedCallCount: Int = 0
     nonisolated(unsafe) var lastUploadedCipherId: String?
     nonisolated(unsafe) var lastUploadedAttachmentId: String?
+    nonisolated(unsafe) var lastUploadedFileName: String?
+    /// How long the upload takes; a cancelled caller ends it with `CancellationError`.
+    nonisolated(unsafe) var uploadBitwardenHostedDelay: Duration?
 
-    func uploadAttachmentBitwardenHosted(cipherId: String, attachmentId: String, encryptedBlob: Data) async throws {
+    func uploadAttachmentBitwardenHosted(cipherId: String, attachmentId: String, encryptedFileName: String,
+                                         encryptedBlob: Data) async throws {
         uploadBitwardenHostedCallCount += 1
         lastUploadedCipherId = cipherId
         lastUploadedAttachmentId = attachmentId
+        lastUploadedFileName = encryptedFileName
+        if let delay = uploadBitwardenHostedDelay { try await Task.sleep(for: delay) }
         if let err = uploadBitwardenHostedShouldThrow { throw err }
     }
 
@@ -359,24 +365,30 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     nonisolated(unsafe) var deleteAttachmentShouldThrow: Error?
     nonisolated(unsafe) var deleteAttachmentCallCount: Int = 0
     nonisolated(unsafe) var lastDeletedAttachmentId: String?
+    /// The item the delete answers with; nil is an empty answer (older servers).
+    nonisolated(unsafe) var deleteAttachmentResponse: RawCipher?
 
-    func deleteAttachment(cipherId: String, attachmentId: String) async throws {
+    /// Whether the last delete ran in a cancelled task.
+    nonisolated(unsafe) var deleteAttachmentSawCancellation: Bool?
+
+    func deleteAttachment(cipherId: String, attachmentId: String) async throws -> RawCipher? {
         deleteAttachmentCallCount += 1
         lastDeletedAttachmentId = attachmentId
+        deleteAttachmentSawCancellation = Task.isCancelled
         if let err = deleteAttachmentShouldThrow { throw err }
+        return deleteAttachmentResponse
     }
 
     nonisolated(unsafe) var downloadBlobResult: Data = Data()
     nonisolated(unsafe) var downloadBlobShouldThrow: Error?
     nonisolated(unsafe) var downloadBlobCallCount: Int = 0
-    /// Sequential results keyed by call count (1-based). Falls back to `downloadBlobResult`.
-    nonisolated(unsafe) var downloadBlobSequence: [Int: Result<Data, Error>] = [:]
+
+    /// Every URL a download was attempted from, in order.
+    nonisolated(unsafe) var downloadedURLs: [URL] = []
 
     func downloadBlob(from url: URL) async throws -> Data {
         downloadBlobCallCount += 1
-        if let seq = downloadBlobSequence[downloadBlobCallCount] {
-            return try seq.get()
-        }
+        downloadedURLs.append(url)
         if let err = downloadBlobShouldThrow { throw err }
         return downloadBlobResult
     }

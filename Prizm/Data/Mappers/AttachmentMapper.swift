@@ -74,8 +74,7 @@ nonisolated final class AttachmentMapper: Sendable {
             encryptedKey:       dto.key,       // verbatim — not decrypted here
             size:               sizeInt,
             sizeName:           dto.sizeName,  // verbatim — not reformatted
-            url:                dto.url,        // verbatim — may be nil
-            isUploadIncomplete: dto.url == nil  // nil url → blob never received
+            url:                dto.url         // verbatim — may be nil
         )
     }
 }

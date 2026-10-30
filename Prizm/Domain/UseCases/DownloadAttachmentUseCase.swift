@@ -17,7 +17,7 @@ protocol DownloadAttachmentUseCase: AnyObject {
     ///   - cipherId:   The ID of the vault item the attachment belongs to.
     ///   - attachment: The attachment record containing the encrypted key and download URL.
     /// - Returns: Decrypted plaintext file bytes.
-    /// - Throws: `AttachmentError.downloadFailed` after one retry on HTTP 403.
+    /// - Throws: `AttachmentError.fileMissingOnServer` or `AttachmentError.downloadFailed`.
     /// - Throws: `VaultError.vaultLocked` if the vault is locked.
     func execute(cipherId: String, attachment: Attachment) async throws -> Data
 }

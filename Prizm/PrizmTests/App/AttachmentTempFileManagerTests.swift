@@ -1,7 +1,7 @@
 import XCTest
 @testable import Prizm
 
-/// Unit tests for `AttachmentTempFileManager` (task 7.2c).
+/// Unit tests for `AttachmentTempFileManager` (task 7.2c; fix-attachment-transfer-flow D7).
 ///
 /// Uses `register(url:deleteAfter:)` to control cleanup timing without sleeping.
 @MainActor
@@ -9,14 +9,19 @@ final class AttachmentTempFileManagerTests: XCTestCase {
 
     private var sut: AttachmentTempFileManager!
     private var createdURLs: [URL] = []
+    /// A folder per test, so no test touches the app's real `PrizmAttachments` folder.
+    private var folder: URL!
 
     override func setUp() async throws {
-        sut = AttachmentTempFileManager()
+        folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("prizm-tmptest-folder-\(UUID().uuidString)", isDirectory: true)
+        sut = AttachmentTempFileManager(folder: folder)
     }
 
     override func tearDown() async throws {
         for url in createdURLs { try? FileManager.default.removeItem(at: url) }
         createdURLs.removeAll()
+        try? FileManager.default.removeItem(at: folder)
     }
 
     // MARK: - Helpers
@@ -114,5 +119,58 @@ final class AttachmentTempFileManagerTests: XCTestCase {
         sut.cleanup()
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    // MARK: - write / sweepAll (D7)
+
+    func test_write_putsTheFileIntoTheOwnerOnlyFolder() throws {
+        let url = try sut.write(Data("plain".utf8), fileExtension: "pdf", generation: sut.sweepGeneration)
+
+        XCTAssertEqual(url.deletingLastPathComponent().standardizedFileURL, folder.standardizedFileURL)
+        XCTAssertEqual(url.pathExtension, "pdf")
+        XCTAssertEqual(try Data(contentsOf: url), Data("plain".utf8))
+        let mode = try FileManager.default.attributesOfItem(atPath: folder.path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual(mode?.int16Value, 0o700)
+    }
+
+    func test_write_twice_givesTwoFiles() throws {
+        let first = try sut.write(Data("a".utf8), fileExtension: "txt", generation: sut.sweepGeneration)
+        let second = try sut.write(Data("b".utf8), fileExtension: "txt", generation: sut.sweepGeneration)
+        XCTAssertNotEqual(first, second)
+    }
+
+    func test_sweepAll_emptiesTheFolder_evenBeforeTheDeadline() throws {
+        let opened = try sut.write(Data("plain".utf8), fileExtension: "txt", generation: sut.sweepGeneration)
+        // A file left behind by an earlier run (crash) is not registered, but swept too.
+        let leftover = folder.appendingPathComponent("leftover.txt")
+        try Data("old".utf8).write(to: leftover)
+
+        sut.sweepAll()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: opened.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: leftover.path))
+    }
+
+    /// A file decrypted before a lock arrives after the sweep: it is never written (review 2026-10-30).
+    func test_write_afterASweep_isRefused_andLeavesNoFile() throws {
+        let generation = sut.sweepGeneration
+        sut.sweepAll()
+
+        XCTAssertThrowsError(try sut.write(Data("plain".utf8), fileExtension: "txt", generation: generation)) {
+            XCTAssertEqual($0 as? TempFileError, .sweptSinceDownload)
+        }
+        let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+        XCTAssertTrue(files.isEmpty)
+    }
+
+    func test_sweepAll_leavesFilesOutsideTheFolder() {
+        let outside = makeTempFile()
+        sut.sweepAll()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outside.path))
+    }
+
+    func test_sweepAll_withoutFolder_doesNothing() {
+        sut.sweepAll()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
     }
 }

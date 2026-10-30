@@ -13,7 +13,7 @@ final class VaultItemCopyTests: XCTestCase {
         content: .secureNote(SecureNoteContent(notes: "note", customFields: [])),
         reprompt: 1,
         attachments: [Attachment(id: "att-1", fileName: "a.txt", encryptedKey: "2.k|k|k", size: 10, sizeName: "10 B",
-                                url: nil, isUploadIncomplete: false)],
+                                url: nil)],
         folderId: "folder-1",
         organizationId: "org-1",
         collectionIds: ["col-1", "col-2"],

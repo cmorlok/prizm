@@ -41,17 +41,23 @@ final class AttachmentRepositoryImpl: AttachmentRepository {
     private let apiClient:       any PrizmAPIClientProtocol
     private let crypto:          any PrizmCryptoService
     private let vaultRepository: any VaultRepository
+    /// Takes the item from the server's upload and delete answers; nil means every change is
+    /// patched locally (`LegacyAttachmentListPatch`).
+    private let recordApplier:   (any AttachmentRecordApplying)?
 
     private let logger = Logger(subsystem: "com.prizm", category: "attachments")
 
+    /// `recordApplier` defaults to `vaultRepository` when that is the Data-layer implementation.
     init(
         apiClient:       any PrizmAPIClientProtocol,
         crypto:          any PrizmCryptoService,
-        vaultRepository: any VaultRepository
+        vaultRepository: any VaultRepository,
+        recordApplier:   (any AttachmentRecordApplying)? = nil
     ) {
         self.apiClient       = apiClient
         self.crypto          = crypto
         self.vaultRepository = vaultRepository
+        self.recordApplier   = recordApplier ?? (vaultRepository as? any AttachmentRecordApplying)
     }
 
     // MARK: - Upload
@@ -67,8 +73,11 @@ final class AttachmentRepositoryImpl: AttachmentRepository {
     /// 6. Upload the encrypted blob:
     ///    - fileUploadType 0: POST multipart to `/api/ciphers/{id}/attachment/{attachmentId}`.
     ///    - fileUploadType 1: PUT to the Azure signed URL with `x-ms-blob-type: BlockBlob`.
+    ///    Any failure here, cancellation included, deletes the record step 5 created before the
+    ///    error is reported, as the official clients do (fix-attachment-transfer-flow, D1).
     /// 7. Zero the attachment key and encrypted blob.
-    /// 8. Update the in-memory vault cache via `VaultRepository.updateAttachments`.
+    /// 8. Take the item from the v2 answer into the local vault, or patch the list locally when the
+    ///    answer has none (D5).
     func upload(cipherId: String, fileName: String, data: Data, cipherKey: Data) async throws -> Attachment {
         logger.debug("upload: starting for cipher=\(cipherId, privacy: .public) size=\(data.count, privacy: .public)B")
 
@@ -98,93 +107,144 @@ final class AttachmentRepositoryImpl: AttachmentRepository {
         let metaResponse: AttachmentMetadataResponse
         do {
             metaResponse = try await apiClient.createAttachmentMetadata(cipherId: cipherId, body: metaRequest)
-        } catch APIError.httpError(statusCode: 402, _) {
-            throw AttachmentError.premiumRequired
+        } catch {
+            throw Self.serverRejection(error) ?? error
         }
         logger.info("upload: metadata registered attachmentId=\(metaResponse.attachmentId, privacy: .public) type=\(metaResponse.fileUploadType, privacy: .public)")
 
-        // Step 6: Upload the encrypted blob.
-        switch metaResponse.fileUploadType {
+        // Step 6: Upload the encrypted blob; roll the record back on any failure.
+        do {
+            try await uploadBlob(encBlob, encryptedFileName: encFileName, for: metaResponse, cipherId: cipherId)
+        } catch {
+            try await rollBack(cipherId: cipherId, attachmentId: metaResponse.attachmentId, after: error)
+            throw Self.serverRejection(error) ?? error
+        }
+        logger.info("upload: blob uploaded for attachmentId=\(metaResponse.attachmentId, privacy: .public)")
+
+        // Built locally for the legacy patch and the return value: the server's record (with the
+        // encrypted size and a download URL) arrives with the answer's item or the next sync.
+        let sizeName = ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file)
+        let newAttachment = Attachment(
+            id:           metaResponse.attachmentId,
+            fileName:     fileName,
+            encryptedKey: encKey,
+            size:         data.count,
+            sizeName:     sizeName,
+            url:          nil
+        )
+
+        // Step 8: the item from the answer, else the local patch.
+        if !(await apply(metaResponse.cipherResponse, for: cipherId)) {
+            logger.info("upload: answer has no usable item, patching the list locally for \(cipherId, privacy: .public)")
+            let currentList = (try? await vaultRepository.allItems().first { $0.id == cipherId })?.attachments ?? []
+            await vaultRepository.updateAttachments(LegacyAttachmentListPatch.adding(newAttachment, to: currentList),
+                                                    for: cipherId)
+        }
+
+        return newAttachment
+    }
+
+    private func uploadBlob(_ encBlob: Data, encryptedFileName: String, for meta: AttachmentMetadataResponse,
+                            cipherId: String) async throws {
+        switch meta.fileUploadType {
         case 0:
             // Bitwarden-hosted: POST multipart to API.
             try await apiClient.uploadAttachmentBitwardenHosted(
-                cipherId:      cipherId,
-                attachmentId:  metaResponse.attachmentId,
-                encryptedBlob: encBlob
+                cipherId:          cipherId,
+                attachmentId:      meta.attachmentId,
+                encryptedFileName: encryptedFileName,
+                encryptedBlob:     encBlob
             )
         case 1:
-            // Azure Blob Storage: PUT to signed URL with Azure-required header.
-            guard let azureURL = URL(string: metaResponse.url) else {
+            // Azure Blob Storage: one PUT to the signed URL. No block upload or URL renewal: Prizm
+            // targets self-hosted servers, which use type 0 (D4).
+            guard let azureURL = URL(string: meta.url) else {
                 throw AttachmentError.downloadFailed
             }
             try await apiClient.uploadAttachmentAzure(signedURL: azureURL, encryptedBlob: encBlob)
         default:
-            logger.fault("upload: unknown fileUploadType=\(metaResponse.fileUploadType, privacy: .public)")
+            logger.fault("upload: unknown fileUploadType=\(meta.fileUploadType, privacy: .public)")
             throw AttachmentError.downloadFailed
         }
-        logger.info("upload: blob uploaded for attachmentId=\(metaResponse.attachmentId, privacy: .public)")
+    }
 
-        // Construct the returned Attachment.
-        // url = nil — the v2 response URL is the signed upload URL, not a download URL.
-        // The permanent download URL is provided by the server on the next sync.
-        // The download flow handles url = nil by fetching on demand.
-        let sizeName = ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file)
-        let newAttachment = Attachment(
-            id:                 metaResponse.attachmentId,
-            fileName:           fileName,
-            encryptedKey:       encKey,
-            size:               data.count,
-            sizeName:           sizeName,
-            url:                nil,
-            isUploadIncomplete: false
-        )
+    /// Deletes the record of a failed upload. Runs in its own task, so a cancelled upload still
+    /// sends it. When the delete fails too, the user is told a broken entry may remain.
+    private func rollBack(cipherId: String, attachmentId: String, after uploadError: Error) async throws {
+        logger.error("upload: file upload failed for \(attachmentId, privacy: .public), deleting its record: \(ErrorLog.describe(uploadError), privacy: .public)")
+        let apiClient = apiClient
+        let rollback = Task.detached {
+            _ = try await apiClient.deleteAttachment(cipherId: cipherId, attachmentId: attachmentId)
+        }
+        do {
+            try await rollback.value
+            logger.info("upload: record \(attachmentId, privacy: .public) deleted after the failed upload")
+        } catch let error as APIError where Self.isAlreadyGone(error) {
+            // Vaultwarden deletes the record itself when the uploaded size does not match.
+            logger.info("upload: record \(attachmentId, privacy: .public) was already gone: \(ErrorLog.describe(error), privacy: .public)")
+        } catch {
+            logger.error("upload: record \(attachmentId, privacy: .public) could not be deleted: \(ErrorLog.describe(error), privacy: .public)")
+            throw AttachmentError.uploadFailedRecordLeft
+        }
+    }
 
-        // Step 8: Patch the in-memory vault cache.
-        let currentList = (try? await vaultRepository.allItems().first { $0.id == cipherId })?.attachments ?? []
-        await vaultRepository.updateAttachments(currentList + [newAttachment], for: cipherId)
+    /// True for the answers that mean the attachment record does not exist: 404 (Bitwarden server)
+    /// or 400 "Attachment doesn't exist" (Vaultwarden 1.37.4, `src/api/core/ciphers.rs`).
+    private static func isAlreadyGone(_ error: APIError) -> Bool {
+        guard case .httpError(let status, let body) = error else { return false }
+        if status == 404 { return true }
+        return status == 400 && APIError.serverMessage(statusCode: 400, body: body) == "Attachment doesn't exist"
+    }
 
-        return newAttachment
+    /// `AttachmentError.serverRejected` for an HTTP 400 that carries a server message (both servers
+    /// send `message`; D3), else nil.
+    private static func serverRejection(_ error: Error) -> AttachmentError? {
+        guard case APIError.httpError(400, let body) = error,
+              let message = APIError.serverMessage(statusCode: 400, body: body) else { return nil }
+        return .serverRejected(message: message)
     }
 
     // MARK: - Download
 
     /// Downloads and decrypts the file blob for the given attachment.
     ///
-    /// Download flow:
-    /// 1. Obtain a download URL: use `Attachment.url` if non-nil; otherwise fetch a fresh URL
-    ///    via `GET /api/ciphers/{id}/attachment/{attachmentId}`.
-    /// 2. Fetch the encrypted blob from the URL.
-    /// 3. On HTTP 403 (stale signed URL): discard URL, re-fetch, retry blob download once.
-    ///    If the retry also fails, throw `AttachmentError.downloadFailed`.
-    /// 4. Decrypt the blob: unwrap the attachment key (EncString → 64 bytes) using the
+    /// Download flow, as the official clients (fix-attachment-transfer-flow, D2):
+    /// 1. Fetch a fresh download URL via `GET /api/ciphers/{id}/attachment/{attachmentId}`. The sync
+    ///    URL is signed for about 90 seconds on Vaultwarden, so it is used only when this request
+    ///    answers 404.
+    /// 2. Fetch the encrypted blob from the URL, never from a cache. A 404 means the server has no
+    ///    file for the record (`fileMissingOnServer`); there is no retry, the URL is already fresh.
+    /// 3. Decrypt the blob: unwrap the attachment key (EncString → 64 bytes) using the
     ///    cipher key, then decrypt the blob (binary IV‖ciphertext‖HMAC) using the attachment key.
-    /// 5. Zero key and blob buffers.
+    /// 4. Zero key and blob buffers.
     func download(cipherId: String, attachment: Attachment, cipherKey: Data) async throws -> Data {
         logger.debug("download: starting for cipher=\(cipherId, privacy: .public) attachment=\(attachment.id, privacy: .public)")
 
         let keys = try splitKey(cipherKey)
 
-        // Resolve initial download URL.
-        var downloadURL: URL
-        if let urlStr = attachment.url, let url = URL(string: urlStr) {
-            downloadURL = url
-        } else {
+        let downloadURL: URL
+        do {
             downloadURL = try await fetchFreshDownloadURL(cipherId: cipherId, attachmentId: attachment.id)
+        } catch let error as APIError where statusCode(of: error) == 404 {
+            guard let urlString = attachment.url, let syncURL = URL(string: urlString) else { throw error }
+            logger.info("download: no fresh URL for \(attachment.id, privacy: .public) (404), using the sync URL")
+            downloadURL = syncURL
+        } catch {
+            // D2 step 5: offline, an unreadable answer, or another status. Vaultwarden answers 400
+            // "Attachment doesn't exist" for a record deleted elsewhere; the next sync removes the row.
+            logger.error("download: no download URL for \(attachment.id, privacy: .public): \(ErrorLog.describe(error), privacy: .public)")
+            throw AttachmentError.downloadFailed
         }
 
-        // Fetch the encrypted blob (with one retry on 403).
         var encBlob: Data
         do {
-            encBlob = try await fetchBlob(from: downloadURL)
-        } catch let err as APIError where statusCode(of: err) == 403 {
-            logger.info("download: 403 on first attempt — fetching fresh URL for \(attachment.id, privacy: .public)")
-            downloadURL = try await fetchFreshDownloadURL(cipherId: cipherId, attachmentId: attachment.id)
-            do {
-                encBlob = try await fetchBlob(from: downloadURL)
-            } catch {
-                logger.error("download: retry failed for \(attachment.id, privacy: .public)")
-                throw AttachmentError.downloadFailed
-            }
+            encBlob = try await apiClient.downloadBlob(from: downloadURL)
+        } catch let error as APIError where statusCode(of: error) == 404 {
+            logger.error("download: the server has no file for \(attachment.id, privacy: .public)")
+            throw AttachmentError.fileMissingOnServer
+        } catch {
+            logger.error("download: failed for \(attachment.id, privacy: .public): \(ErrorLog.describe(error), privacy: .public)")
+            throw AttachmentError.downloadFailed
         }
         defer { encBlob.resetBytes(in: encBlob.indices) }
 
@@ -200,14 +260,24 @@ final class AttachmentRepositoryImpl: AttachmentRepository {
 
     // MARK: - Delete
 
-    /// Deletes the attachment from the server and patches the in-memory vault cache.
+    /// Deletes the attachment from the server, then takes the item from the answer into the local
+    /// vault, or patches the list locally when the answer has none (D5).
     func delete(cipherId: String, attachmentId: String) async throws {
         logger.debug("delete: cipher=\(cipherId, privacy: .public) attachment=\(attachmentId, privacy: .public)")
-        try await apiClient.deleteAttachment(cipherId: cipherId, attachmentId: attachmentId)
-        let currentList = (try? await vaultRepository.allItems().first { $0.id == cipherId })?.attachments ?? []
-        let updatedList = currentList.filter { $0.id != attachmentId }
-        await vaultRepository.updateAttachments(updatedList, for: cipherId)
-        logger.info("delete: removed \(attachmentId, privacy: .public) from cache")
+        let answer = try await apiClient.deleteAttachment(cipherId: cipherId, attachmentId: attachmentId)
+        if !(await apply(answer, for: cipherId)) {
+            logger.info("delete: answer has no usable item, patching the list locally for \(cipherId, privacy: .public)")
+            let currentList = (try? await vaultRepository.allItems().first { $0.id == cipherId })?.attachments ?? []
+            await vaultRepository.updateAttachments(LegacyAttachmentListPatch.removing(attachmentId, from: currentList),
+                                                    for: cipherId)
+        }
+        logger.info("delete: removed \(attachmentId, privacy: .public)")
+    }
+
+    /// Hands the answer's item to the vault; false when there is none or it was not applied.
+    private func apply(_ record: RawCipher?, for cipherId: String) async -> Bool {
+        guard let record, record.id == cipherId, let recordApplier else { return false }
+        return await recordApplier.applyAttachmentChange(record: record, for: cipherId)
     }
 
     // MARK: - Private helpers
@@ -237,11 +307,6 @@ final class AttachmentRepositoryImpl: AttachmentRepository {
             throw AttachmentError.downloadFailed
         }
         return url
-    }
-
-    /// Downloads the raw bytes from a signed URL via the injected API client.
-    private func fetchBlob(from url: URL) async throws -> Data {
-        try await apiClient.downloadBlob(from: url)
     }
 
     /// Extracts the status code from an `APIError.httpError`, or nil for other error types.

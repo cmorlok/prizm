@@ -33,7 +33,7 @@ final class AttachmentBatchViewModelTests: XCTestCase {
 
     private static let stubAttachment = Attachment(
         id: "att-1", fileName: "test.txt", encryptedKey: "2.a|b|c",
-        size: 100, sizeName: "100 B", url: nil, isUploadIncomplete: false
+        size: 100, sizeName: "100 B", url: nil
     )
 
     // MARK: - loadItems

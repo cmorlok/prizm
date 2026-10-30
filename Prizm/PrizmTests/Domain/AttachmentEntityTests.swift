@@ -9,7 +9,7 @@ final class AttachmentEntityTests: XCTestCase {
     func test_attachment_isValueType() {
         let a = Attachment(
             id: "att-1", fileName: "photo.jpg", encryptedKey: "2.abc|def|ghi",
-            size: 1024, sizeName: "1 KB", url: "https://example.com/file", isUploadIncomplete: false
+            size: 1024, sizeName: "1 KB", url: "https://example.com/file"
         )
         let copy = a
         // VaultItem is nonisolated struct — changes to 'a' must not affect 'copy'
@@ -22,11 +22,11 @@ final class AttachmentEntityTests: XCTestCase {
     func test_attachment_equatable() {
         let a = Attachment(
             id: "att-1", fileName: "doc.pdf", encryptedKey: "2.x|y|z",
-            size: 2048, sizeName: "2 KB", url: nil, isUploadIncomplete: true
+            size: 2048, sizeName: "2 KB", url: nil
         )
         let b = Attachment(
             id: "att-1", fileName: "doc.pdf", encryptedKey: "2.x|y|z",
-            size: 2048, sizeName: "2 KB", url: nil, isUploadIncomplete: true
+            size: 2048, sizeName: "2 KB", url: nil
         )
         XCTAssertEqual(a, b)
     }
@@ -34,31 +34,13 @@ final class AttachmentEntityTests: XCTestCase {
     func test_attachment_notEqual_differentId() {
         let a = Attachment(
             id: "att-1", fileName: "doc.pdf", encryptedKey: "2.x|y|z",
-            size: 2048, sizeName: "2 KB", url: nil, isUploadIncomplete: false
+            size: 2048, sizeName: "2 KB", url: nil
         )
         let b = Attachment(
             id: "att-2", fileName: "doc.pdf", encryptedKey: "2.x|y|z",
-            size: 2048, sizeName: "2 KB", url: nil, isUploadIncomplete: false
+            size: 2048, sizeName: "2 KB", url: nil
         )
         XCTAssertNotEqual(a, b)
-    }
-
-    func test_attachment_isUploadIncomplete_whenUrlNil() {
-        let a = Attachment(
-            id: "att-1", fileName: "doc.pdf", encryptedKey: "2.x|y|z",
-            size: 100, sizeName: "100 B", url: nil, isUploadIncomplete: true
-        )
-        XCTAssertTrue(a.isUploadIncomplete)
-        XCTAssertNil(a.url)
-    }
-
-    func test_attachment_isUploadComplete_whenUrlPresent() {
-        let a = Attachment(
-            id: "att-1", fileName: "doc.pdf", encryptedKey: "2.x|y|z",
-            size: 100, sizeName: "100 B", url: "https://cdn.example.com/file", isUploadIncomplete: false
-        )
-        XCTAssertFalse(a.isUploadIncomplete)
-        XCTAssertNotNil(a.url)
     }
 
     // MARK: - VaultItem.attachments default
@@ -75,7 +57,7 @@ final class AttachmentEntityTests: XCTestCase {
     func test_vaultItem_attachments_preservedInConstruction() {
         let att = Attachment(
             id: "att-1", fileName: "file.txt", encryptedKey: "2.a|b|c",
-            size: 64, sizeName: "64 B", url: nil, isUploadIncomplete: true
+            size: 64, sizeName: "64 B", url: nil
         )
         let item = VaultItem(
             id: "v-1", name: "Note", isFavorite: false, isDeleted: false,

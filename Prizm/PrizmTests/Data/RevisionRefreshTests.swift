@@ -210,7 +210,7 @@ final class RevisionRefreshTests: XCTestCase {
         try await seed([item], in: rig)
         rig.api.getCipherResponses["c1"] = try await record("c1", in: rig, revision: Self.r2)
         let attachment = Attachment(id: "att-1", fileName: "a.txt", encryptedKey: "2.k|k|k", size: 10,
-                                    sizeName: "10 B", url: nil, isUploadIncomplete: false)
+                                    sizeName: "10 B", url: nil)
         let vault = rig.vault
         rig.api.whileGettingCipher = { await vault.clearVault() }
 
@@ -334,7 +334,7 @@ final class RevisionRefreshTests: XCTestCase {
         // The official server bumps the revision on an attachment change; Vaultwarden does not.
         rig.api.getCipherResponses["c1"] = try await record("c1", in: rig, revision: Self.r2)
         let attachment = Attachment(id: "att-1", fileName: "a.txt", encryptedKey: "2.k|k|k", size: 10,
-                                    sizeName: "10 B", url: nil, isUploadIncomplete: false)
+                                    sizeName: "10 B", url: nil)
 
         await rig.vault.updateAttachments([attachment], for: "c1")
 
@@ -349,6 +349,74 @@ final class RevisionRefreshTests: XCTestCase {
         draft.name = "Renamed after the attachment"
         _ = try await rig.vault.update(draft)
         XCTAssertEqual(rig.api.callLog, ["GET c1", "PUT c1"], "The next edit passes the pre-check and is sent")
+    }
+
+    /// The upload and delete answers carry the item (fix-attachment-transfer-flow, D5): its
+    /// attachment list and revision are taken without a GET.
+    func testAttachmentAnswer_isTakenWithoutAGet() async throws {
+        let rig = await StaleWriteRig.make()
+        let attachment = Attachment(id: "att-1", fileName: "a.txt", encryptedKey: "2.k|k|k", size: 10,
+                                    sizeName: "10 B", url: nil)
+        let item = StaleWriteRig.login("c1").with(attachments: [attachment])
+        try await seed([item], in: rig)
+        // The answer to deleting att-1: the same item without attachments, one revision later.
+        let answer = try await record("c1", in: rig, revision: Self.r2, replacing: ["attachments": NSNull()])
+
+        let applied = await rig.vault.applyAttachmentChange(record: answer, for: "c1")
+
+        XCTAssertTrue(applied)
+        XCTAssertTrue(rig.api.getCipherCalls.isEmpty, "The answer needs no GET")
+        let stored = await rig.store.record(for: "c1")
+        XCTAssertEqual(stored?.revisionDate, Self.r2)
+        let cached = try await rig.vault.itemDetail(id: "c1")
+        try assertRevision(cached.revisionDate, is: Self.r2)
+        XCTAssertTrue(cached.attachments.isEmpty, "The list is the answer's")
+
+        var draft = DraftVaultItem(cached)
+        draft.name = "Renamed after the attachment"
+        _ = try await rig.vault.update(draft)
+        XCTAssertEqual(rig.api.callLog, ["PUT c1"], "The next edit passes the pre-check and is sent")
+    }
+
+    func testAttachmentAnswerForAnotherItem_isNotApplied() async throws {
+        let rig = await StaleWriteRig.make()
+        try await seed([StaleWriteRig.login("c1"), StaleWriteRig.login("c2")], in: rig)
+        let answer = try await record("c2", in: rig, revision: Self.r2)
+
+        let applied = await rig.vault.applyAttachmentChange(record: answer, for: "c1")
+
+        XCTAssertFalse(applied, "The caller falls back to LegacyAttachmentListPatch")
+        let stored = await rig.store.record(for: "c1")
+        XCTAssertEqual(stored?.revisionDate, Self.r1)
+    }
+
+    /// An answer without a readable revision is refused before the cached item changes, so the
+    /// cached list and the stored record stay in step (review 2026-10-30).
+    func testAttachmentAnswerWithoutRevision_changesNothing() async throws {
+        let rig = await StaleWriteRig.make()
+        let attachment = Attachment(id: "att-1", fileName: "a.txt", encryptedKey: "2.k|k|k", size: 10,
+                                    sizeName: "10 B", url: nil)
+        try await seed([StaleWriteRig.login("c1").with(attachments: [attachment])], in: rig)
+        let answer = try await record("c1", in: rig, revision: "not a date", replacing: ["attachments": NSNull()])
+
+        let applied = await rig.vault.applyAttachmentChange(record: answer, for: "c1")
+
+        XCTAssertFalse(applied, "The caller falls back to LegacyAttachmentListPatch")
+        let cached = try await rig.vault.itemDetail(id: "c1")
+        XCTAssertEqual(cached.attachments.map(\.id), ["att-1"])
+    }
+
+    func testAttachmentAnswerAfterLock_isNotApplied() async throws {
+        let rig = await StaleWriteRig.make()
+        try await seed([StaleWriteRig.login("c1")], in: rig)
+        let answer = try await record("c1", in: rig, revision: Self.r2)
+        await rig.vault.clearVault()
+
+        let applied = await rig.vault.applyAttachmentChange(record: answer, for: "c1")
+
+        XCTAssertFalse(applied)
+        let storedCount = await rig.store.count
+        XCTAssertEqual(storedCount, 0, "Nothing is stored after the lock")
     }
 
     func testFavorite_refreshesWithGet() async throws {

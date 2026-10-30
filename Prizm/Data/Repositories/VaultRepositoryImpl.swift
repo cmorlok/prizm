@@ -12,7 +12,7 @@ import os.log
 ///
 /// Thread safety: this type is a Swift `actor`. All mutations and reads execute on the
 /// actor's cooperative-thread-pool executor — never on the main thread.
-actor VaultRepositoryImpl: VaultRepository {
+actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
 
     private let logger = Logger(subsystem: "com.prizm", category: "VaultRepository")
 
@@ -858,6 +858,53 @@ actor VaultRepositoryImpl: VaultRepository {
         buildIndexes()
         logger.info("Vault item attachments updated: cipher=\(cipherId, privacy: .public) count=\(attachments.count, privacy: .public)")
         await refreshRecord(id: cipherId, from: nil, token: storeGeneration)
+    }
+
+    // MARK: - Attachment answers (fix-attachment-transfer-flow, D5)
+
+    /// Queued like `updateAttachments`, so it runs after earlier writes to the same item.
+    func applyAttachmentChange(record: RawCipher, for cipherId: String) async -> Bool {
+        let storeGeneration = recordStore.currentGeneration()
+        do {
+            return try await serialised([cipherId]) { [self] in
+                await performApplyAttachmentChange(record, for: cipherId, storeGeneration: storeGeneration)
+            }
+        } catch {
+            logger.error("applyAttachmentChange: queued write failed — id=\(cipherId, privacy: .public) \(ErrorLog.describe(error), privacy: .public)")
+            return false
+        }
+    }
+
+    private func performApplyAttachmentChange(_ record: RawCipher, for cipherId: String,
+                                              storeGeneration: RawCipherStore.Generation) async -> Bool {
+        // The answer must be this item's and carry a readable revision, as `refreshRecord` requires:
+        // checked before the cached list changes, so the list and the stored record stay in step.
+        guard record.id == cipherId, recordStore.isCurrent(storeGeneration),
+              let revision = CipherMapper.parseRevisionDate(record.revisionDate),
+              revision.timeIntervalSince1970 > 0 else { return false }
+        let vaultKeys: CryptoKeys
+        do {
+            vaultKeys = try await crypto.currentKeys()
+        } catch {
+            return false
+        }
+        let orgKeys = await orgKeyCache.snapshot()
+        let mapped: VaultItem
+        do {
+            mapped = try mapper.map(raw: record, vaultKeys: vaultKeys, orgKeys: orgKeys).item
+        } catch {
+            logger.error("applyAttachmentChange: answer for \(cipherId, privacy: .public) unreadable: \(ErrorLog.describe(error), privacy: .public)")
+            return false
+        }
+        // No suspension between this check and the cache write: a lock meanwhile gets nothing back.
+        guard recordStore.isCurrent(storeGeneration),
+              let idx = items.firstIndex(where: { $0.id == cipherId }) else { return false }
+        items[idx] = items[idx].with(attachments: mapped.attachments)
+        buildIndexes()
+        logger.info("Vault item attachments taken from the server's answer: cipher=\(cipherId, privacy: .public) count=\(mapped.attachments.count, privacy: .public)")
+        // Stores the answer as the record and moves the cached revision to it; no fetch.
+        await refreshRecord(id: cipherId, from: record, token: storeGeneration)
+        return true
     }
 
     // MARK: - Folder CRUD

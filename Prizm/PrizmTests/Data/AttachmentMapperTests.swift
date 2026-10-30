@@ -2,7 +2,7 @@ import XCTest
 @testable import Prizm
 
 /// Tests for `AttachmentMapper`.
-/// Verifies all field mappings including decryption, size parsing, and isUploadIncomplete logic.
+/// Verifies all field mappings including decryption, size parsing and the optional URL.
 final class AttachmentMapperTests: XCTestCase {
 
     private var sut: AttachmentMapper!
@@ -97,21 +97,15 @@ final class AttachmentMapperTests: XCTestCase {
         XCTAssertEqual(result.url, "https://cdn.bitwarden.net/attachment/abc123")
     }
 
-    // MARK: - isUploadIncomplete
+    // MARK: - Missing URL
 
-    func test_map_isUploadIncomplete_whenUrlIsNil() throws {
+    /// A missing sync URL is normal (the download fetches a fresh one), not a broken upload
+    /// (fix-attachment-transfer-flow, D2).
+    func test_map_nilURL_staysNil() throws {
         let enc = try makeEncryptedFileName("f.txt")
         let dto = makeDTO(fileName: enc, url: nil)
         let result = try sut.map(dto, cipherKey: cipherKey)
-        XCTAssertTrue(result.isUploadIncomplete)
         XCTAssertNil(result.url)
-    }
-
-    func test_map_isUploadComplete_whenUrlPresent() throws {
-        let enc = try makeEncryptedFileName("f.txt")
-        let dto = makeDTO(fileName: enc, url: "https://cdn.example.com/file")
-        let result = try sut.map(dto, cipherKey: cipherKey)
-        XCTAssertFalse(result.isUploadIncomplete)
     }
 
     // MARK: - null attachments → empty array (tested via CipherMapper)

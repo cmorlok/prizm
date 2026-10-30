@@ -28,7 +28,7 @@ final class AttachmentAddViewModelTests: XCTestCase {
     private func makeViewModel(
         uploadResult: Result<Attachment, Error> = .success(
             Attachment(id: "att-1", fileName: "doc.txt", encryptedKey: "2.a|b|c",
-                       size: 22, sizeName: "22 B", url: nil, isUploadIncomplete: false)
+                       size: 22, sizeName: "22 B", url: nil)
         ),
         pickerResult: (url: URL, bytes: Int)?
     ) -> AttachmentAddViewModel {
@@ -107,7 +107,7 @@ final class AttachmentAddViewModelTests: XCTestCase {
         let sut = makeViewModel(
             uploadResult: .success(
                 Attachment(id: "att-1", fileName: "doc.txt", encryptedKey: "2.a|b|c",
-                           size: 22, sizeName: "22 B", url: nil, isUploadIncomplete: false)
+                           size: 22, sizeName: "22 B", url: nil)
             ),
             pickerResult: (url: tempFileURL, bytes: 22)
         )
@@ -116,11 +116,12 @@ final class AttachmentAddViewModelTests: XCTestCase {
         XCTAssertTrue(sut.isUploading)
     }
 
-    // MARK: - Premium error (HTTP 402)
+    // MARK: - Server rejection (fix-attachment-transfer-flow, D3)
 
-    func test_confirm_premiumRequired_setsUploadError() async throws {
+    func test_confirm_serverRejected_showsTheServerMessage() async throws {
         let sut = makeViewModel(
-            uploadResult: .failure(AttachmentError.premiumRequired),
+            uploadResult: .failure(AttachmentError.serverRejected(
+                message: "You must have premium status to use attachments.")),
             pickerResult: (url: tempFileURL, bytes: 22)
         )
         await sut.selectFile()
@@ -130,8 +131,8 @@ final class AttachmentAddViewModelTests: XCTestCase {
 
         XCTAssertNotNil(sut.uploadError)
         XCTAssertFalse(sut.isDismissed)
-        XCTAssertTrue(sut.uploadError?.contains("premium") ?? false,
-            "Error message should mention premium subscription")
+        XCTAssertEqual(sut.uploadError,
+            "The server rejected the upload: You must have premium status to use attachments.")
     }
 
     // MARK: - Cancel during upload
@@ -188,7 +189,7 @@ final class AttachmentAddViewModelTests: XCTestCase {
             cipherId:      "cipher-1",
             uploadUseCase: MockUploadUseCase(result: .success(
                 Attachment(id: "att-1", fileName: "doc.txt", encryptedKey: "2.a|b|c",
-                           size: 22, sizeName: "22 B", url: nil, isUploadIncomplete: false)
+                           size: 22, sizeName: "22 B", url: nil)
             )),
             filePicker: {
                 observedDuringPicker = sutRef?.isPickingFile
@@ -211,7 +212,7 @@ final class AttachmentAddViewModelTests: XCTestCase {
             cipherId:      "cipher-1",
             uploadUseCase: MockUploadUseCase(result: .success(
                 Attachment(id: "att-1", fileName: "doc.txt", encryptedKey: "2.a|b|c",
-                           size: 22, sizeName: "22 B", url: nil, isUploadIncomplete: false)
+                           size: 22, sizeName: "22 B", url: nil)
             )),
             filePicker: { [] }  // simulate user cancelling NSOpenPanel
         )

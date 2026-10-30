@@ -145,7 +145,8 @@ Want to shift something up the list? [Open an issue](https://github.com/b0x42/pr
 - **macOS 26 required** — The app uses SwiftUI features only available in macOS 26.
 - **Passkeys not supported** — SSH key items are viewable but passkey-based login is not implemented.
 - **No offline vault creation** — Creating or editing items requires an active server connection.
-- **Attachment size limit** — Files larger than 500 MB are rejected. Bitwarden-hosted servers require a premium subscription for attachments; Vaultwarden is unaffected.
+- **Attachment size limit** — Files larger than 500 MB are rejected. When a server refuses an upload (for example, attachments need a premium account, or the storage limit is reached), Prizm shows the server's message.
+- **Azure-backed servers** — Uploads to Azure-backed servers (Bitwarden cloud) larger than 256 MB may fail; Prizm sends each file in one request instead of Azure blocks.
 
 ## Contributing
 

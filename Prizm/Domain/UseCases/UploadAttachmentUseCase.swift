@@ -17,8 +17,8 @@ protocol UploadAttachmentUseCase: AnyObject {
     ///   - cipherId:  The vault item to attach the file to.
     ///   - fileName:  Plaintext file name.
     ///   - data:      Raw file bytes.
-    /// - Returns: The newly created `Attachment` record (`isUploadIncomplete = false`).
-    /// - Throws: `AttachmentError.premiumRequired` on HTTP 402.
+    /// - Returns: The newly created `Attachment` record.
+    /// - Throws: `AttachmentError.serverRejected` or `.uploadFailedRecordLeft` (see `AttachmentRepository.upload`).
     /// - Throws: `VaultError.vaultLocked` if the vault is locked.
     func execute(cipherId: String, fileName: String, data: Data) async throws -> Attachment
 }

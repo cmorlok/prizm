@@ -6,15 +6,16 @@ import os.log
 
 /// ViewModel for a single attachment row in the vault item detail pane (task 7.1).
 ///
-/// Manages Open, Save to Disk, Delete, and Retry Upload actions for one attachment.
+/// Manages Open, Save to Disk and Delete for one attachment.
 ///
 /// - Security goal: plaintext file bytes are written to a temp file for Open, and to a
-///   user-chosen path for Save. The temp file is zeroed and deleted after 30 seconds
-///   (or on next foreground) by `TempFileManaging`. For Save, the plaintext is written
-///   directly and the in-memory buffer is zeroed immediately after (Constitution §III).
+///   user-chosen path for Save. The temp file lives in the folder `TempFileManaging` owns and is
+///   zeroed and deleted after 30 seconds, on the next foreground, and on lock, sign-out, quit and
+///   launch (fix-attachment-transfer-flow, D7). For Save, the plaintext is written directly and
+///   the in-memory buffer is zeroed immediately after (Constitution §III).
 ///
-/// - `attachment.isUploadIncomplete` drives the UI: when true, the row shows "Upload
-///   incomplete" + Retry; otherwise it shows Open / Save / Delete.
+/// - A download that finds no file on the server sets `isFileMissing`; the row then offers only
+///   Delete (fix-attachment-transfer-flow, D2).
 ///
 /// - AppKit dependencies (`NSWorkspace`, `NSSavePanel`, `NSOpenPanel`) are injected as
 ///   closures from the App layer (`AppContainer`) to keep the Presentation layer free of
@@ -29,18 +30,15 @@ final class AttachmentRowViewModel {
     let attachment:                   Attachment       // accessed by view
     private let downloadUseCase:      any DownloadAttachmentUseCase
     private let deleteUseCase:        any DeleteAttachmentUseCase
-    private let uploadUseCase:        any UploadAttachmentUseCase
     private let tempFileManager:      any TempFileManaging
     /// Injectable file-saver closure. Provided by AppContainer (defaults to NSSavePanel).
     private let fileSaver:            @MainActor (_ suggestedName: String) -> URL?
-    /// Injectable file-picker for Retry. Provided by AppContainer (defaults to NSOpenPanel).
-    private let retryFilePicker:      @MainActor () -> URL?
     /// Injectable file-opener closure. Provided by AppContainer (defaults to NSWorkspace.shared.open).
     private let fileOpener:           @MainActor (_ url: URL) -> Void
 
     private let logger = Logger(subsystem: "com.prizm", category: "attachments")
 
-    /// Called after a successful delete or retry-upload so the parent view can refresh
+    /// Called after a successful delete so the parent view can refresh
     /// `itemSelection` and reflect the updated attachment list without waiting for a sync.
     var onAttachmentChanged: (() -> Void)? = nil
 
@@ -48,8 +46,10 @@ final class AttachmentRowViewModel {
 
     private(set) var isLoading:   Bool    = false
     private(set) var actionError: String? = nil
-    private(set) var isRetrying:  Bool    = false
-    private(set) var retryError:  String? = nil
+    /// True once a download found no file for this attachment on the server.
+    private(set) var isFileMissing = false
+
+    static let missingFileNote = "The file is missing on the server"
 
     // MARK: - Init
 
@@ -58,20 +58,16 @@ final class AttachmentRowViewModel {
         attachment:      Attachment,
         downloadUseCase: any DownloadAttachmentUseCase,
         deleteUseCase:   any DeleteAttachmentUseCase,
-        uploadUseCase:   any UploadAttachmentUseCase,
         tempFileManager: any TempFileManaging,
         fileSaver:       @escaping @MainActor (_ suggestedName: String) -> URL?,
-        retryFilePicker: @escaping @MainActor () -> URL?,
         fileOpener:      @escaping @MainActor (_ url: URL) -> Void
     ) {
         self.cipherId        = cipherId
         self.attachment      = attachment
         self.downloadUseCase = downloadUseCase
         self.deleteUseCase   = deleteUseCase
-        self.uploadUseCase   = uploadUseCase
         self.tempFileManager = tempFileManager
         self.fileSaver       = fileSaver
-        self.retryFilePicker = retryFilePicker
         self.fileOpener      = fileOpener
     }
 
@@ -82,6 +78,7 @@ final class AttachmentRowViewModel {
         isLoading   = true
         actionError = nil
 
+        let generation = tempFileManager.sweepGeneration
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -89,10 +86,16 @@ final class AttachmentRowViewModel {
                     cipherId:   self.cipherId,
                     attachment: self.attachment
                 )
-                let tmpURL = try self.writeTempFile(data: data)
+                let ext = URL(fileURLWithPath: self.attachment.fileName).pathExtension
+                let tmpURL: URL
+                do {
+                    tmpURL = try self.tempFileManager.write(data, fileExtension: ext, generation: generation)
+                } catch {
+                    data.resetBytes(in: data.indices)
+                    throw error
+                }
                 data.resetBytes(in: data.indices)
                 self.fileOpener(tmpURL)
-                self.tempFileManager.register(url: tmpURL)
 
                 Task {
                     try? await Task.sleep(for: .seconds(30))
@@ -100,9 +103,11 @@ final class AttachmentRowViewModel {
                 }
 
                 self.logger.info("open: opened \(self.attachment.id, privacy: .public)")
+            } catch TempFileError.sweptSinceDownload {
+                // The vault locked during the download; the row is gone, so nothing is shown.
+                self.logger.info("open: \(self.attachment.id, privacy: .public) not opened, the vault locked during the download")
             } catch {
-                self.actionError = "Could not open file: \(error.localizedDescription)"
-                self.logger.error("open failed: \(ErrorLog.describe(error), privacy: .public)")
+                self.report(error, action: "open")
             }
             self.isLoading = false
         }
@@ -130,8 +135,7 @@ final class AttachmentRowViewModel {
                 data.resetBytes(in: data.indices)
                 self.logger.info("saveToDisk: saved \(self.attachment.id, privacy: .public)")
             } catch {
-                self.actionError = "Could not save file: \(error.localizedDescription)"
-                self.logger.error("saveToDisk failed: \(ErrorLog.describe(error), privacy: .public)")
+                self.report(error, action: "save")
             }
             self.isLoading = false
         }
@@ -161,59 +165,16 @@ final class AttachmentRowViewModel {
         }
     }
 
-    // MARK: - Retry Upload (task 6d.2)
-
-    func retryUpload() {
-        guard !isRetrying, attachment.isUploadIncomplete else { return }
-        isRetrying  = true
-        retryError  = nil
-
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            guard let fileURL = self.retryFilePicker() else {
-                self.isRetrying = false
-                return
-            }
-
-            var fileData: Data
-            do {
-                fileData = try Data(contentsOf: fileURL)
-            } catch {
-                self.retryError = "Could not read file: \(error.localizedDescription)"
-                self.isRetrying = false
-                return
-            }
-
-            do {
-                try await self.deleteUseCase.execute(
-                    cipherId:     self.cipherId,
-                    attachmentId: self.attachment.id
-                )
-                _ = try await self.uploadUseCase.execute(
-                    cipherId: self.cipherId,
-                    fileName: self.attachment.fileName,
-                    data:     fileData
-                )
-                fileData.resetBytes(in: fileData.indices)
-                self.onAttachmentChanged?()
-                self.logger.info("retryUpload: succeeded for \(self.attachment.id, privacy: .public)")
-            } catch {
-                fileData.resetBytes(in: fileData.indices)
-                self.retryError = "Retry failed: \(error.localizedDescription)"
-                self.logger.error("retryUpload failed: \(ErrorLog.describe(error), privacy: .public)")
-            }
-
-            self.isRetrying = false
-        }
-    }
-
     // MARK: - Private helpers
 
-    private func writeTempFile(data: Data) throws -> URL {
-        let ext  = URL(fileURLWithPath: attachment.fileName).pathExtension
-        let name = ext.isEmpty ? UUID().uuidString : "\(UUID().uuidString).\(ext)"
-        let url  = FileManager.default.temporaryDirectory.appendingPathComponent(name)
-        try data.write(to: url)
-        return url
+    /// A missing file turns the row into the missing-file state; anything else is an inline error.
+    private func report(_ error: Error, action: String) {
+        if case AttachmentError.fileMissingOnServer = error {
+            isFileMissing = true
+            actionError = nil
+        } else {
+            actionError = "Could not \(action) file: \(error.localizedDescription)"
+        }
+        logger.error("\(action, privacy: .public) failed: \(ErrorLog.describe(error), privacy: .public)")
     }
 }
