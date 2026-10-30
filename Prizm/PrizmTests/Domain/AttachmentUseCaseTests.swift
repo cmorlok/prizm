@@ -36,6 +36,12 @@ private final class MockVaultKeyService: VaultKeyService, @unchecked Sendable {
         cipherKeyCalled = true
         return try keyResult.get()
     }
+
+    var personalKeyCalled = false
+    func personalKey() async throws -> Data {
+        personalKeyCalled = true
+        return Data(repeating: 0xEE, count: 64)
+    }
 }
 
 // MARK: - UploadAttachmentUseCaseImpl Tests

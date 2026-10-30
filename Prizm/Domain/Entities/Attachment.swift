@@ -30,4 +30,8 @@ nonisolated struct Attachment: Identifiable, Equatable, Hashable {
     /// answers 404, as the official clients do (fix-attachment-transfer-flow, D2). Nil right after
     /// an upload whose answer carried no item.
     let url: String?
+    /// True for an attachment of an organization item without its own key whose file name and key
+    /// were encrypted with the user's personal key (Prizm before fix-org-attachment-key). Only this
+    /// user can open it; the download unwraps its key with the personal key (design D3).
+    var wrappedWithPersonalKey: Bool = false
 }

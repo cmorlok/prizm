@@ -188,6 +188,8 @@ nonisolated enum AccessibilityID {
         static func deleteButton(_ id: String) -> String { "attachment.row.\(id).delete" }
         /// The "The file is missing on the server" note of a row whose download found no file.
         static func missingFileNote(_ id: String) -> String { "attachment.row.\(id).missingFile" }
+        /// The "Only you can open this file" note of an org attachment wrapped with the personal key.
+        static func personalKeyNote(_ id: String) -> String { "attachment.row.\(id).personalKey" }
     }
 
     // MARK: - Password Generator (password-generator)

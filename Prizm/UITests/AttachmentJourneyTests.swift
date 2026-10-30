@@ -52,7 +52,7 @@ final class AttachmentJourneyTests: PrizmUITestCase {
 
     func testAttachmentSection_preSeededRow_isVisible() {
         _ = openItemWithAttachment()
-        XCTAssertTrue(app.attachmentElement(.staticText, Fixture.attachmentFileName).waitForExistence(timeout: 5),
+        XCTAssertTrue(app.attachmentElement(containing: Fixture.attachmentFileName).waitForExistence(timeout: 5),
                       "The seeded attachment row must show the file name")
     }
 
@@ -61,7 +61,7 @@ final class AttachmentJourneyTests: PrizmUITestCase {
     /// Opening downloads the file from the server.
     func testAttachmentOpen_progressResolvesWithoutError() throws {
         _ = openItemWithAttachment()
-        XCTAssertTrue(app.attachmentElement(.staticText, Fixture.attachmentFileName).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.attachmentElement(containing: Fixture.attachmentFileName).waitForExistence(timeout: 5))
         try UITestPrerequisite.serverDownloads()
     }
 
@@ -70,7 +70,7 @@ final class AttachmentJourneyTests: PrizmUITestCase {
     /// Deleting removes the attachment on the server.
     func testAttachmentDelete_removesRow() throws {
         _ = openItemWithAttachment()
-        XCTAssertTrue(app.attachmentElement(.staticText, Fixture.attachmentFileName).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.attachmentElement(containing: Fixture.attachmentFileName).waitForExistence(timeout: 5))
         try UITestPrerequisite.serverWrites()
     }
 }

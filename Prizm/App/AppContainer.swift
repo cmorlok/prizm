@@ -109,8 +109,8 @@ final class AppContainer: ObservableObject {
         let profileIds    = ProfileIdCache()
         // Exactly one store: sync fills it, `clearVault()` (lock and sign-out) empties it.
         let recordStore   = RawCipherStore()
-        let vault         = VaultRepositoryImpl(apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache, profileIds: profileIds, recordStore: recordStore)
-        let vaultKeyService = VaultKeyServiceImpl(cache: keyCache, crypto: crypto)
+        let vault         = VaultRepositoryImpl(apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache, profileIds: profileIds, recordStore: recordStore, vaultKeyCache: keyCache)
+        let vaultKeyService = VaultKeyServiceImpl(cache: keyCache, orgKeyCache: orgKeyCache, crypto: crypto)
 
         let auth = AuthRepositoryImpl(
             apiClient: api,

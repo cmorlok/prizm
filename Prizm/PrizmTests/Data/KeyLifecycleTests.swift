@@ -61,7 +61,7 @@ final class KeyLifecycleTests: XCTestCase {
     func testSignOut_clearsBothKeyCaches() async throws {
         await orgKeyCache.replaceAll(with: ["org-1": CryptoKeys(encryptionKey: Data(repeating: 1, count: 32),
                                                                 macKey: Data(repeating: 2, count: 32))])
-        await vaultKeyCache.populate(keys: ["c1": Data(repeating: 3, count: 64)])
+        await vaultKeyCache.populate(sources: ["c1": .itemKey(Data(repeating: 3, count: 64))])
 
         let zeroedOrgKeys = Mutex<[OrgKeyCache.ZeroedOrgKey]>([])
         await orgKeyCache.setZeroedObserver { key in zeroedOrgKeys.withLock { $0.append(key) } }
@@ -90,7 +90,7 @@ final class KeyLifecycleTests: XCTestCase {
     func testSignInWithDifferentAccount_clearsBothKeyCaches() async throws {
         await orgKeyCache.replaceAll(with: ["org-1": CryptoKeys(encryptionKey: Data(repeating: 1, count: 32),
                                                                 macKey: Data(repeating: 2, count: 32))])
-        await vaultKeyCache.populate(keys: ["c1": Data(repeating: 3, count: 64)])
+        await vaultKeyCache.populate(sources: ["c1": .itemKey(Data(repeating: 3, count: 64))])
         let unlock = UnlockViewModel(auth: sut, sync: MockSyncUseCase(),
                                      account: Account(userId: "u1", email: "a@example.com", name: nil,
                                                       serverEnvironment: env))

@@ -16,7 +16,11 @@ final class DownloadAttachmentUseCaseImpl: DownloadAttachmentUseCase {
     }
 
     func execute(cipherId: String, attachment: Attachment) async throws -> Data {
-        let cipherKey = try await vaultKeyService.cipherKey(for: cipherId)
+        // An org attachment that earlier versions wrapped with the personal key opens only with
+        // that key (fix-org-attachment-key, D3); everything else uses the item's effective key.
+        let cipherKey = attachment.wrappedWithPersonalKey
+            ? try await vaultKeyService.personalKey()
+            : try await vaultKeyService.cipherKey(for: cipherId)
         return try await repository.download(cipherId: cipherId, attachment: attachment, cipherKey: cipherKey)
     }
 }

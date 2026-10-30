@@ -58,7 +58,9 @@ nonisolated final class AttachmentMapper: Sendable {
         } catch let e as AttachmentMapperError {
             throw e
         } catch {
-            Self.logger.error("Attachment fileName decryption failed: \(ErrorLog.describe(error), privacy: .public)")
+            // Debug only: `CipherMapper` may retry with the personal key (fix-org-attachment-key, D3)
+            // and logs the outcome, so a successful second attempt is not reported as an error.
+            Self.logger.debug("Attachment fileName decryption failed: \(ErrorLog.describe(error), privacy: .public)")
             throw AttachmentMapperError.fileNameDecryptionFailed
         }
 

@@ -197,7 +197,7 @@ final class EffectiveKeyReadTests: XCTestCase {
         XCTAssertEqual(result.failedCount, 1, "the mixed-key item is counted, not retried under the vault key")
         XCTAssertEqual(result.items.map(\.id), ["a-keyless", "b-keyed", "d-keyed"], "the others keep their input order")
         XCTAssertEqual(try login(result.items[1]).username, "u", "a keyed item decrypts under its own key next to a keyless one")
-        XCTAssertEqual(result.cipherKeys["b-keyed"], itemKey.toData())
+        XCTAssertEqual(result.keySources["b-keyed"], .itemKey(itemKey.toData()))
     }
 
     func testKeyedItemWhoseKeyIsWrappedWithAnotherKey_isDroppedAndCounted() async throws {

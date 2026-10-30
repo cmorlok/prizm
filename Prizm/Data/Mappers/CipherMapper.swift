@@ -170,6 +170,7 @@ nonisolated final class CipherMapper: Sendable {
             do {
                 return try attachmentMapper.map(dto, cipherKey: effective)
             } catch {
+                if let found = personalKeyAttachment(dto, of: raw, vaultKeys: vaultKeys) { return found }
                 Self.logger.error("Attachment mapping failed for cipher \(raw.id, privacy: .public): \(ErrorLog.describe(error), privacy: .public)")
                 return nil
             }
@@ -193,6 +194,24 @@ nonisolated final class CipherMapper: Sendable {
         return (item: item, cipherKey: effective.toData())
     }
 
+    /// An attachment of an organization item without its own key that Prizm before
+    /// fix-org-attachment-key wrapped with the personal vault key, flagged so it stays listed and
+    /// opens with that key (design D3); `nil` for every other item or when the vault key fails too.
+    ///
+    /// - Security goal: the attachment the user uploaded does not vanish from the list while its
+    ///   file still uses storage. The extra attempt uses a key the user already holds, and the
+    ///   EncString MAC is verified before any decryption, so it cannot produce wrong plaintext.
+    /// - Intentionally NOT done: the attempt for personal items or items with their own key;
+    ///   Prizm always used the right key for those.
+    private func personalKeyAttachment(_ dto: AttachmentDTO, of raw: RawCipher, vaultKeys: CryptoKeys) -> Attachment? {
+        guard raw.organizationId != nil, raw.key == nil,
+              let attachment = try? attachmentMapper.map(dto, cipherKey: vaultKeys) else { return nil }
+        Self.logger.info("Attachment \(dto.id, privacy: .public) of cipher \(raw.id, privacy: .public) is wrapped with the personal key")
+        var flagged = attachment
+        flagged.wrappedWithPersonalKey = true
+        return flagged
+    }
+
     /// Backward-compatible overload — passes empty orgKeys (personal vault, no org support).
     func map(raw: RawCipher, keys: CryptoKeys) throws -> (item: VaultItem, cipherKey: Data) {
         try map(raw: raw, vaultKeys: keys, orgKeys: [:])
@@ -207,8 +226,8 @@ nonisolated final class CipherMapper: Sendable {
     /// - Security goal: an item that another Bitwarden client gave its own key (`key` is non-nil)
     ///   is read entirely under that key. Reading its fields under the vault or organization key
     ///   would drop the item at sync, and worse, would let a mixed-key item be listed and later
-    ///   edited with the wrong key. The write path uses this same function (never the key cache,
-    ///   which falls back to the vault key) so what is read and what is written agree.
+    ///   edited with the wrong key. The write path uses this same function (never the key cache)
+    ///   so what is read and what is written agree.
     /// - Algorithm: `key` is an EncString type 2 (AES-256-CBC, HMAC-SHA256 verified before decrypt,
     ///   Bitwarden Security Whitepaper §4, "Cipher Key Wrapping") holding 64 bytes, the AES key
     ///   followed by the MAC key. The Bitwarden SDK does the same in `decrypt_cipher_key`: a cipher

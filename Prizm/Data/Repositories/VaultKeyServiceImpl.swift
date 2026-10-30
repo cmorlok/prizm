@@ -5,62 +5,63 @@ import os.log
 
 /// Concrete implementation of `VaultKeyService`.
 ///
-/// Returns the effective 64-byte cipher key (encryptionKey ‖ macKey) for a given
-/// vault item. Key resolution order:
+/// Returns the effective 64-byte cipher key (encryptionKey ‖ macKey) for a vault item from the
+/// key source the last sync or create recorded in `VaultKeyCache` (fix-org-attachment-key, D1):
 ///
-/// 1. **Cache hit** — If `VaultKeyCache` has a per-item key for the cipher ID
-///    (populated at sync time by `SyncRepositoryImpl`), return it directly.
-/// 2. **Cache miss** — If the cache has no entry for the cipher ID, fall back to the
-///    vault-level key: call `crypto.currentKeys()` and concatenate
-///    `keys.encryptionKey + keys.macKey` → 64-byte `Data`. This handles:
-///    - Ciphers with no per-item key (use vault-level key directly, per Bitwarden spec).
-///    - Newly created ciphers that have not yet appeared in a sync response.
+/// 1. `.itemKey(k)` → `k`.
+/// 2. `.organization(id)` → the key of that organization in `OrgKeyCache`, read now, so a key
+///    replaced by the latest sync is used; missing → `VaultError.organizationKeyUnavailable`.
+/// 3. `.personal` → the vault key from `crypto.currentKeys()` (locked → `VaultError.vaultLocked`).
+/// 4. No entry → `VaultError.cipherKeyUnavailable`.
 ///
-/// **Important**: a missing cache entry does NOT indicate a locked vault. The vault-locked
-/// condition is detected only by `crypto.currentKeys()` throwing
-/// `PrizmCryptoServiceError.vaultLocked`, which is translated to `VaultError.vaultLocked`.
-///
-/// - Security goal: prevents key material from reaching the Presentation layer by
-///   resolving keys only at the Data/Domain boundary (Constitution §II/§III).
-/// - Algorithm: AES-256-CBC key (32 bytes) ‖ HMAC-SHA256 key (32 bytes) per
-///   Bitwarden Security Whitepaper §4.
-/// - Deviations: none. The 64-byte concatenation format matches the Bitwarden client
-///   reference implementation.
-/// - What is NOT done: no key material is persisted beyond the vault lock lifecycle;
-///   `VaultKeyCache` is cleared on lock alongside `VaultRepositoryImpl`.
+/// - Security goal: attachment keys and file names are wrapped with the key official clients use
+///   for the item, so other organization members can open them, and key material never reaches
+///   the Presentation layer (Constitution §II/§III).
+/// - Algorithm: AES-256-CBC key (32 bytes) ‖ HMAC-SHA256 key (32 bytes) per Bitwarden Security
+///   Whitepaper §4; key selection per SDK `bitwarden-vault/src/cipher/cipher.rs`
+///   (`decrypt_cipher_key`, `key_identifier`, `make_attachment_material`).
+/// - Deviations: none.
+/// - What is NOT done: no fallback to the vault key for an organization item or an unknown item.
+///   Before this change a cache miss returned the vault key, which wrapped org attachments with
+///   the wrong key. No key material is persisted beyond the vault lock lifecycle.
 final class VaultKeyServiceImpl: VaultKeyService {
 
-    private let cache:  VaultKeyCache
-    private let crypto: any PrizmCryptoService
+    private let cache:       VaultKeyCache
+    private let orgKeyCache: OrgKeyCache
+    private let crypto:      any PrizmCryptoService
 
     private let logger = Logger(subsystem: "com.prizm", category: "attachments")
 
-    init(cache: VaultKeyCache, crypto: any PrizmCryptoService) {
-        self.cache  = cache
-        self.crypto = crypto
+    init(cache: VaultKeyCache, orgKeyCache: OrgKeyCache, crypto: any PrizmCryptoService) {
+        self.cache       = cache
+        self.orgKeyCache = orgKeyCache
+        self.crypto      = crypto
     }
 
     func cipherKey(for cipherId: String) async throws -> Data {
-        // 1. Try the per-item key cache (populated at sync time).
-        if let cachedKey = await cache.key(for: cipherId) {
-            return cachedKey
+        switch await cache.source(for: cipherId) {
+        case .itemKey(let key):
+            return key
+        case .organization(let orgId):
+            guard let orgKeys = await orgKeyCache.snapshot()[orgId] else {
+                logger.error("VaultKeyServiceImpl: no key for org \(orgId.prefix(8), privacy: .public)… of cipher \(cipherId, privacy: .public)")
+                throw VaultError.organizationKeyUnavailable
+            }
+            return orgKeys.toData()
+        case .personal:
+            return try await personalKey()
+        case nil:
+            logger.error("VaultKeyServiceImpl: no key source for cipher \(cipherId, privacy: .public)")
+            throw VaultError.cipherKeyUnavailable
         }
+    }
 
-        // 2. Cache miss — fall back to the vault-level key.
-        // A missing cache entry is NOT a sign of a locked vault; it means the cipher
-        // either has no per-item key, or was created after the last sync.
-        logger.debug("VaultKeyServiceImpl: no per-item key for cipher \(cipherId, privacy: .public) — using vault key")
-
-        let keys: CryptoKeys
+    func personalKey() async throws -> Data {
         do {
-            keys = try await crypto.currentKeys()
+            return try await crypto.currentKeys().toData()
         } catch PrizmCryptoServiceError.vaultLocked {
             logger.error("VaultKeyServiceImpl: vault is locked — cannot resolve cipher key")
             throw VaultError.vaultLocked
         }
-
-        // Concatenate encryptionKey ‖ macKey to form the 64-byte effective cipher key.
-        // Both fields are 32 bytes each (Constitution §II — CryptoKeys struct).
-        return keys.encryptionKey + keys.macKey
     }
 }
