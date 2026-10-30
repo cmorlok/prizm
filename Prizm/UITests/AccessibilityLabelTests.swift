@@ -30,6 +30,30 @@ final class AccessibilityLabelTests: PrizmUITestCase {
         XCTAssertFalse(gear.label.isEmpty, "Settings button must have a non-empty label")
     }
 
+    /// The gear stays in the sidebar toolbar, not in the overflow menu, when the sidebar is dragged
+    /// to its narrowest width, and the sidebar stops at its minimum of 220 pt
+    /// (fix-settings-gear-visible, task 1.3).
+    func testSettingsGear_staysVisible_atNarrowestSidebar() {
+        let window = app.windows.firstMatch
+        let sidebar = app.sidebar
+        // Drag the column divider (just right of the sidebar) far to the left.
+        let start = window.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: sidebar.frame.maxX + 1 - window.frame.minX, dy: sidebar.frame.midY - window.frame.minY))
+        // Far enough to reach the minimum from any restored width.
+        start.press(forDuration: 0.3, thenDragTo: start.withOffset(CGVector(dx: -sidebar.frame.width, dy: 0)))
+
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 2), "The sidebar must not collapse")
+        let width = sidebar.frame.maxX - window.frame.minX
+        print("Sidebar right edge after the drag: \(width) pt from the window's left edge")
+        XCTAssertGreaterThanOrEqual(width, 215, "The sidebar stops at its minimum width (220 pt)")
+        XCTAssertLessThanOrEqual(width, 230, "The drag reached the minimum width")
+
+        let gear = app.buttons["vault.settings"]
+        XCTAssertTrue(gear.waitForExistence(timeout: 3), "Settings button must exist")
+        XCTAssertTrue(gear.isHittable, "Settings button must be visible, not in the toolbar overflow")
+        XCTAssertLessThanOrEqual(gear.frame.maxX, sidebar.frame.maxX + 2, "The gear sits in the sidebar's toolbar")
+    }
+
     func testNewItemButtonHasLabel() {
         let plus = app.menuButtons["create.button.newItem"]
         XCTAssertTrue(plus.waitForExistence(timeout: 5), "New Item button must exist")
