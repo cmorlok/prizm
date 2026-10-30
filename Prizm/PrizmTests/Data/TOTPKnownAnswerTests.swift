@@ -51,6 +51,51 @@ final class TOTPKnownAnswerTests: XCTestCase {
         (20000000000,  "65353130", "77737706", "47863826"),
     ]
 
+    // MARK: - Bitwarden SDK vectors (sdk-internal c1c9b9a5, `totp.rs` test_generate_totp and the
+    // URI tests at :424-487), all at 2023-01-01T00:00:00Z (totp-parity, design D4)
+
+    private let sdkTime = Date(timeIntervalSince1970: 1_672_531_200)
+
+    func test_sdkVectors() async throws {
+        let vectors: [(seed: String, code: String)] = [
+            ("WQIQ25BRKZYCJVYP", "194506"),
+            ("wqiq25brkzycjvyp", "194506"),
+            ("PIUDISEQYA", "829846"),
+            ("PIUDISEQYA======", "829846"),
+            ("PIUD1IS!EQYA=", "829846"),
+            ("steam://HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ", "7W6CJ"),
+            ("StEam://HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ", "7W6CJ"),
+            ("steam://ABCD123", "N26DF"),
+            ("ddfdf", "932653"),
+            ("HJSGFJHDFDJDJKSDFD", "000034"),
+            ("xvdsfasdfasdasdghsgsdfg", "403786"),
+            ("KAKFJWOSFJ12NWL", "093430"),
+            ("OTPauth://totp/test-account?secret=WQIQ25BRKZYCJVYP", "194506"),
+            ("otpauth://totp/test-account?secret=WQIQ25BRKZYCJVYP&period=60", "730364"),
+            ("otpauth://totp/test-account?secret=WQIQ25BRKZYCJVYP&algorithm=SHA256", "842615"),
+        ]
+        let useCase = makeUseCase()
+        for vector in vectors {
+            let code = try await useCase.execute(seed: vector.seed, at: sdkTime)
+            XCTAssertEqual(code.digits, vector.code, vector.seed)
+        }
+    }
+
+    func test_sdkBase32Decoding() throws {
+        // `decode_b32("ABCD123")` in the SDK (totp.rs:386-387).
+        XCTAssertEqual(try TOTPSeedParser.parse("steam://ABCD123").secret, Data([0, 68, 61]))
+    }
+
+    /// Ten digits keep RFC 4226 arithmetic (design D3). RFC 4226 Appendix D, counter 3: the
+    /// truncated value is 1726969429, above 1 410 065 408, where the SDK's u32 power wraps and would
+    /// show 0316904021.
+    func test_tenDigits_useRfcArithmetic() async throws {
+        let code = try await makeUseCase().execute(
+            seed: "otpauth://totp/x?secret=\(base32(sha1Secret))&digits=10&period=30",
+            at: Date(timeIntervalSince1970: 100))
+        XCTAssertEqual(code.digits, "1726969429")
+    }
+
     func test_rfc6238_sha1() async throws {
         let useCase = makeUseCase()
         for row in rfc6238 {

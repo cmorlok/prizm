@@ -262,7 +262,8 @@ enum UITestFixtures {
                 LoginURI(uri: "file:///Applications/Calculator.app", matchType: nil),
                 LoginURI(uri: "example.com/login", matchType: nil),
             ], hiddenURICount: 1),  // uri-checksum-validation: one website failed its checksum
-            login(id: "delta", name: "Delta Bad Seed", totp: "not-a-seed!"),
+            // A counter-based seed: never a valid time-based code, so "unavailable" (totp-parity, D2).
+            login(id: "delta", name: "Delta Bad Seed", totp: "otpauth://hotp/Delta:me?secret=\(rfcSeed)&counter=1"),
             login(id: "zeta", name: "Zeta Trashed", totp: rfcSeed, isDeleted: true),
             login(id: "kappa", name: "Kappa Login", totp: nil, isFavorite: true, attachments: [
                 Attachment(id: "att1", fileName: "kappa-notes.txt", encryptedKey: "", size: 1024,

@@ -5,7 +5,8 @@ import Foundation
 /// Behavior (RFC 6238 §4, RFC 4226 §5):
 /// - counter = floor(unixSeconds / period), encoded as 8 bytes big-endian;
 /// - HMAC of the counter keyed with the seed, then dynamic truncation and modulo 10^digits,
-///   zero-padded to the configured length;
+///   zero-padded to the configured length, or five Steam Guard characters for a `steam://` seed
+///   (totp-parity, D4);
 /// - `secondsRemaining = period - (unixSeconds mod period)`.
 ///
 /// Pure with respect to its arguments, and it needs no vault key, so it works whenever the

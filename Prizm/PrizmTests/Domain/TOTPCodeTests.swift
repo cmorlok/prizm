@@ -15,6 +15,18 @@ final class TOTPCodeTests: XCTestCase {
         XCTAssertEqual(TOTPCode(digits: "1234567", period: 30, secondsRemaining: 10).grouped, "123 4567")
     }
 
+    func test_grouped_onlyAboveFourCharacters() {
+        XCTAssertEqual(TOTPCode(digits: "7", period: 30, secondsRemaining: 10).grouped, "7")
+        XCTAssertEqual(TOTPCode(digits: "1234", period: 30, secondsRemaining: 10).grouped, "1234")
+        XCTAssertEqual(TOTPCode(digits: "1234567890", period: 30, secondsRemaining: 10).grouped, "12345 67890")
+    }
+
+    func test_steam_groupsTwoThree_andCopiesWithoutSpace() {
+        let code = TOTPCode(digits: "7W6CJ", period: 30, secondsRemaining: 10)
+        XCTAssertEqual(code.grouped, "7W 6CJ")
+        XCTAssertEqual(code.copyValue, "7W6CJ")
+    }
+
     func test_copyValue_hasNoSpace() {
         XCTAssertEqual(TOTPCode(digits: "123456", period: 30, secondsRemaining: 10).copyValue, "123456")
     }

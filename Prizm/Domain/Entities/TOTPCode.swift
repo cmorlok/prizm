@@ -3,16 +3,18 @@ import Foundation
 /// A one-time code ready to display: the digits, the validity period it came from, and how long
 /// is left. Never persisted; it is shown, copied, and discarded (see data-model.md).
 nonisolated struct TOTPCode: Equatable {
-    /// Exactly `configuration.digits` characters, zero-padded (RFC 4226 §5.3 keeps leading zeros).
+    /// Exactly `configuration.digits` characters: zero-padded digits (RFC 4226 §5.3 keeps leading
+    /// zeros), or Steam Guard letters and digits.
     let digits: String
     /// Validity period in seconds, copied from the configuration.
     let period: Int
     /// 1 to `period`. Equals `period` exactly at a period boundary.
     let secondsRemaining: Int
 
-    /// The code split in the middle for readability ("123 456"). Authenticator apps commonly
-    /// group six digits as 3+3; other lengths split with the smaller half first.
+    /// The code split in the middle for readability ("123 456"), with the smaller half first, as
+    /// the official apps do; codes of up to four characters stay whole (totp-parity, design D4a).
     var grouped: String {
+        guard digits.count > 4 else { return digits }
         let split = digits.count / 2
         let head = digits.prefix(split)
         let tail = digits.dropFirst(split)
