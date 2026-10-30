@@ -122,12 +122,12 @@ actor SyncRepositoryImpl: SyncRepository {
                 acc[c.type, default: 0] += 1
             }
             let orgCount = syncResponse.ciphers.filter { $0.organizationId != nil }.count
-            let typeNames = [1: "login", 2: "identity", 3: "note", 4: "card", 5: "sshKey"]
+            let typeNames = [1: "login", 2: "secureNote", 3: "card", 4: "identity", 5: "sshKey"]
             let breakdown = typeCounts
                 .sorted(by: { $0.key < $1.key })
                 .map { "\(typeNames[$0.key] ?? "type\($0.key)")=\($0.value)" }
                 .joined(separator: " ")
-            logger.debug("[debug] cipher breakdown: \(breakdown, privacy: .public) org(skipped)=\(orgCount, privacy: .public)")
+            logger.debug("[debug] cipher breakdown: \(breakdown, privacy: .public) org=\(orgCount, privacy: .public)")
         }
 
         // Phase 2: Decrypt personal ciphers via the crypto service.

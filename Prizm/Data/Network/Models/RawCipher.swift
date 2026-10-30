@@ -336,7 +336,8 @@ nonisolated extension RawURI: Codable {
 
     func encode(to encoder: Encoder) throws {
         var w = WireWriter(encoder)
-        try w.put(uri, "uri")
+        // A website stored without an address goes back as `uri: null` (lossless-item-fields).
+        try w.putOrNull(uri, "uri")
         try w.put(match, "match")
         try w.put(uriChecksum, "uriChecksum")
         try w.putExtras(extras, excluded: Self.excludedKeys)
@@ -530,7 +531,8 @@ nonisolated extension RawField: Codable {
     func encode(to encoder: Encoder) throws {
         var w = WireWriter(encoder)
         try w.put(type, "type")
-        try w.put(name, "name")
+        // A nameless field goes back as `name: null` (lossless-item-fields).
+        try w.putOrNull(name, "name")
         try w.put(value, "value")
         try w.put(linkedId, "linkedId")
         try w.putExtras(extras, excluded: Self.excludedKeys)

@@ -176,6 +176,15 @@ nonisolated struct WireWriter {
         written.insert(name)
     }
 
+    /// Writes `value` under `name`, and an explicit `null` when it is nil. For the members the
+    /// official clients send as `null` and Prizm must not drop: Vaultwarden stores the request
+    /// JSON as sent, so an omitted key stays absent on the server (fix-read-mapping-lossless-fields;
+    /// live rig 2026-10-30).
+    mutating func putOrNull<T: Encodable>(_ value: T?, _ name: String) throws {
+        if let value { try container.encode(value, forKey: WireKey(name)) } else { try container.encodeNil(forKey: WireKey(name)) }
+        written.insert(name)
+    }
+
     /// Writes every extras entry that is not already written and not excluded.
     mutating func putExtras(_ extras: [String: JSONValue], excluded: Set<String>) throws {
         for (name, value) in extras where !written.contains(name) && !excluded.contains(name) {

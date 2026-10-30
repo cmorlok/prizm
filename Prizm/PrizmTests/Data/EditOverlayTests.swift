@@ -495,7 +495,8 @@ final class EditOverlayTests: XCTestCase {
             var fields = (json["fields"] as? [[String: Any]]) ?? []
             fields[0]["tag"] = "on-a"
             fields[1]["tag"] = "on-b"
-            // A field without a name: Prizm does not list it, so nothing can match it.
+            // A field without a name: kept and paired with the draft's nameless field
+            // (fix-read-mapping-lossless-fields, design D4).
             fields.insert(["type": 0, "tag": "on-nameless"], at: 0)
             json["fields"] = fields
         }
@@ -503,15 +504,19 @@ final class EditOverlayTests: XCTestCase {
 
     private func tags(_ fields: [RawField]) -> [JSONValue?] { fields.map { $0.extras["tag"] } }
 
+    /// The decrypted names, nil for a field sent without one.
+    private func names(_ fields: [RawField]) throws -> [String?] {
+        try fields.map { field in try field.name.map { try decrypt($0, keys: vaultKeys) } }
+    }
+
     func testCustomFieldUnknownKeys_followTheirFieldWhenNothingChanged() async throws {
         let record = try recordWithTaggedFields()
 
         let sent = try await save(record)
 
         let fields = try XCTUnwrap(sent.fields)
-        XCTAssertEqual(try fields.map { try decrypt($0.name, keys: vaultKeys) }, ["Field A", "Field B"])
-        XCTAssertEqual(tags(fields), [.string("on-a"), .string("on-b")])
-        XCTAssertFalse(try encoded(sent).description.contains("on-nameless"), "a nameless stored field is not sent")
+        XCTAssertEqual(try names(fields), [nil, "Field A", "Field B"])
+        XCTAssertEqual(tags(fields), [.string("on-nameless"), .string("on-a"), .string("on-b")])
     }
 
     func testCustomFieldUnknownKeys_followTheirFieldWhenReordered() async throws {
@@ -524,8 +529,8 @@ final class EditOverlayTests: XCTestCase {
         }
 
         let fields = try XCTUnwrap(sent.fields)
-        XCTAssertEqual(try fields.map { try decrypt($0.name, keys: vaultKeys) }, ["Field B", "Field A"])
-        XCTAssertEqual(tags(fields), [.string("on-b"), .string("on-a")])
+        XCTAssertEqual(try names(fields), ["Field B", "Field A", nil])
+        XCTAssertEqual(tags(fields), [.string("on-b"), .string("on-a"), .string("on-nameless")])
     }
 
     func testCustomFieldUnknownKeys_droppedForARemovedField() async throws {
@@ -533,13 +538,13 @@ final class EditOverlayTests: XCTestCase {
 
         let sent = try await save(record) { draft in
             guard case .login(var login) = draft.content else { return }
-            login.customFields.removeFirst()  // field A goes
+            login.customFields.removeAll { $0.name == "Field A" }
             draft.content = .login(login)
         }
 
         let fields = try XCTUnwrap(sent.fields)
-        XCTAssertEqual(try fields.map { try decrypt($0.name, keys: vaultKeys) }, ["Field B"])
-        XCTAssertEqual(tags(fields), [.string("on-b")])
+        XCTAssertEqual(try names(fields), [nil, "Field B"])
+        XCTAssertEqual(tags(fields), [.string("on-nameless"), .string("on-b")])
         XCTAssertFalse(try encoded(sent).description.contains("on-a"), "nothing of the removed field is sent")
     }
 

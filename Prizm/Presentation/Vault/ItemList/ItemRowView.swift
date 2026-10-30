@@ -119,8 +119,8 @@ struct ItemRowView: View {
 
     private func primaryDomain(for item: VaultItem) -> String? {
         guard case .login(let l) = item.content,
-              let first = l.uris.first else { return nil }
-        return URL(string: first.uri)?.host
+              let first = l.firstAddress else { return nil }
+        return URL(string: first)?.host
     }
 
     private func itemType(for item: VaultItem) -> ItemType {

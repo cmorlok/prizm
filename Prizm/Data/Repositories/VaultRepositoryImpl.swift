@@ -1350,7 +1350,7 @@ nonisolated private extension VaultItem {
         switch content {
         case .login(let l):
             return (l.username?.localizedCaseInsensitiveContains(query) == true) ||
-                   l.uris.contains { $0.uri.localizedCaseInsensitiveContains(query) }
+                   l.uris.contains { $0.uri?.localizedCaseInsensitiveContains(query) == true }
         case .card(let c):
             return c.cardholderName?.localizedCaseInsensitiveContains(query) == true
         case .identity(let i):

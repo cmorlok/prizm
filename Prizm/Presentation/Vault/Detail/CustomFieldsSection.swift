@@ -8,6 +8,8 @@ import SwiftUI
 /// - `hidden` fields: masked, revealable.
 /// - `boolean` fields: checkbox icon (read-only in v1).
 /// - `linked` fields: shown as read-only label with linked field name.
+/// - fields of a type Prizm does not know: masked and revealable, read-only, labelled as unsupported
+///   (fix-read-mapping-lossless-fields, design D3). Masked because a newer type may hold a secret.
 struct CustomFieldsSection: View {
 
     let fields: [CustomField]
@@ -31,7 +33,7 @@ struct CustomFieldsSection: View {
         switch field.type {
         case .text:
             FieldRowView(
-                label:  field.name,
+                label:  field.displayName,
                 value:  field.value,
                 itemId: itemId,
                 onCopy: onCopy
@@ -39,7 +41,7 @@ struct CustomFieldsSection: View {
 
         case .hidden:
             FieldRowView(
-                label:    field.name,
+                label:    field.displayName,
                 value:    field.value,
                 itemId:   itemId,
                 isMasked: true,
@@ -49,7 +51,7 @@ struct CustomFieldsSection: View {
         case .boolean:
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(field.name)
+                    Text(field.displayName)
                         .font(Typography.fieldLabel)
                         .foregroundStyle(.secondary)
                     Image(systemName: field.value == "true" ? "checkmark.square" : "square")
@@ -63,10 +65,10 @@ struct CustomFieldsSection: View {
         case .linked:
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(field.name)
+                    Text(field.displayName)
                         .font(Typography.fieldLabel)
                         .foregroundStyle(.secondary)
-                    Text("→ \(field.linkedId?.displayName ?? "Unknown Field")")
+                    Text("→ \(field.linkedId?.displayName ?? LinkedFieldId.unknownDisplayName)")
                         .font(Typography.fieldValue)
                         .foregroundStyle(.secondary)
                 }
@@ -74,6 +76,43 @@ struct CustomFieldsSection: View {
             }
             .padding(.vertical, Spacing.rowVertical)
             .padding(.horizontal, Spacing.rowHorizontal)
+
+        case .unknown:
+            FieldRowView(
+                label:    field.unsupportedLabel,
+                value:    field.value,
+                itemId:   itemId,
+                isMasked: true,
+                onCopy:   onCopy
+            )
         }
     }
+}
+
+// MARK: - Labels
+
+/// Texts for values that the server can hold but Prizm cannot interpret
+/// (openspec change `fix-read-mapping-lossless-fields`, design D2 and D3).
+extension CustomField {
+    /// The field's name, or "Unnamed field" for a field stored without one.
+    var displayName: String { name ?? CustomFieldLabels.unnamed }
+
+    /// Row label of a field whose type Prizm does not know.
+    var unsupportedLabel: String { CustomFieldLabels.unsupported(displayName) }
+}
+
+extension DraftCustomField {
+    var displayName: String { name ?? CustomFieldLabels.unnamed }
+}
+
+extension LinkedFieldId {
+    /// Shown when a linked field has no target at all.
+    static let unknownDisplayName = LinkedFieldId.unknown(0).displayName
+}
+
+enum CustomFieldLabels {
+    static let unnamed = "Unnamed field"
+    static let unsupportedType = "Unsupported field type"
+
+    static func unsupported(_ name: String) -> String { "\(name) (\(unsupportedType))" }
 }

@@ -180,19 +180,63 @@ nonisolated struct LoginContent: Equatable, Hashable {
     let customFields: [CustomField]
 }
 
+nonisolated extension LoginContent {
+    /// The websites that have an address, in stored order: what the detail view lists, opens and
+    /// copies. A website without one is kept only so a save sends it back.
+    var addressedURIs: [LoginURI] { uris.filter { $0.uri != nil } }
+
+    /// The first website address, for the favicon and Copy Website.
+    var firstAddress: String? { uris.lazy.compactMap(\.uri).first }
+}
+
 nonisolated struct LoginURI: Equatable, Hashable {
-    let uri: String
+    /// Nil for a website stored without an address. Kept as nil, so a save sends it back unchanged
+    /// (openspec change `fix-read-mapping-lossless-fields`, design D1); never shown or opened.
+    let uri: String?
     let matchType: URIMatchType?
 }
 
 /// URI-matching strategy used when auto-filling (stored per URI, not used in v1 display).
-nonisolated enum URIMatchType: Int, Equatable, Hashable {
-    case domain = 0
-    case host = 1
-    case startsWith = 2
-    case exact = 3
-    case regularExpression = 4
-    case never = 5
+/// Raw values are Bitwarden's `UriMatchType`; nil on `LoginURI` means the default rule.
+///
+/// `unknown` keeps a rule Prizm does not know, so a save sends the same integer back instead of
+/// resetting it to the default (`fix-read-mapping-lossless-fields`, design D3). `init(rawValue:)`
+/// therefore never fails.
+nonisolated enum URIMatchType: RawRepresentable, Equatable, Hashable {
+    case domain
+    case host
+    case startsWith
+    case exact
+    case regularExpression
+    case never
+    /// A value Prizm does not know, kept so it is sent back unchanged. Built by `init(rawValue:)`
+    /// only: `.unknown` with a known raw value would compare equal to that case (`RawRepresentable`
+    /// equality compares raw values).
+    case unknown(Int)
+
+    init(rawValue: Int) {
+        switch rawValue {
+        case 0:  self = .domain
+        case 1:  self = .host
+        case 2:  self = .startsWith
+        case 3:  self = .exact
+        case 4:  self = .regularExpression
+        case 5:  self = .never
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    var rawValue: Int {
+        switch self {
+        case .domain:            return 0
+        case .host:              return 1
+        case .startsWith:        return 2
+        case .exact:             return 3
+        case .regularExpression: return 4
+        case .never:             return 5
+        case .unknown(let raw):  return raw
+        }
+    }
 }
 
 // MARK: - Card

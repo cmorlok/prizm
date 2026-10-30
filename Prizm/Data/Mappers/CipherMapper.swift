@@ -6,8 +6,7 @@ import os.log
 
 /// Errors that can be thrown by `CipherMapper.map(raw:keys:)`.
 nonisolated enum CipherMapperError: Error, Equatable {
-    /// The cipher belongs to an organisation and is intentionally skipped in
-    /// the personal vault view (organizationId != nil).
+    /// The cipher belongs to an organisation whose key is not available, so it is skipped.
     case organisationCipherSkipped
     /// The cipher has an unknown `type` integer.
     case unsupportedCipherType(Int)
@@ -31,7 +30,7 @@ nonisolated enum CipherMapperError: Error, Equatable {
 ///   Swift structs, so the Presentation layer never imports or calls crypto code.
 ///   Decryption failures are surfaced once during sync rather than scattered across the UI.
 /// - Map the raw `type` integer to a typed `ItemContent` enum case.
-/// - Filter out organisation ciphers (`organizationId != nil`) — personal vault only.
+/// - Decrypt organisation ciphers with their organisation's key.
 /// - Map raw `RawField` array to `[CustomField]` domain values.
 ///
 /// **What this class does NOT do**:
@@ -372,11 +371,11 @@ nonisolated final class CipherMapper: Sendable {
         keys:   CryptoKeys
     ) throws -> ItemContent {
         let login = data ?? RawLoginData(username: nil, password: nil, uris: [], totp: nil)
-        let uris: [LoginURI] = try (login.uris ?? []).compactMap { rawURI in
-            guard let encUri = rawURI.uri else { return nil }
-            let uriStr = try decryptRequired(encUri, field: "uri", keys: keys)
-            let match  = rawURI.match.flatMap { URIMatchType(rawValue: $0) }
-            return LoginURI(uri: uriStr, matchType: match)
+        // A website without an address and a match rule Prizm does not know are kept as they are,
+        // so a save sends them back unchanged (fix-read-mapping-lossless-fields, D1 and D3).
+        let uris: [LoginURI] = try (login.uris ?? []).map { rawURI in
+            LoginURI(uri: try rawURI.uri.map { try decryptRequired($0, field: "uri", keys: keys) },
+                     matchType: rawURI.match.map(URIMatchType.init(rawValue:)))
         }
         return .login(LoginContent(
             username:     try login.username.map { try decryptRequired($0, field: "username", keys: keys) },
@@ -478,14 +477,15 @@ nonisolated final class CipherMapper: Sendable {
     // MARK: - Custom Fields
 
     private func mapFields(_ rawFields: [RawField], keys: CryptoKeys) throws -> [CustomField] {
-        try rawFields.compactMap { raw in
-            // name is required for CustomField; skip fields with no name
-            guard let rawName = raw.name else { return nil }
-            let name     = try decryptRequired(rawName, field: "field.name", keys: keys)
-            let value    = try raw.value.map { try decryptRequired($0, field: "field.value", keys: keys) }
-            let type     = CustomFieldType(rawValue: raw.type) ?? .text
-            let linkedId = raw.linkedId.flatMap { LinkedFieldId(rawValue: $0) }
-            return CustomField(name: name, value: value, type: type, linkedId: linkedId)
+        // A field without a name, a type and a linked id Prizm does not know are kept as they are,
+        // so a save sends them back unchanged (fix-read-mapping-lossless-fields, D1 and D3).
+        try rawFields.map { raw in
+            CustomField(
+                name:     try raw.name.map  { try decryptRequired($0, field: "field.name",  keys: keys) },
+                value:    try raw.value.map { try decryptRequired($0, field: "field.value", keys: keys) },
+                type:     CustomFieldType(rawValue: raw.type),
+                linkedId: raw.linkedId.map(LinkedFieldId.init(rawValue:))
+            )
         }
     }
 
@@ -675,21 +675,30 @@ nonisolated final class CipherMapper: Sendable {
         // backstop). Every other address gets a checksum computed from the exact string that is
         // encrypted as `uri`, under the same keys, so official clients accept it.
         //
+        // A website read without an address (nil) goes back with `uri: null` and the stored entry's
+        // checksum as received; none is computed for it, as the SDK's `generate_checksum` computes
+        // none without an address (fix-read-mapping-lossless-fields, design D4).
+        //
         // On a save, each address takes the unknown keys of the stored address with the same text
         // (first unused match), not of the one at the same position: the edit sheet adds, removes and
-        // reorders websites. A stored address's text is read here under the item's key because it is a
+        // reorders websites. A value-less website takes those of the next unused stored one without
+        // an address. A stored address's text is read here under the item's key because it is a
         // field Prizm shows anyway; it is a comparison key and is not kept.
         var storedURIs = try readStoredURIs(base?.uris, keys: keys)
-        let rawURIs: [RawURI] = try c.uris.filter { !$0.uri.isEmpty }.map { uri in
-            var extras: [String: JSONValue] = [:]
+        let rawURIs: [RawURI] = try c.uris.filter { $0.uri?.isEmpty != true }.map { uri in
+            var stored: (text: String?, checksum: String?, extras: [String: JSONValue])?
             if let match = storedURIs.firstIndex(where: { $0.text == uri.uri }) {
-                extras = storedURIs.remove(at: match).extras
+                stored = storedURIs.remove(at: match)
+            }
+            guard let address = uri.uri else {
+                return RawURI(uri: nil, match: uri.matchType?.rawValue,
+                              uriChecksum: stored?.checksum, extras: stored?.extras ?? [:])
             }
             return RawURI(
-                uri: try encryptString(uri.uri, keys: keys),
+                uri: try encryptString(address, keys: keys),
                 match: uri.matchType?.rawValue,
-                uriChecksum: try encryptString(Self.uriChecksumPlaintext(uri.uri), keys: keys),
-                extras: extras
+                uriChecksum: try encryptString(Self.uriChecksumPlaintext(address), keys: keys),
+                extras: stored?.extras ?? [:]
             )
         }
         return RawLoginData(
@@ -818,9 +827,10 @@ nonisolated final class CipherMapper: Sendable {
     ///
     /// The stored names are read under the item's key only for this comparison, as stored websites
     /// are: they are local `String`s that are never kept or logged (a Swift `String` cannot be
-    /// zeroed; the key check's `Data` is). A stored field without a name is not listed by Prizm, so
-    /// nothing can match it. Stored fields that no draft field takes are dropped, and only the
-    /// count is logged, never names or values.
+    /// zeroed; the key check's `Data` is). A draft field without a name takes those of the next
+    /// unused stored field without a name and of the same type (design D4 of
+    /// `fix-read-mapping-lossless-fields`). Stored fields that no draft field takes are dropped, and
+    /// only the count is logged, never names or values.
     ///
     /// - Throws: `CipherMapperError.storedValueUnreadable("field.name")` when a stored name does not
     ///   decrypt under `keys`; the key check ran before, so this means a damaged record, and the save
@@ -836,7 +846,8 @@ nonisolated final class CipherMapper: Sendable {
             }
             return RawField(
                 type:     f.type.rawValue,
-                name:     try encryptString(f.name, keys: keys),
+                // A field read without a name goes back without one (fix-read-mapping-lossless-fields).
+                name:     try f.name.map { try encryptString($0, keys: keys) },
                 value:    try f.value.map { try encryptString($0, keys: keys) },
                 linkedId: f.linkedId?.rawValue,
                 extras:   extras
@@ -849,15 +860,14 @@ nonisolated final class CipherMapper: Sendable {
         return rawFields
     }
 
-    /// The name, type and unknown keys of the stored custom fields that have a name, in stored order.
-    /// The type is read the way `mapFields` reads it, so it compares with the draft's type.
+    /// The name (nil without one), type and unknown keys of the stored custom fields, in stored
+    /// order. The type is read the way `mapFields` reads it, so it compares with the draft's type.
     private func readStoredFields(_ stored: [RawField]?, keys: CryptoKeys) throws
-        -> [(name: String, type: CustomFieldType, extras: [String: JSONValue])] {
-        try (stored ?? []).compactMap { field in
-            guard let encrypted = field.name else { return nil }
+        -> [(name: String?, type: CustomFieldType, extras: [String: JSONValue])] {
+        try (stored ?? []).map { field in
             do {
-                return (try decryptRequired(encrypted, field: "field.name", keys: keys),
-                        CustomFieldType(rawValue: field.type) ?? .text,
+                return (try field.name.map { try decryptRequired($0, field: "field.name", keys: keys) },
+                        CustomFieldType(rawValue: field.type),
                         field.extras)
             } catch {
                 throw CipherMapperError.storedValueUnreadable("field.name")
@@ -865,16 +875,18 @@ nonisolated final class CipherMapper: Sendable {
         }
     }
 
-    /// The text and unknown keys of the stored addresses that have a value, in stored order.
+    /// The text (nil without an address), checksum as received and unknown keys of the stored
+    /// addresses, in stored order. The checksum is used only for an address that is still nil.
     ///
     /// Throws `CipherMapperError.storedValueUnreadable("uri")` when one does not decrypt under
     /// `keys`; the key check ran before, so this means a damaged record, and the save fails instead
     /// of guessing which addresses carried which keys.
-    private func readStoredURIs(_ stored: [RawURI]?, keys: CryptoKeys) throws -> [(text: String, extras: [String: JSONValue])] {
-        try (stored ?? []).compactMap { uri in
-            guard let encrypted = uri.uri else { return nil }
+    private func readStoredURIs(_ stored: [RawURI]?, keys: CryptoKeys) throws
+        -> [(text: String?, checksum: String?, extras: [String: JSONValue])] {
+        try (stored ?? []).map { uri in
             do {
-                return (try decryptRequired(encrypted, field: "uri", keys: keys), uri.extras)
+                return (try uri.uri.map { try decryptRequired($0, field: "uri", keys: keys) },
+                        uri.uriChecksum, uri.extras)
             } catch {
                 throw CipherMapperError.storedValueUnreadable("uri")
             }

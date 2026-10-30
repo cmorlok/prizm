@@ -208,7 +208,7 @@ extension DraftCardContent {
 extension DraftVaultItem {
 
     /// The draft as it is sent: card brand and expiry in the official format, blank website rows
-    /// dropped (openspec change card-field-normalisation).
+    /// dropped (openspec change card-field-normalisation), websites read without an address kept.
     ///
     /// - Values that match no official one are kept unchanged, so nothing a user or another client
     ///   stored is lost. A year with no usable digits is kept too, where the web form would clear it.
@@ -227,7 +227,9 @@ extension DraftVaultItem {
             }
             copy.content = .card(card)
         case .login(var login):
-            login.uris.removeAll { $0.uri.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            // A website read without an address (nil) is kept: it goes back unchanged
+            // (fix-read-mapping-lossless-fields, design D2).
+            login.uris.removeAll { $0.uri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true }
             copy.content = .login(login)
         case .secureNote, .identity, .sshKey:
             break

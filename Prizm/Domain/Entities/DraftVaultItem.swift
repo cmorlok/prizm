@@ -9,17 +9,31 @@ import Foundation
 /// `DraftLoginURI` we confine mutability to the edit sheet and keep the read path immutable.
 nonisolated struct DraftLoginURI: Equatable, Identifiable {
     let id = UUID()
-    var uri: String
+    /// Nil only for a website read without an address that is still empty (see `text`).
+    var uri: String?
     var matchType: URIMatchType?
+    /// True when the website was read without an address. While its text is empty it stays nil,
+    /// so `normalisedForSave` keeps it and the save sends it back unchanged instead of dropping it
+    /// as a blank new row (`fix-read-mapping-lossless-fields`, design D2).
+    let readWithoutValue: Bool
 
     init(uri: String = "", matchType: URIMatchType? = nil) {
         self.uri = uri
         self.matchType = matchType
+        self.readWithoutValue = false
     }
 
     init(_ source: LoginURI) {
         self.uri = source.uri
         self.matchType = source.matchType
+        self.readWithoutValue = source.uri == nil
+    }
+
+    /// The address as the edit field shows and changes it. Clearing a website that was read
+    /// without an address makes it nil again, not an empty string.
+    var text: String {
+        get { uri ?? "" }
+        set { uri = newValue.isEmpty && readWithoutValue ? nil : newValue }
     }
 
     // Exclude `id` from equality — two drafts with the same content are equal regardless of identity.
@@ -36,8 +50,9 @@ nonisolated struct DraftLoginURI: Equatable, Identifiable {
 /// changing its type is out of scope for v1 editing (structural changes are deferred). Only
 /// `value` can be mutated by the user.
 nonisolated struct DraftCustomField: Equatable {
-    /// Read-only: field names are structural and not editable in v1.
-    let name: String
+    /// Read-only: field names are structural and not editable in v1. Nil for a field stored
+    /// without a name.
+    let name: String?
     var value: String?
     /// Read-only: field type changes are out of scope for v1 editing.
     let type: CustomFieldType

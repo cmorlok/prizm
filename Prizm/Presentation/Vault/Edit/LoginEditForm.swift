@@ -107,7 +107,10 @@ private struct URIEditRow: View {
                     .padding(.leading, Spacing.rowHorizontal)
                 }
 
-                EditFieldRow(label: "Website", text: $uri.uri)
+                // A website read without an address shows as an empty row; left empty it is saved
+                // unchanged (fix-read-mapping-lossless-fields, design D2).
+                EditFieldRow(label: "Website", text: $uri.text,
+                             prompt: uri.readWithoutValue ? URIMatchType.noWebsitePrompt : nil)
 
                 Button {
                     optionalAnimation(.easeInOut(duration: 0.2)) {
@@ -141,6 +144,12 @@ private struct URIEditRow: View {
                         ForEach(URIMatchType.allCases, id: \.self) { type in
                             Text(type.displayName).tag(URIMatchType?.some(type))
                         }
+                        // A rule Prizm does not know stays selected until the user picks a known
+                        // one; it cannot be picked again (fix-read-mapping-lossless-fields, D3).
+                        if case .unknown? = uri.matchType {
+                            Text(URIMatchType.unknownDisplayName).tag(uri.matchType)
+                                .selectionDisabled()
+                        }
                     }
                     .labelsHidden()
                     .padding(.trailing, Spacing.rowHorizontal)
@@ -154,10 +163,14 @@ private struct URIEditRow: View {
 
 // MARK: - URIMatchType + Helpers
 
-private extension URIMatchType {
+extension URIMatchType {
+    /// The rules the picker offers; `unknown` is never offered.
     static var allCases: [URIMatchType] {
         [.domain, .host, .startsWith, .exact, .regularExpression, .never]
     }
+
+    static let unknownDisplayName = "Unknown match rule"
+    static let noWebsitePrompt = "No website"
 
     var displayName: String {
         switch self {
@@ -167,6 +180,7 @@ private extension URIMatchType {
         case .exact:             return "Exact"
         case .regularExpression: return "Regular Expression"
         case .never:             return "Never"
+        case .unknown:           return Self.unknownDisplayName
         }
     }
 }
