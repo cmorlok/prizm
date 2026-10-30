@@ -376,6 +376,44 @@ final class AttachmentRepositoryImplTests: XCTestCase {
         XCTAssertEqual(remaining.first?.id, "att-keep")
     }
 
+    // MARK: - Archived items (archived-items, task 3.4; verify 2026-10-31)
+
+    /// The real repository's `allItems()` leaves archived items out, so the local patch reads the
+    /// item by id (`itemDetail`), which sees archived items too; its other attachments are kept.
+    private func populateArchivedItem(with attachments: [Attachment]) async {
+        await vaultRepo.populate(items: [VaultItem(
+            id: cipherId, name: "Archived", isFavorite: false, isDeleted: false,
+            creationDate: Date(), revisionDate: Date(),
+            content: .secureNote(SecureNoteContent(notes: nil, customFields: [])),
+            attachments: attachments
+        ).with(archivedDate: Date())], folders: [], organizations: [], collections: [], syncedAt: Date())
+    }
+
+    private let existing = Attachment(id: "att-keep", fileName: "keep.pdf", encryptedKey: "2.k|k|k",
+                                      size: 512, sizeName: "512 B", url: "https://cdn.example.com/keep")
+
+    func test_upload_toAnArchivedItem_keepsItsOtherAttachments() async throws {
+        await populateArchivedItem(with: [existing])
+        apiClient.createAttachmentMetadataResponse = AttachmentMetadataResponse(
+            attachmentId: attachmentId, url: "https://api.example.com/upload", fileUploadType: 0)
+
+        _ = try await sut.upload(cipherId: cipherId, fileName: plainFileName, data: plainData, cipherKey: cipherKey)
+
+        XCTAssertEqual(vaultRepo.itemDetailCallCount, 1, "the item is looked up by id")
+        XCTAssertEqual(vaultRepo.lastUpdatedAttachments?.map(\.id), ["att-keep", attachmentId])
+    }
+
+    func test_delete_onAnArchivedItem_keepsItsOtherAttachments() async throws {
+        let doomed = Attachment(id: attachmentId, fileName: "delete.pdf", encryptedKey: "2.d|d|d",
+                                size: 256, sizeName: "256 B", url: "https://cdn.example.com/delete")
+        await populateArchivedItem(with: [existing, doomed])
+
+        try await sut.delete(cipherId: cipherId, attachmentId: attachmentId)
+
+        XCTAssertEqual(vaultRepo.itemDetailCallCount, 1, "the item is looked up by id")
+        XCTAssertEqual(vaultRepo.lastUpdatedAttachments?.map(\.id), ["att-keep"])
+    }
+
     // MARK: - Sliced buffers (zeroing must use Data.indices)
 
     /// Mock crypto returning Data slices (nonzero startIndex), as RSA/KDF paths can.

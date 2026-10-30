@@ -266,6 +266,23 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
         }
     }
 
+    // MARK: - Stubs: setCipherArchived
+
+    nonisolated(unsafe) var archiveRequests: [(id: String, archived: Bool)] = []
+    nonisolated(unsafe) var archiveShouldThrow: Error?
+    /// The answer; nil is an answer without the archive state.
+    nonisolated(unsafe) var archiveAnswer: ArchiveStateAnswer?
+    /// Runs while the archive request is "in flight", for example to lock the vault meanwhile.
+    nonisolated(unsafe) var whileArchiving: (@Sendable () async -> Void)?
+
+    func setCipherArchived(id: String, archived: Bool) async throws -> ArchiveStateAnswer? {
+        callLog.append("\(archived ? "archive" : "unarchive") \(id)")
+        archiveRequests.append((id, archived))
+        await whileArchiving?()
+        if let err = archiveShouldThrow { throw err }
+        return archiveAnswer
+    }
+
     // MARK: - Stubs: restoreCipher
 
     nonisolated(unsafe) var restoreShouldThrow: Error?

@@ -86,6 +86,11 @@ nonisolated struct VaultItem: Identifiable, Equatable, Hashable {
     /// entries are decrypted on demand for the history sheet (`GetPasswordHistoryUseCase`), never
     /// at sync (openspec change `password-history`, design D1).
     let passwordHistoryCount: Int
+    /// When the user archived the item, as the server reports it (per user); nil when it is not
+    /// archived. A value the server sent but that is not a date is kept as the epoch, so the item
+    /// still counts as archived (openspec change `archived-items`, design D1).
+    /// Settable only inside this file, for `with(archivedDate:)`.
+    private(set) var archivedDate: Date?
 
     /// Custom memberwise init with `reprompt` defaulted to 0, `attachments` defaulted to `[]`,
     /// `organizationId` defaulted to nil, `collectionIds` defaulted to `[]` and `editBlock` defaulted
@@ -99,7 +104,8 @@ nonisolated struct VaultItem: Identifiable, Equatable, Hashable {
         organizationId: String? = nil,
         collectionIds: [String] = [],
         editBlock: EditBlockReason? = nil,
-        passwordHistoryCount: Int = 0
+        passwordHistoryCount: Int = 0,
+        archivedDate: Date? = nil
     ) {
         self.id = id
         self.folderId = folderId
@@ -115,7 +121,15 @@ nonisolated struct VaultItem: Identifiable, Equatable, Hashable {
         self.collectionIds = collectionIds
         self.editBlock = editBlock
         self.passwordHistoryCount = passwordHistoryCount
+        self.archivedDate = archivedDate
     }
+
+    /// Archived and not in Trash: listed only in Archive.
+    var isArchived: Bool { archivedDate != nil }
+
+    /// What every everyday list shows: neither in Trash nor archived, as the official clients'
+    /// `isActive` (archived-items, design D2).
+    var isActive: Bool { !isDeleted && archivedDate == nil }
 }
 
 // MARK: - Single-field copies
@@ -158,6 +172,13 @@ nonisolated extension VaultItem {
     func with(collectionIds: [String]) -> VaultItem {
         var copy = self
         copy.collectionIds = collectionIds
+        return copy
+    }
+
+    /// A copy archived (a date) or not (nil), with every other field kept.
+    func with(archivedDate: Date?) -> VaultItem {
+        var copy = self
+        copy.archivedDate = archivedDate
         return copy
     }
 

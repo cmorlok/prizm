@@ -33,6 +33,7 @@
 		3B3721D2F8C646EC91512FDA /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00802736F25046A0BD600128 /* SidebarView.swift */; };
 		3BC539D6D63240D0B5315A0D /* RestoreVaultItemUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75776838723C412E94327CDD /* RestoreVaultItemUseCaseImpl.swift */; };
 		450501B6A86B306F85623B7B /* GetPasswordHistoryUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90A4B4F0D248F2A02B664A51 /* GetPasswordHistoryUseCaseImpl.swift */; };
+		B7956BF4FB69699C319921AF /* SetItemArchivedUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83EECD8273ABAA5173C0C379 /* SetItemArchivedUseCaseImpl.swift */; };
 		3CE951E495E649489E3DADAC /* SyncRepositoryImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D6A671692BE497AA7E39F45 /* SyncRepositoryImpl.swift */; };
 		3E04D7AC0223458CB329663C /* CustomField.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAB323D45FF2440C95C0BA70 /* CustomField.swift */; };
 		421368787851407FBCA9D99F /* TrashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 212734E66AE74662AD28E6CB /* TrashView.swift */; };
@@ -47,6 +48,7 @@
 		4B506070809000D3D4E5F607 /* EditFieldRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C607080900A10E4E5F60718 /* EditFieldRow.swift */; };
 		50B64B0B76674E2EAE36E66C /* RestoreVaultItemUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4929412F2A6B4670960BFB53 /* RestoreVaultItemUseCase.swift */; };
 		BF33BC5188A0D6824085B5B2 /* GetPasswordHistoryUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBAA711B18ED1A022D4F4DE5 /* GetPasswordHistoryUseCase.swift */; };
+		9C2EAAF86CEC9EB62877279F /* SetItemArchivedUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C80CBC174236B5E6C9A1BB1 /* SetItemArchivedUseCase.swift */; };
 		550F74EE24A94D3CB50C7E1F /* OrgCollection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 070C477B0E134C1EAFFA842D /* OrgCollection.swift */; };
 		56FB66DA11C44233B49CEB31 /* SyncUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8504983920144A92B0241CA9 /* SyncUseCaseImpl.swift */; };
 		599A7C867D6F4FA5A9B27BC2 /* Folder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AC78A983744489DB1F8BCFB /* Folder.swift */; };
@@ -156,6 +158,7 @@
 		175CE5C87A85D04465249B93 /* WireKdfSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5077DEE7ABDAD6E15AE5457 /* WireKdfSettings.swift */; };
 		890CF8A6B6C13E4DD0C96BA2 /* FirstLetterCaseInsensitiveKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03031A37BBA04C7B5454CDB /* FirstLetterCaseInsensitiveKey.swift */; };
 		713C8E9BAAAE7DA5849D88CD /* CipherCollectionsResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B8A39A8FF5DFB8B865A6C6C /* CipherCollectionsResult.swift */; };
+		4C674F58AFD935FFCDF2D471 /* ArchiveStateAnswer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59F884864AE2C77A03CEB592 /* ArchiveStateAnswer.swift */; };
 		BB100B00000000000000000B /* VaultKeyServiceImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100B00000000000000000B /* VaultKeyServiceImpl.swift */; };
 		BB100C00000000000000000C /* AttachmentMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100C00000000000000000C /* AttachmentMapper.swift */; };
 		BB100D00000000000000000D /* UploadAttachmentUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100D00000000000000000D /* UploadAttachmentUseCaseImpl.swift */; };
@@ -223,6 +226,7 @@
 		918757C4B8FDA02ACD662167 /* SetFavoriteUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47EF6BBB6170F5C4F6D7AB9B /* SetFavoriteUseCaseImpl.swift */; };
 		5FB03807205EB54F055B4317 /* CollectionAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C7F64FECEB4D5C21395C438 /* CollectionAccess.swift */; };
 		EC7F582F249CF763AEA0B40E /* LegacyCollectionCreateWithoutMembership.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7755C404FA07652871D0869 /* LegacyCollectionCreateWithoutMembership.swift */; };
+		A95F5C4895DB6EA7E73320FA /* LegacyArchiveSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D23D83AFD9FCA7655C8E3D7 /* LegacyArchiveSupport.swift */; };
 		9CE03FAF8938D6B276BF6CD0 /* EmptyTrashUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E0CC4D012DF5134640ADADD /* EmptyTrashUseCase.swift */; };
 		9C69F0563C110E769255D12E /* EmptyTrashUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17EED397A28B285C0BD7FF6A /* EmptyTrashUseCaseImpl.swift */; };
 		B2ED6F0BF6ADC48D703F96E8 /* ClipboardService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2C46997E2E7353C3620B17B /* ClipboardService.swift */; };
@@ -293,6 +297,7 @@
 		48A19EBA5CF388FE0AC3FFC1 /* TOTPConfiguration.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TOTPConfiguration.swift; sourceTree = "<group>"; };
 		4929412F2A6B4670960BFB53 /* RestoreVaultItemUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestoreVaultItemUseCase.swift; sourceTree = "<group>"; };
 		FBAA711B18ED1A022D4F4DE5 /* GetPasswordHistoryUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GetPasswordHistoryUseCase.swift; sourceTree = "<group>"; };
+		6C80CBC174236B5E6C9A1BB1 /* SetItemArchivedUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetItemArchivedUseCase.swift; sourceTree = "<group>"; };
 		4A8CDB6FE9CEBD93707A3468 /* OneTimeCodeHMAC.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OneTimeCodeHMAC.swift; sourceTree = "<group>"; };
 		4ABEC630F6934ED883504C9D /* About/AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = About/AboutView.swift; sourceTree = "<group>"; };
 		4D6A671692BE497AA7E39F45 /* SyncRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncRepositoryImpl.swift; sourceTree = "<group>"; };
@@ -317,6 +322,7 @@
 		7532D5A98726D59086E40477 /* PrizmUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PrizmUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		75776838723C412E94327CDD /* RestoreVaultItemUseCaseImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestoreVaultItemUseCaseImpl.swift; sourceTree = "<group>"; };
 		90A4B4F0D248F2A02B664A51 /* GetPasswordHistoryUseCaseImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GetPasswordHistoryUseCaseImpl.swift; sourceTree = "<group>"; };
+		83EECD8273ABAA5173C0C379 /* SetItemArchivedUseCaseImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetItemArchivedUseCaseImpl.swift; sourceTree = "<group>"; };
 		7A8A5A665870AF09BFD47C09 /* TOTPCodesViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TOTPCodesViewModel.swift; sourceTree = "<group>"; };
 		7AFBFFDE4FCE4BD28D3C8E9A /* UnlockViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnlockViewModel.swift; sourceTree = "<group>"; };
 		7C40EE0279BE41BE97FC5942 /* ItemDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemDetailView.swift; sourceTree = "<group>"; };
@@ -373,6 +379,7 @@
 		C5077DEE7ABDAD6E15AE5457 /* WireKdfSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireKdfSettings.swift; sourceTree = "<group>"; };
 		C03031A37BBA04C7B5454CDB /* FirstLetterCaseInsensitiveKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstLetterCaseInsensitiveKey.swift; sourceTree = "<group>"; };
 		7B8A39A8FF5DFB8B865A6C6C /* CipherCollectionsResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CipherCollectionsResult.swift; sourceTree = "<group>"; };
+		59F884864AE2C77A03CEB592 /* ArchiveStateAnswer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveStateAnswer.swift; sourceTree = "<group>"; };
 		AA100B00000000000000000B /* VaultKeyServiceImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultKeyServiceImpl.swift; sourceTree = "<group>"; };
 		AA100C00000000000000000C /* AttachmentMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentMapper.swift; sourceTree = "<group>"; };
 		AA100D00000000000000000D /* UploadAttachmentUseCaseImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadAttachmentUseCaseImpl.swift; sourceTree = "<group>"; };
@@ -472,6 +479,7 @@
 		47EF6BBB6170F5C4F6D7AB9B /* SetFavoriteUseCaseImpl.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SetFavoriteUseCaseImpl.swift; sourceTree = "<group>"; };
 		0C7F64FECEB4D5C21395C438 /* CollectionAccess.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CollectionAccess.swift; sourceTree = "<group>"; };
 		C7755C404FA07652871D0869 /* LegacyCollectionCreateWithoutMembership.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LegacyCollectionCreateWithoutMembership.swift; sourceTree = "<group>"; };
+		1D23D83AFD9FCA7655C8E3D7 /* LegacyArchiveSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyArchiveSupport.swift; sourceTree = "<group>"; };
 		4E0CC4D012DF5134640ADADD /* EmptyTrashUseCase.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EmptyTrashUseCase.swift; sourceTree = "<group>"; };
 		17EED397A28B285C0BD7FF6A /* EmptyTrashUseCaseImpl.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EmptyTrashUseCaseImpl.swift; sourceTree = "<group>"; };
 		F2C46997E2E7353C3620B17B /* ClipboardService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClipboardService.swift; sourceTree = "<group>"; };
@@ -611,6 +619,7 @@
 				EDB0E4B753854AFF89FFFAA2 /* DeleteVaultItemUseCase.swift */,
 				4929412F2A6B4670960BFB53 /* RestoreVaultItemUseCase.swift */,
 				FBAA711B18ED1A022D4F4DE5 /* GetPasswordHistoryUseCase.swift */,
+				6C80CBC174236B5E6C9A1BB1 /* SetItemArchivedUseCase.swift */,
 				6A4F9E3B2C0D58F7B1A6E3C9 /* PermanentDeleteVaultItemUseCase.swift */,
 				C2D3E4F5A6B74892C3D4E5F6 /* GetLastSyncDateUseCase.swift */,
 				E9EA3A6C1A304AAF9510682E /* CreateFolderUseCase.swift */,
@@ -679,6 +688,7 @@
 				C5077DEE7ABDAD6E15AE5457 /* WireKdfSettings.swift */,
 				C03031A37BBA04C7B5454CDB /* FirstLetterCaseInsensitiveKey.swift */,
 				7B8A39A8FF5DFB8B865A6C6C /* CipherCollectionsResult.swift */,
+				59F884864AE2C77A03CEB592 /* ArchiveStateAnswer.swift */,
 				15F3A553820942CF9B3935FD /* SyncResponse.swift */,
 				D7C2BEABB748471395CEC2C6 /* RawFolder.swift */,
 				AA1008000000000000000008 /* AttachmentDTO.swift */,
@@ -1017,6 +1027,7 @@
 				42858B188901413C9FD6C6E6 /* DeleteVaultItemUseCaseImpl.swift */,
 				75776838723C412E94327CDD /* RestoreVaultItemUseCaseImpl.swift */,
 				90A4B4F0D248F2A02B664A51 /* GetPasswordHistoryUseCaseImpl.swift */,
+				83EECD8273ABAA5173C0C379 /* SetItemArchivedUseCaseImpl.swift */,
 				8C6B1A5D4E2F70B9D3C8A5EB /* PermanentDeleteVaultItemUseCaseImpl.swift */,
 				A6B7C8D9E0F14894A7B8C9D0 /* GetLastSyncDateUseCaseImpl.swift */,
 				2508605E27F24F8FB577CE41 /* CreateFolderUseCaseImpl.swift */,
@@ -1052,6 +1063,7 @@
 			isa = PBXGroup;
 			children = (
 				C7755C404FA07652871D0869 /* LegacyCollectionCreateWithoutMembership.swift */,
+				1D23D83AFD9FCA7655C8E3D7 /* LegacyArchiveSupport.swift */,
 			);
 			path = Legacy;
 			sourceTree = "<group>";
@@ -1286,6 +1298,7 @@
 				175CE5C87A85D04465249B93 /* WireKdfSettings.swift in Sources */,
 				890CF8A6B6C13E4DD0C96BA2 /* FirstLetterCaseInsensitiveKey.swift in Sources */,
 				713C8E9BAAAE7DA5849D88CD /* CipherCollectionsResult.swift in Sources */,
+				4C674F58AFD935FFCDF2D471 /* ArchiveStateAnswer.swift in Sources */,
 				E5F6A7B8C9D04BE2F3A4B5C6 /* SyncResponse.swift in Sources */,
 				F6A7B8C9D0E14CF3A4B5C6D7 /* CipherMapper.swift in Sources */,
 				422CA84C8F1DD8A5F153F466 /* URIChecksum.swift in Sources */,
@@ -1314,6 +1327,11 @@
 				C95CAFFEA54E4E66BED34362 /* DeleteVaultItemUseCaseImpl.swift in Sources */,
 				3BC539D6D63240D0B5315A0D /* RestoreVaultItemUseCaseImpl.swift in Sources */,
 				450501B6A86B306F85623B7B /* GetPasswordHistoryUseCaseImpl.swift in Sources */,
+				9C2EAAF86CEC9EB62877279F /* SetItemArchivedUseCase.swift in Sources */,
+				5F3E8D2A1B9C47E6A0F5D2B8 /* PermanentDeleteVaultItemUseCase.swift in Sources */,
+				C95CAFFEA54E4E66BED34362 /* DeleteVaultItemUseCaseImpl.swift in Sources */,
+				3BC539D6D63240D0B5315A0D /* RestoreVaultItemUseCaseImpl.swift in Sources */,
+				B7956BF4FB69699C319921AF /* SetItemArchivedUseCaseImpl.swift in Sources */,
 				7B5A0F4C3D1E69A8C2B7F4DA /* PermanentDeleteVaultItemUseCaseImpl.swift in Sources */,
 				421368787851407FBCA9D99F /* TrashView.swift in Sources */,
 				AA0001010000000100000001 /* RandomnessProvider.swift in Sources */,
@@ -1406,6 +1424,7 @@
 				918757C4B8FDA02ACD662167 /* SetFavoriteUseCaseImpl.swift in Sources */,
 				5FB03807205EB54F055B4317 /* CollectionAccess.swift in Sources */,
 				EC7F582F249CF763AEA0B40E /* LegacyCollectionCreateWithoutMembership.swift in Sources */,
+				A95F5C4895DB6EA7E73320FA /* LegacyArchiveSupport.swift in Sources */,
 				9CE03FAF8938D6B276BF6CD0 /* EmptyTrashUseCase.swift in Sources */,
 				9C69F0563C110E769255D12E /* EmptyTrashUseCaseImpl.swift in Sources */,
 				B2ED6F0BF6ADC48D703F96E8 /* ClipboardService.swift in Sources */,

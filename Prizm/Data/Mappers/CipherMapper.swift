@@ -190,7 +190,8 @@ nonisolated final class CipherMapper: Sendable {
             organizationId: raw.organizationId,
             collectionIds:  raw.collectionIds,
             editBlock:      editBlock(for: raw) ?? incompleteSSHKeyBlock(for: content),
-            passwordHistoryCount: Self.passwordHistoryCount(of: raw)
+            passwordHistoryCount: Self.passwordHistoryCount(of: raw),
+            archivedDate:   Self.archivedDate(of: raw)
         )
         return (item: item, cipherKey: effective.toData())
     }
@@ -261,6 +262,24 @@ nonisolated final class CipherMapper: Sendable {
             Self.logger.error("Password history of cipher \(raw.id, privacy: .public): \(unreadable, privacy: .public) of \(elements.count, privacy: .public) entries could not be read")
         }
         return entries
+    }
+
+    // MARK: - Archive state
+
+    /// The item's archive date (archived-items, design D1): nil when the key is absent or `null`.
+    /// Any other value means the server considers the item archived; one that is not a readable
+    /// date is kept as the epoch and logged, so the item still leaves the everyday lists.
+    static func archivedDate(of raw: RawCipher) -> Date? {
+        switch raw.archivedDate {
+        case nil, .null?:
+            return nil
+        case .string(let text)?:
+            if let date = parseRevisionDate(text) { return date }
+            fallthrough
+        default:
+            logger.error("Archive date of cipher \(raw.id, privacy: .public) is not a date; the item counts as archived")
+            return Date(timeIntervalSince1970: 0)
+        }
     }
 
     /// Backward-compatible overload — passes empty orgKeys (personal vault, no org support).

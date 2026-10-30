@@ -78,11 +78,14 @@ final class EffectiveKeyReadTests: XCTestCase {
         let rig = await makeSyncRig(golden: golden, body: golden.rawJSON)
 
         let result = try await rig.sync.sync(progress: { _ in })
-        let items = try await rig.vault.allItems()
+        // One fixture item was archived on the server, so it is listed in Archive only (archived-items).
+        let items = try await rig.vault.allItems() + rig.vault.items(for: .archive)
 
         XCTAssertEqual(result.failedDecryptionCount, 0)
         XCTAssertEqual(Set(items.map(\.id)), Set(GoldenVault.allIds), "all six fixture items are listed")
         XCTAssertEqual(items.count, 6)
+        let archiveList = try await rig.vault.items(for: .archive)
+        XCTAssertEqual(archiveList.count, 1, "the golden vault has one archived item")
 
         // Keyed passkey login: every field, both websites, the attachment name.
         let passkey = try await rig.vault.itemDetail(id: GoldenVault.passkeyId)

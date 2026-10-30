@@ -133,6 +133,12 @@ actor RawCipherStore {
     var count: Int {
         records.count
     }
+
+    /// Whether the server keeps archive state, judged from the stored records
+    /// (`LegacyArchiveSupport.isSupported(records:)`, archived-items D5).
+    var keepsArchiveState: Bool {
+        LegacyArchiveSupport.isSupported(records: Array(records.values))
+    }
 }
 
 // `nonisolated`: without it the conformances of an actor are main-actor isolated under the module's

@@ -30,6 +30,18 @@ protocol VaultRepository: AnyObject, Sendable {
     ///   `VaultError.itemRecordUnavailable`, `VaultError.organizationKeyUnavailable`,
     ///   `VaultError.itemKeyUnavailable`.
     func passwordHistory(itemId: String) async throws -> [PasswordHistoryEntry]
+    /// Archives (`true`) or unarchives one item on the server, then moves it between Archive and
+    /// the everyday lists here (archived-items, design D3). Queued with the item's other writes;
+    /// a lock during the request drops the result.
+    ///
+    /// - Throws: `VaultError.archiveUnsupported` for a server without archive, `VaultError.vaultLocked`,
+    ///   `APIError` with the server's message for a refusal.
+    func setArchived(id: String, archived: Bool) async throws
+
+    /// Whether this server keeps archive state: false only when no stored record carries the
+    /// `archivedDate` key and the vault is not empty (archived-items, design D5). Re-read after
+    /// every sync, create and save, whose answers update the stored records.
+    func isArchiveSupported() async -> Bool
 
     /// Returns the fully-decrypted detail for a single item.
     /// Not cached — re-decrypts on every call (decrypt on demand, per spec).
@@ -207,6 +219,9 @@ nonisolated enum VaultError: Error, LocalizedError {
     /// The server created the item, but its answer did not carry the key Prizm generated, so Prizm
     /// did not use it. The next sync lists the item; the create sheet must not save it a second time.
     case createdButUnconfirmed
+    /// The archive endpoint answered 404 without a server message: a server older than Vaultwarden
+    /// 1.36.0 or Bitwarden server v2025.10.0 (archived-items, design D5).
+    case archiveUnsupported
 
     var errorDescription: String? {
         switch self {
@@ -240,6 +255,8 @@ nonisolated enum VaultError: Error, LocalizedError {
             return "This item was changed on another device. Your changes were not saved. Reload to see the latest version, then make your changes again."
         case .collectionChangeNotSaved:
             return "Your changes were saved, but the collection change failed. Try again."
+        case .archiveUnsupported:
+            return "This server doesn't support archiving items."
         case .savedButAccessLost:
             return "Saved. You no longer have access to this item."
         case .itemKeyGenerationFailed:

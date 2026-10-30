@@ -367,7 +367,8 @@ final class VaultBrowserViewModel: ObservableObject {
         let generation = sessionGeneration
         Task { [weak self] in
             guard let self else { return }
-            guard let updated = try? await vault.allItems().first(where: { $0.id == currentId }) else { return }
+            // By id over every cached item: `allItems()` leaves out archived and trashed ones.
+            guard let updated = try? await vault.itemDetail(id: currentId) else { return }
             guard isCurrent(generation) else { return }
             itemSelection = updated
         }
@@ -435,7 +436,8 @@ final class VaultBrowserViewModel: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let items = try await vault.allItems()
+                // Archived items keep their attachments too; `allItems()` leaves them out (archived-items).
+                let items = try await vault.allItems() + vault.items(for: .archive)
                 guard generation == sessionGeneration, isSessionOpen else { return }
                 conversion.vaultDidSync(items: items)
             } catch {

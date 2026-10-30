@@ -150,6 +150,15 @@ protocol PrizmAPIClientProtocol: Actor {
     /// Reference: Bitwarden Server API PUT /api/ciphers/{id}/restore
     func restoreCipher(id: String) async throws -> RawCipher?
 
+    /// PUT `/api/ciphers/{id}/archive` (`archived: true`) or `/unarchive` — sets the user's archive
+    /// state of one cipher; no body. Returns only the archive state and revision of the answer, nil
+    /// when it has neither (the official answer model is not verified, archived-items D3). An HTTP
+    /// failure throws.
+    ///
+    /// Reference: Vaultwarden `src/api/core/ciphers.rs:1778-1805`; Bitwarden server
+    /// `CiphersController.cs` PutArchive / PutUnarchive.
+    func setCipherArchived(id: String, archived: Bool) async throws -> ArchiveStateAnswer?
+
     /// POST `/api/ciphers` — creates a new cipher with encrypted field values.
     ///
     /// Requires a valid `Authorization: Bearer <accessToken>` header.
@@ -1063,6 +1072,21 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
             logger.debug("[debug] restoreCipher ← ok id=\(id, privacy: .public) cipher=\(restored != nil, privacy: .public)")
         }
         return restored
+    }
+
+    // MARK: - setCipherArchived
+
+    func setCipherArchived(id: String, archived: Bool) async throws -> ArchiveStateAnswer? {
+        guard let base = baseURL else { throw APIError.baseURLNotSet }
+        let url = base.appendingPathComponent("api/ciphers/\(id)/\(archived ? "archive" : "unarchive")")
+        var request = baseRequest(url: url)
+        request.httpMethod = "PUT"
+        if let token = accessToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        // No body, as for restore: the server identifies the cipher by the path.
+        let answer: ArchiveStateAnswer? = try await performOptional(request: request)
+        return answer
     }
 
     // MARK: - createAttachmentMetadata
