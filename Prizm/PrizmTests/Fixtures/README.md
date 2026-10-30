@@ -2,8 +2,9 @@
 
 **Security review: this directory is part of the security review (committed test credentials).**
 
-Everything in here, except `cipher-kitchen-sink.json`, `cipher-official-shaped.json` and
-`official-out-of-date-400.json` (all hand-written, see the table), comes from a throwaway account on a local Vaultwarden test server. All data in it is fake, and the master
+Everything in here, except `cipher-kitchen-sink.json`, `cipher-official-shaped.json`,
+`official-out-of-date-400.json` (all hand-written, see the table) and `ssh-key-vectors.json` (made
+with `ssh-keygen`, see "SSH key vectors"), comes from a throwaway account on a local Vaultwarden test server. All data in it is fake, and the master
 password below is deliberately public.
 
 ## Files
@@ -96,3 +97,43 @@ Xcode copies the files flat into the test bundle's resources, with no subdirecto
 (`PrizmTests.xctest/Contents/Resources/`, observed in a build of the test target). Load them by
 file name with `Bundle(for:)` on a test-target class. Do not use `#filePath`: the test host is
 sandboxed and cannot read the source tree.
+
+## SSH key vectors (`ssh-key-vectors.json`)
+
+Test-only throwaway keys for `ssh-key-import-and-generation` (design D8). They were made on
+2026-10-30 with the local OpenSSH tools, not taken from the Bitwarden SDK. The key material in the
+file is public on purpose and must never be used for anything. `source` records the OpenSSH version
+(OpenSSH 9.6p1).
+
+Made with:
+
+```sh
+ssh-keygen -q -t ed25519 -N "" -C "vector-1@example.com" -f ed1
+ssh-keygen -q -t ed25519 -N "" -C "" -f ed2
+ssh-keygen -q -t ed25519 -N "" -C "a comment with spaces and ünïcödé" -f ed3
+ssh-keygen -q -t ed25519 -N "not-a-secret" -C "pw" -f edpw
+ssh-keygen -q -t rsa -b 2048 -N "" -C "rsa" -f rsa
+ssh-keygen -q -t rsa -b 2048 -N "not-a-secret" -C "rsa-pw" -f rsapw
+ssh-keygen -q -t ecdsa -b 256 -N "" -C "ecdsa" -f ecdsa
+ssh-keygen -q -t rsa -b 2048 -m PEM -N "" -C "pem" -f pem
+ssh-keygen -q -t ecdsa -b 256 -m PKCS8 -N "" -C "pkcs8" -f pkcs8
+```
+
+- `accepted`: `ed1`–`ed3` as written by `ssh-keygen`; `publicKey` is the first two fields of
+  `ssh-keygen -y` (no comment) and `fingerprint` the second field of `ssh-keygen -l`. `ed1-crlf` is
+  `ed1` with CRLF line endings, `ed2-no-trailing-newline` is `ed2` without its final newline.
+- `refused`, with the `SSHKeyError` each must produce:
+  - as made above: `passphrase-protected` (`edpw`), `rsa`, `rsa-passphrase-protected` (`rsapw`; must be
+    named as an unsupported type, not as passphrase-protected), `ecdsa`, `pem-rsa`, `pkcs8-ecdsa`
+  - hand-written: `putty` (a PuTTY header), `plain-text`, `bad-base64`, `too-large` (above 16 KiB)
+  - byte edits of `ed1`, re-armoured at 70 columns: `two-keys` (key count 2), `wrong-check-integer`,
+    `bad-padding` (last padding byte 0xff), `trailing-bytes` (four bytes after the private section),
+    `outer-public-key-differs` (outer public key blob from `ed2`), `public-key-not-from-seed` (outer and
+    inner public key from `ed2`, seed from `ed1`), `security-key-type` (outer key type renamed to
+    `sk-ssh-ed25519@openssh.com`; no security key was available to make a real one)
+
+The edit script rebuilds an unedited key first and checks that it equals the `ssh-keygen` file byte
+for byte, so the edits change only the named field. `ssh-keygen -y` refuses every edited vector
+except `public-key-not-from-seed`: OpenSSH does not check that the public key derives from the seed.
+Prizm does (design D4, check 7).
+

@@ -131,6 +131,7 @@
 		BB1001000000000000000001 /* Attachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1001000000000000000001 /* Attachment.swift */; };
 		BB1002000000000000000002 /* AttachmentRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1002000000000000000002 /* AttachmentRepository.swift */; };
 		BB1003000000000000000003 /* VaultKeyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1003000000000000000003 /* VaultKeyService.swift */; };
+		76552DBB77D92622549CE5DF /* SSHKeyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACACF03C4BFF59CECE5DA192 /* SSHKeyService.swift */; };
 		BB1004000000000000000004 /* UploadAttachmentUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1004000000000000000004 /* UploadAttachmentUseCase.swift */; };
 		BB1005000000000000000005 /* DownloadAttachmentUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1005000000000000000005 /* DownloadAttachmentUseCase.swift */; };
 		BB1006000000000000000006 /* DeleteAttachmentUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1006000000000000000006 /* DeleteAttachmentUseCase.swift */; };
@@ -161,6 +162,7 @@
 		C3D2E3F400A1B05B50607080 /* SecureNoteEditForm.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E3F400A1B2C06C60708090 /* SecureNoteEditForm.swift */; };
 		C3D4E5F607182940B5C6D7E8 /* EditVaultItemUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F6071829304AC6D7E8F9 /* EditVaultItemUseCase.swift */; };
 		C3D4E5F6A7B849C0D1E2F3A4 /* PrizmCryptoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8D710BEABBB4ADD9ADFCD1F /* PrizmCryptoService.swift */; };
+		F2D65751D6B415E1BA084524 /* SSHKeyServiceImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30E3733CF45E47BD6C748AB1 /* SSHKeyServiceImpl.swift */; };
 		C3DDB598E8834E85833D86FE /* VaultBrowserViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5F177A6089741F69C02E285 /* VaultBrowserViewModel.swift */; };
 		C8951B673C224D76A33775A1 /* UnlockViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AFBFFDE4FCE4BD28D3C8E9A /* UnlockViewModel.swift */; };
 		C8D9E0F1A2B34895C9D0E1F2 /* SyncStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9E0F1A2B3C44895D0E1F2A3 /* SyncStatusView.swift */; };
@@ -321,6 +323,7 @@
 		AA1001000000000000000001 /* Attachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Attachment.swift; sourceTree = "<group>"; };
 		AA1002000000000000000002 /* AttachmentRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentRepository.swift; sourceTree = "<group>"; };
 		AA1003000000000000000003 /* VaultKeyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultKeyService.swift; sourceTree = "<group>"; };
+		ACACF03C4BFF59CECE5DA192 /* SSHKeyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHKeyService.swift; sourceTree = "<group>"; };
 		AA1004000000000000000004 /* UploadAttachmentUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadAttachmentUseCase.swift; sourceTree = "<group>"; };
 		AA1005000000000000000005 /* DownloadAttachmentUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadAttachmentUseCase.swift; sourceTree = "<group>"; };
 		AA1006000000000000000006 /* DeleteAttachmentUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeleteAttachmentUseCase.swift; sourceTree = "<group>"; };
@@ -369,6 +372,7 @@
 		D7044163F8FD4199B4925DD2 /* SidebarSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarSelection.swift; sourceTree = "<group>"; };
 		D7C2BEABB748471395CEC2C6 /* RawFolder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawFolder.swift; sourceTree = "<group>"; };
 		D8D710BEABBB4ADD9ADFCD1F /* PrizmCryptoService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrizmCryptoService.swift; sourceTree = "<group>"; };
+		30E3733CF45E47BD6C748AB1 /* SSHKeyServiceImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHKeyServiceImpl.swift; sourceTree = "<group>"; };
 		D9E0F1A2B3C44895D0E1F2A3 /* SyncStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStatusView.swift; sourceTree = "<group>"; };
 		DF8949A6D242488CBEC15CC0 /* ItemListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemListView.swift; sourceTree = "<group>"; };
 		E25C290F2D7A470EB4AB8698 /* KdfParams.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KdfParams.swift; sourceTree = "<group>"; };
@@ -535,6 +539,7 @@
 				A1B2C4D5E6F74891A2B3C4D5 /* SyncTimestampRepository.swift */,
 				AA1002000000000000000002 /* AttachmentRepository.swift */,
 				AA1003000000000000000003 /* VaultKeyService.swift */,
+				ACACF03C4BFF59CECE5DA192 /* SSHKeyService.swift */,
 			);
 			path = Repositories;
 			sourceTree = "<group>";
@@ -590,6 +595,7 @@
 				AA0002040000000400000004 /* CryptographicRandomnessProvider.swift */,
 				3FBB82A6241244DD890E615C /* EncString.swift */,
 				D8D710BEABBB4ADD9ADFCD1F /* PrizmCryptoService.swift */,
+				30E3733CF45E47BD6C748AB1 /* SSHKeyServiceImpl.swift */,
 				AA1007000000000000000007 /* AttachmentCrypto.swift */,
 				4A8CDB6FE9CEBD93707A3468 /* OneTimeCodeHMAC.swift */,
 			);
@@ -1189,6 +1195,7 @@
 				2A776694FA53418CB2002486 /* OrgKeyCache.swift in Sources */,
 				B2C3D4E5F6A748B9C0D1E2F3 /* EncString.swift in Sources */,
 				C3D4E5F6A7B849C0D1E2F3A4 /* PrizmCryptoService.swift in Sources */,
+				F2D65751D6B415E1BA084524 /* SSHKeyServiceImpl.swift in Sources */,
 				D4E5F6A7B8C94AD1E2F3A4B5 /* RawCipher.swift in Sources */,
 				BB100D1E00000000000000F2 /* JSONValue.swift in Sources */,
 				E5F6A7B8C9D04BE2F3A4B5C6 /* SyncResponse.swift in Sources */,
@@ -1247,6 +1254,7 @@
 				BB1001000000000000000001 /* Attachment.swift in Sources */,
 				BB1002000000000000000002 /* AttachmentRepository.swift in Sources */,
 				BB1003000000000000000003 /* VaultKeyService.swift in Sources */,
+				76552DBB77D92622549CE5DF /* SSHKeyService.swift in Sources */,
 				BB1004000000000000000004 /* UploadAttachmentUseCase.swift in Sources */,
 				BB1005000000000000000005 /* DownloadAttachmentUseCase.swift in Sources */,
 				BB1006000000000000000006 /* DeleteAttachmentUseCase.swift in Sources */,
