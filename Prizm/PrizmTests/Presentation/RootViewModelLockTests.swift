@@ -290,6 +290,69 @@ final class RootViewModelLockTests: XCTestCase {
         XCTAssertEqual(deps.tempFiles.sweepCount, 1)
     }
 
+    // MARK: - Website icons (fix-website-icons-privacy, D1)
+
+    /// Polls the loader's icons base: it is set from a Task, after the screen change.
+    private func waitForIconsBase(_ deps: MockRootDependencies, toBe expected: URL?) async throws {
+        let deadline = ContinuousClock.now + .milliseconds(500)
+        while deps.faviconLoader.iconsBase != expected, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+    }
+
+    /// Code review 2026-10-30: configured before the vault is shown, so no row asks an
+    /// unconfigured loader (and keeps its type icon for the session).
+    func testVaultTransition_configuresTheAccountsIconService_beforeTheVaultShows() async throws {
+        mockAuth.stubbedStoredAccount = stubAccount
+        var baseWhenShown: URL?? = .none
+        let observer = sut.$screen.sink { [deps] screen in
+            if case .vault = screen { baseWhenShown = .some(deps!.faviconLoader.iconsBase) }
+        }
+        defer { observer.cancel() }
+        sut.handleLoginFlow(.vault)
+        try await waitUntil { if case .vault = self.sut.screen { true } else { false } }
+
+        XCTAssertEqual(baseWhenShown, .some(URL(string: "https://vault.example.com/icons")!))
+    }
+
+    /// Code review 2026-10-30: unconfigured when the lock starts, not after its teardown.
+    func testLockVault_unconfiguresTheIconService_rightAway() {
+        mockAuth.stubbedStoredAccount = stubAccount
+        deps.faviconLoader.configure(iconsBase: URL(string: "https://vault.example.com/icons")!)
+        sut.screen = .vault
+
+        sut.lockVault()
+
+        XCTAssertNil(deps.faviconLoader.iconsBase)
+    }
+
+    func testLockVault_unconfiguresTheIconService() async throws {
+        mockAuth.stubbedStoredAccount = stubAccount
+        deps.faviconLoader.configure(iconsBase: URL(string: "https://vault.example.com/icons")!)
+        sut.screen = .vault
+
+        sut.lockVault()
+        try await waitUntil { if case .unlock = self.sut.screen { return true }; return false }
+
+        let base = deps.faviconLoader.iconsBase
+        XCTAssertNil(base)
+        let generation = await deps.faviconLoader.generation
+        XCTAssertEqual(generation, 1, "reset() ran")
+    }
+
+    func testSignOut_unconfiguresTheIconService() async throws {
+        deps.faviconLoader.configure(iconsBase: URL(string: "https://vault.example.com/icons")!)
+        sut.screen = .vault
+
+        sut.signOut()
+        try await waitUntil { if case .login = self.sut.screen { return true }; return false }
+
+        let base = deps.faviconLoader.iconsBase
+        XCTAssertNil(base)
+        let generation = await deps.faviconLoader.generation
+        XCTAssertEqual(generation, 1, "reset() ran")
+    }
+
     func testQuit_sweepsOpenedAttachmentFiles() {
         let deps = MockRootDependencies(auth: mockAuth, vault: mockVault)
         let root = RootViewModel(container: deps)
@@ -613,6 +676,9 @@ final class MockRootDependencies: RootViewModelDependencies {
     let tempFiles = SweepCountingTempFiles()
     /// Replaceable so an integration test can use the real temp-file manager.
     lazy var attachmentTempFiles: any TempFileManaging = tempFiles
+    /// A real loader; its own settings suite, and a stub that answers any request with 404.
+    let faviconLoader = FaviconLoader(defaultsSuiteName: "MockRootDependencies-\(UUID().uuidString)",
+                                      protocolClasses: [IconStub.self])
     let authRepo: any AuthRepository
     let vaultRepo: any VaultRepository
 

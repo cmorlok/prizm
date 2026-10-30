@@ -159,6 +159,9 @@ final class AppContainer: ObservableObject {
         }
         #endif
         self.faviconLoader   = FaviconLoader()
+        // Older versions loaded icons through `URLSession.shared`, whose disk cache kept the host
+        // names of the user's websites; empty it on every launch (fix-website-icons-privacy, D4).
+        URLCache.shared.removeAllCachedResponses()
         self.vaultKeyCache   = keyCache
         self.orgKeyCache     = orgKeyCache
         self.authRepository  = auth

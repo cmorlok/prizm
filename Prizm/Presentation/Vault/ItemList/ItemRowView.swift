@@ -24,7 +24,7 @@ struct ItemRowView: View {
     var body: some View {
         HStack(spacing: 10) {
             FaviconView(
-                domain:    primaryDomain(for: item),
+                domain:    WebsiteIconHost.host(for: item),
                 itemType:  itemType(for: item),
                 loader:    faviconLoader,
                 size:      26
@@ -117,12 +117,7 @@ struct ItemRowView: View {
 
     // MARK: - Favicon helpers
 
-    private func primaryDomain(for item: VaultItem) -> String? {
-        guard case .login(let l) = item.content,
-              let first = l.firstAddress else { return nil }
-        return URL(string: first)?.host
-    }
-
+    /// The icon host of the login's first website with an address (fix-website-icons-privacy, D3).
     private func itemType(for item: VaultItem) -> ItemType {
         switch item.content {
         case .login:      return .login

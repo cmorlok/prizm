@@ -83,12 +83,14 @@ final class ClientIdentificationHeaderTests: XCTestCase {
         }
     }
 
-    /// Favicons come from the icon service, not the vault server: none of the identification goes
-    /// there either (task 1.3).
+    /// Icon requests are plain image requests: none of the identification goes with them (task 1.3;
+    /// fix-website-icons-privacy sends them to the server's icon service).
     func testFaviconRequests_carryNoIdentification() async throws {
         respond("")
-        let loader = FaviconLoader(iconsBase: URL(string: "https://icons.example.net")!,
-                                   session: StubURLProtocol.makeSession())
+        // A private suite, so the test does not read the developer's icon settings.
+        let loader = FaviconLoader(defaultsSuiteName: "ClientIdentificationHeaderTests-\(UUID().uuidString)",
+                                   protocolClasses: [StubURLProtocol.self])
+        loader.configure(iconsBase: URL(string: "https://icons.example.net")!)
         _ = await loader.favicon(for: "example.com")
 
         XCTAssertEqual(StubURLProtocol.requests.count, 1)
