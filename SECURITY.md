@@ -59,11 +59,12 @@ itself; before sign-in, while locked and after sign-out nothing is requested.
   no cookies.
 - **Redirects:** a redirect within the server's own origin (scheme, host, port) is followed. A
   redirect to another origin, which a server sends when it is set to use an outside icon service
-  (Vaultwarden `ICON_SERVICE`), is refused unless "Allow icons from other services" is on; that
-  service then sees the website host and your IP address.
+  (Vaultwarden `ICON_SERVICE`), is refused unless "Allow icons from other services" is on, and
+  even then only an `https` target is followed, so the host never goes over the network in clear
+  text. An allowed service sees the website host and your IP address.
 - **No disk cache:** an ephemeral session without URL cache or cookie storage; icons are kept in
-  memory only and dropped on lock and sign-out. The shared URL cache that older versions filled
-  is emptied at every launch.
+  memory only and dropped on lock, on sign-out and when icons are turned off. The shared URL
+  cache that older versions filled is emptied at every launch.
 - **Settings → Privacy:** "Show website icons" (on by default, as in the official apps) stops all
   icon requests when off; "Allow icons from other services" (off by default) is described above.
 
