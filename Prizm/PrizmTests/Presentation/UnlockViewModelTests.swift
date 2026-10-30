@@ -24,7 +24,8 @@ final class UnlockViewModelTests: XCTestCase {
         try await super.setUp()
         mockAuth = MockAuthRepository()
         mockSync = MockSyncUseCase()
-        sut      = UnlockViewModel(auth: mockAuth, sync: mockSync, account: stubAccount)
+        sut      = UnlockViewModel(auth: mockAuth, sync: mockSync, account: stubAccount,
+                                   defaults: makePrivateDefaults())
     }
 
     override func tearDown() async throws {

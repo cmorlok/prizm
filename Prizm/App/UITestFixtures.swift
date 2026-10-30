@@ -33,6 +33,19 @@ enum UITestFixtures {
 
     static var launchState: LaunchState? { launchState(from: CommandLine.arguments) }
 
+    /// True when this process hosts the unit tests: XCTest sets `XCTestConfigurationFilePath` in the
+    /// host app, and no UI-test state was asked for. The app then uses empty in-memory keychains,
+    /// so it shows the login screen and never reads the developer's stored login or runs the unlock
+    /// screen's Touch ID path, which writes the real preferences (fix-biometric-test-isolation,
+    /// code review 2026-10-30).
+    static func isUnitTestHost(environment: [String: String], arguments: [String]) -> Bool {
+        environment["XCTestConfigurationFilePath"] != nil && launchState(from: arguments) == nil
+    }
+
+    static var isUnitTestHost: Bool {
+        isUnitTestHost(environment: ProcessInfo.processInfo.environment, arguments: CommandLine.arguments)
+    }
+
     /// True when the seeded vault should be shown unlocked.
     static var isEnabled: Bool { launchState == .vault }
 
@@ -46,8 +59,8 @@ enum UITestFixtures {
     /// example password generator options) are not isolated; see design.md, Risks.
     static func isolateBiometricDefaults(_ defaults: UserDefaults = .standard) {
         var arguments = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
-        arguments["biometricUnlockEnabled"] = false
-        arguments["biometricEnrollmentPromptShown"] = true
+        arguments[BiometricPreferenceKey.unlockEnabled] = false
+        arguments[BiometricPreferenceKey.enrollmentPromptShown] = true
         defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
     }
 

@@ -9,6 +9,8 @@ import os.log
 struct SettingsView: View {
 
     let authRepository: any AuthRepository
+    /// The Touch ID preferences store (`AppContainer.preferences`).
+    let preferences: UserDefaults
 
     private let logger = Logger(subsystem: "com.prizm", category: "SettingsView")
 
@@ -42,7 +44,7 @@ struct SettingsView: View {
         Form {
             Section("Security") {
                 if deviceHasBiometrics {
-                    BiometricUnlockToggle(authRepository: authRepository)
+                    BiometricUnlockToggle(authRepository: authRepository, preferences: preferences)
                 }
                 // Read by ClipboardServiceImpl at each copy (clipboard-hardening, D2, D4).
                 Picker("Clear clipboard", selection: $clipboardClearDelay) {

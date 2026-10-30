@@ -23,9 +23,10 @@ final class AuthRepositoryImplTests: XCTestCase {
             crypto:     mockCrypto,
             keychain:   mockKeychain,
             biometricKeychain: mockBiometricKeychain,
-        vaultKeyCache: VaultKeyCache(),
-        orgKeyCache:   OrgKeyCache()
-)
+            vaultKeyCache: VaultKeyCache(),
+            orgKeyCache:   OrgKeyCache(),
+            defaults:      makePrivateDefaults()
+        )
     }
 
     // MARK: - T023: loginWithPassword

@@ -13,7 +13,7 @@ final class BiometricUnlockToggleViewModelTests: XCTestCase {
 
     override func setUp() async throws {
         mockAuth = MockAuthRepository()
-        sut = BiometricUnlockToggleViewModel(authRepository: mockAuth)
+        sut = BiometricUnlockToggleViewModel(authRepository: mockAuth, defaults: makePrivateDefaults())
     }
 
     /// Existing scenario: toggle attempt fails while the vault is locked — disables the

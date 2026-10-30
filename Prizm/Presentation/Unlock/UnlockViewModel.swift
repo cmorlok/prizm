@@ -37,6 +37,8 @@ final class UnlockViewModel: ObservableObject {
     private let sync:             any SyncUseCase
     private let account:          Account
     private let embeddedBiometric: (any EmbeddedBiometricUnlock)?
+    /// The Touch ID preferences; required so tests pass a private store (fix-biometric-test-isolation, D1).
+    private let defaults:         UserDefaults
     private let logger = Logger(subsystem: "com.prizm", category: "UnlockViewModel")
 
     /// Tracks whether the last biometric attempt failed with invalidation,
@@ -58,12 +60,14 @@ final class UnlockViewModel: ObservableObject {
         auth: any AuthRepository,
         sync: any SyncUseCase,
         account: Account,
-        embeddedBiometric: (any EmbeddedBiometricUnlock)? = nil
+        embeddedBiometric: (any EmbeddedBiometricUnlock)? = nil,
+        defaults: UserDefaults
     ) {
         self.auth              = auth
         self.sync              = sync
         self.account           = account
         self.embeddedBiometric = embeddedBiometric
+        self.defaults          = defaults
     }
 
     // MARK: - Derived properties
@@ -199,7 +203,7 @@ final class UnlockViewModel: ObservableObject {
             } catch {
                 logger.error("Enable biometric unlock failed: \(ErrorLog.describe(error), privacy: .public)")
             }
-            UserDefaults.standard.set(true, forKey: "biometricEnrollmentPromptShown")
+            defaults.set(true, forKey: BiometricPreferenceKey.enrollmentPromptShown)
             showEnrollmentPrompt = false
             await performSync()
         }
@@ -207,7 +211,7 @@ final class UnlockViewModel: ObservableObject {
 
     /// Called when the user dismisses the enrollment prompt without enabling.
     func dismissEnrollmentPrompt() {
-        UserDefaults.standard.set(true, forKey: "biometricEnrollmentPromptShown")
+        defaults.set(true, forKey: BiometricPreferenceKey.enrollmentPromptShown)
         showEnrollmentPrompt = false
         Task { await performSync() }
     }
@@ -234,8 +238,8 @@ final class UnlockViewModel: ObservableObject {
     /// is mockable in tests and independent of the UserDefaults enabled flag.
     private func checkEnrollmentOrSync() async {
         let capable        = auth.deviceBiometricCapable
-        let alreadyEnabled = UserDefaults.standard.bool(forKey: "biometricUnlockEnabled")
-        let promptShown    = UserDefaults.standard.bool(forKey: "biometricEnrollmentPromptShown")
+        let alreadyEnabled = defaults.bool(forKey: BiometricPreferenceKey.unlockEnabled)
+        let promptShown    = defaults.bool(forKey: BiometricPreferenceKey.enrollmentPromptShown)
 
         if capable && !alreadyEnabled && !promptShown {
             enrollmentReason    = lastBiometricInvalidated ? .reEnrollAfterInvalidation : .firstTime

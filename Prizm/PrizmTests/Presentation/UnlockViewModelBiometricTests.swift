@@ -8,6 +8,7 @@ final class UnlockViewModelBiometricTests: XCTestCase {
     private var sut:          UnlockViewModel!
     private var mockAuth:     MockAuthRepository!
     private var mockSync:     MockSyncUseCase!
+    private var defaults:     UserDefaults!
     private var cancellables: Set<AnyCancellable> = []
 
     private let stubAccount = Account(
@@ -24,15 +25,12 @@ final class UnlockViewModelBiometricTests: XCTestCase {
         try await super.setUp()
         mockAuth = MockAuthRepository()
         mockSync = MockSyncUseCase()
-        sut      = UnlockViewModel(auth: mockAuth, sync: mockSync, account: stubAccount)
-        UserDefaults.standard.removeObject(forKey: "biometricUnlockEnabled")
-        UserDefaults.standard.removeObject(forKey: "biometricEnrollmentPromptShown")
+        defaults = makePrivateDefaults()
+        sut      = UnlockViewModel(auth: mockAuth, sync: mockSync, account: stubAccount, defaults: defaults)
     }
 
     override func tearDown() async throws {
         cancellables.removeAll()
-        UserDefaults.standard.removeObject(forKey: "biometricUnlockEnabled")
-        UserDefaults.standard.removeObject(forKey: "biometricEnrollmentPromptShown")
         try await super.tearDown()
     }
 
@@ -153,8 +151,8 @@ final class UnlockViewModelBiometricTests: XCTestCase {
         // Drive enrollment state through the real unlock flow:
         // biometrics capable + not enabled + prompt never shown → showEnrollmentPrompt = true
         mockAuth.stubbedDeviceBiometricCapable = true
-        UserDefaults.standard.set(false, forKey: "biometricUnlockEnabled")
-        UserDefaults.standard.set(false, forKey: "biometricEnrollmentPromptShown")
+        defaults.set(false, forKey: "biometricUnlockEnabled")
+        defaults.set(false, forKey: "biometricEnrollmentPromptShown")
 
         let enrollExp = expectation(description: "enrollment prompt shown")
         sut.$showEnrollmentPrompt
@@ -178,13 +176,13 @@ final class UnlockViewModelBiometricTests: XCTestCase {
         await fulfillment(of: [vaultExp], timeout: 3.0)
 
         XCTAssertFalse(sut.showEnrollmentPrompt)
-        XCTAssertTrue(UserDefaults.standard.bool(forKey: "biometricEnrollmentPromptShown"))
+        XCTAssertTrue(defaults.bool(forKey: "biometricEnrollmentPromptShown"))
     }
 
     func testConfirmEnrollBiometric_transitionsToVault() async {
         mockAuth.stubbedDeviceBiometricCapable = true
-        UserDefaults.standard.set(false, forKey: "biometricUnlockEnabled")
-        UserDefaults.standard.set(false, forKey: "biometricEnrollmentPromptShown")
+        defaults.set(false, forKey: "biometricUnlockEnabled")
+        defaults.set(false, forKey: "biometricEnrollmentPromptShown")
 
         let enrollExp = expectation(description: "enrollment prompt shown")
         sut.$showEnrollmentPrompt
@@ -208,13 +206,13 @@ final class UnlockViewModelBiometricTests: XCTestCase {
         await fulfillment(of: [vaultExp], timeout: 3.0)
 
         XCTAssertFalse(sut.showEnrollmentPrompt)
-        XCTAssertTrue(UserDefaults.standard.bool(forKey: "biometricEnrollmentPromptShown"))
+        XCTAssertTrue(defaults.bool(forKey: "biometricEnrollmentPromptShown"))
     }
 
     func testEnrollmentPrompt_reason_isFirstTime_onInitialUnlock() async {
         mockAuth.stubbedDeviceBiometricCapable = true
-        UserDefaults.standard.set(false, forKey: "biometricUnlockEnabled")
-        UserDefaults.standard.set(false, forKey: "biometricEnrollmentPromptShown")
+        defaults.set(false, forKey: "biometricUnlockEnabled")
+        defaults.set(false, forKey: "biometricEnrollmentPromptShown")
 
         let exp = expectation(description: "enrollment prompt shown with .firstTime reason")
         sut.$showEnrollmentPrompt
