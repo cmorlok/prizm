@@ -158,7 +158,7 @@ final class UriChecksumTests: XCTestCase {
     // MARK: - Empty websites
 
     func testEmptyWebsite_isNotSent() throws {
-        let raw = try CipherMapper().toNewRawCipher(
+        let raw = try CipherMapper().toUnkeyedRawCipher(
             loginDraft(uris: ["", "https://example.com"]), encryptedWith: vaultKeys, encryptedFor: RepositoryFixtures.profileId)
 
         let sent = try decryptedURIs(of: raw, keys: vaultKeys)
@@ -168,7 +168,7 @@ final class UriChecksumTests: XCTestCase {
     }
 
     func testLoginWithoutWebsites_sendsAnEmptyList() throws {
-        let raw = try CipherMapper().toNewRawCipher(loginDraft(uris: []), encryptedWith: vaultKeys, encryptedFor: RepositoryFixtures.profileId)
+        let raw = try CipherMapper().toUnkeyedRawCipher(loginDraft(uris: []), encryptedWith: vaultKeys, encryptedFor: RepositoryFixtures.profileId)
 
         XCTAssertEqual(raw.login?.uris?.count, 0)
     }
@@ -176,7 +176,7 @@ final class UriChecksumTests: XCTestCase {
     // MARK: - Adjacency, ordering, idempotency
 
     func testTwoIdenticalWebsites_eachGetAChecksum() throws {
-        let raw = try CipherMapper().toNewRawCipher(
+        let raw = try CipherMapper().toUnkeyedRawCipher(
             loginDraft(uris: ["https://example.com", "https://example.com"]), encryptedWith: vaultKeys, encryptedFor: RepositoryFixtures.profileId)
 
         let entries = try XCTUnwrap(raw.login?.uris)
@@ -190,8 +190,8 @@ final class UriChecksumTests: XCTestCase {
     func testReorderedWebsites_checksumsFollowTheirURI() throws {
         let first = "https://example.com"
         let second = "https://test.com/path"
-        let original = try CipherMapper().toNewRawCipher(loginDraft(uris: [first, second]), encryptedWith: vaultKeys, encryptedFor: RepositoryFixtures.profileId)
-        let reordered = try CipherMapper().toNewRawCipher(loginDraft(uris: [second, first]), encryptedWith: vaultKeys, encryptedFor: RepositoryFixtures.profileId)
+        let original = try CipherMapper().toUnkeyedRawCipher(loginDraft(uris: [first, second]), encryptedWith: vaultKeys, encryptedFor: RepositoryFixtures.profileId)
+        let reordered = try CipherMapper().toUnkeyedRawCipher(loginDraft(uris: [second, first]), encryptedWith: vaultKeys, encryptedFor: RepositoryFixtures.profileId)
 
         for raw in [original, reordered] {
             for pair in try decryptedURIs(of: raw, keys: vaultKeys) {
@@ -205,8 +205,8 @@ final class UriChecksumTests: XCTestCase {
         let draft = loginDraft(uris: ["https://example.com"])
         let mapper = CipherMapper()
 
-        let one = try mapper.toNewRawCipher(draft, encryptedWith: vaultKeys, encryptedFor: RepositoryFixtures.profileId)
-        let two = try mapper.toNewRawCipher(draft, encryptedWith: vaultKeys, encryptedFor: RepositoryFixtures.profileId)
+        let one = try mapper.toUnkeyedRawCipher(draft, encryptedWith: vaultKeys, encryptedFor: RepositoryFixtures.profileId)
+        let two = try mapper.toUnkeyedRawCipher(draft, encryptedWith: vaultKeys, encryptedFor: RepositoryFixtures.profileId)
 
         XCTAssertEqual(try decryptedURIs(of: one, keys: vaultKeys).map(\.checksum),
                        try decryptedURIs(of: two, keys: vaultKeys).map(\.checksum))
@@ -217,7 +217,7 @@ final class UriChecksumTests: XCTestCase {
 
     func testURIIsHashedAsTyped() throws {
         let typed = "HTTPS://Example.COM/Path/"
-        let raw = try CipherMapper().toNewRawCipher(loginDraft(uris: [typed]), encryptedWith: vaultKeys, encryptedFor: RepositoryFixtures.profileId)
+        let raw = try CipherMapper().toUnkeyedRawCipher(loginDraft(uris: [typed]), encryptedWith: vaultKeys, encryptedFor: RepositoryFixtures.profileId)
 
         let sent = try XCTUnwrap(try decryptedURIs(of: raw, keys: vaultKeys).first)
 
@@ -239,7 +239,8 @@ final class UriChecksumTests: XCTestCase {
 
         _ = try await vault.create(loginDraft(uris: ["https://example.com", "https://test.com"], id: "new-1"))
         let personal = try XCTUnwrap(api.lastCreatedCipher)
-        let personalURIs = try decryptedURIs(of: personal, keys: vaultKeys)
+        // A new item has its own key (per-item-key-on-create): the fields are under it.
+        let personalURIs = try decryptedURIs(of: personal, keys: try itemKey(of: personal, wrappedWith: vaultKeys))
         XCTAssertEqual(personalURIs.map(\.uri), ["https://example.com", "https://test.com"])
         for pair in personalURIs { XCTAssertEqual(pair.checksum, expectedChecksum(of: pair.uri)) }
 
@@ -248,9 +249,14 @@ final class UriChecksumTests: XCTestCase {
         orgDraft.collectionIds = ["col-a"]
         _ = try await vault.create(orgDraft)
         let org = try XCTUnwrap(api.lastCreatedOrgCipher)
-        let orgURIs = try decryptedURIs(of: org, keys: orgKeys)
+        let orgURIs = try decryptedURIs(of: org, keys: try itemKey(of: org, wrappedWith: orgKeys))
         XCTAssertEqual(orgURIs.map(\.checksum), ["25FYYY4LSw8CKWbYR76+mFyEkF8HuR+PMbzkET+z8+Q="])
         XCTAssertThrowsError(try decrypt(org.login?.uris?.first?.uriChecksum, keys: vaultKeys),
-                             "the organization item's checksum is under the organization key")
+                             "the organization item's checksum is under its own key, not the vault key")
+    }
+
+    private func itemKey(of cipher: RawCipher, wrappedWith keys: CryptoKeys) throws -> CryptoKeys {
+        let wrapped = try XCTUnwrap(cipher.key, "a new item carries its own key")
+        return try XCTUnwrap(CryptoKeys(data: try EncString(string: wrapped).decrypt(keys: keys)))
     }
 }

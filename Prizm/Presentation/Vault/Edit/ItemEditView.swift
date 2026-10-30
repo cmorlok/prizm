@@ -229,7 +229,7 @@ struct ItemEditView: View {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.secondary)
                                 .accessibilityHidden(true)
-                        case .none, .syncFailed, .itemGone, .accessLost:
+                        case .none, .syncFailed, .itemGone, .accessLost, .createdButUnconfirmed:
                             EmptyView()
                         }
 
@@ -411,7 +411,7 @@ struct ItemEditView: View {
     /// - If no changes have been made: dismiss immediately without a prompt (spec §8.3 "no changes" scenario).
     /// - If unsaved changes exist: show the confirmation alert first (spec §8.3 "with changes" scenario).
     private func handleDiscard() {
-        if viewModel.hasChanges {
+        if viewModel.asksBeforeDiscard {
             showingDiscardAlert = true
         } else {
             viewModel.discard()

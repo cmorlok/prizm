@@ -158,7 +158,7 @@ final class AttachmentFileFormatTests: XCTestCase {
         legacy: Bool = true, wrappedWith wrapKeys: CryptoKeys? = nil, flagged: Bool = false
     ) throws -> ConversionRig {
         let plain = Data("quarterly plan".utf8)
-        let attachmentKey = try crypto.generateAttachmentKey()
+        let attachmentKey = try crypto.generateSymmetricKey()
         let official = [UInt8](try crypto.encryptData(plain, attachmentKey: attachmentKey))
         let blob = legacy
             ? Data(official[1..<17]) + Data(official[49...]) + Data(official[17..<49])

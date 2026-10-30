@@ -661,9 +661,38 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
         let encryptionKeys = try encryptionKeys(organizationId: draft.organizationId, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot)
         let profileId = try await requireProfileId()
 
+        // Every new item gets its own key, as items the Bitwarden SDK creates (per-item-key-on-create,
+        // D1-D3). The random bytes and the `CryptoKeys` built from them are zeroed when create
+        // returns; copies made inside CommonCrypto and the key cache's own copy are not (best effort).
+        var itemKeyBytes: Data
+        do {
+            itemKeyBytes = try crypto.generateSymmetricKey()
+        } catch {
+            logger.error("Create refused: item key generation failed")
+            throw VaultError.itemKeyGenerationFailed
+        }
+        defer { itemKeyBytes.resetBytes(in: itemKeyBytes.startIndex..<itemKeyBytes.endIndex) }
+        guard var itemKey = CryptoKeys(data: itemKeyBytes) else {
+            logger.error("Create refused: the generated item key is not 64 bytes")
+            throw VaultError.itemKeyGenerationFailed
+        }
+        defer {
+            itemKey.encryptionKey.resetBytes(in: itemKey.encryptionKey.startIndex..<itemKey.encryptionKey.endIndex)
+            itemKey.macKey.resetBytes(in: itemKey.macKey.startIndex..<itemKey.macKey.endIndex)
+        }
+
         // An org create carries `encryptedFor` inside `cipher` (OrgCipherCreateRequest encodes the
         // RawCipher there); a personal create has it at the top level.
-        let rawCipher = try mapper.toNewRawCipher(draft, encryptedWith: encryptionKeys, encryptedFor: profileId)
+        let rawCipher: RawCipher
+        do {
+            rawCipher = try mapper.toNewKeyedRawCipher(draft, itemKey: itemKey, wrappedWith: encryptionKeys,
+                                                       encryptedFor: profileId)
+        } catch is EncStringError {
+            // Only encryption failures are key failures; a `CipherMapperError` (an incomplete SSH
+            // key, for example) passes through with its own message.
+            logger.error("Create refused: wrapping or encrypting with the item key failed")
+            throw VaultError.itemKeyGenerationFailed
+        }
 
         // The last check before the request, with no suspension between it and the send (same as in
         // `performUpdate`): a lock that landed in the awaits above must not let the create go out.
@@ -684,14 +713,27 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
             logger.info("Save finished after lock, dropped: \(createdRaw.id, privacy: .public)")
             throw VaultError.vaultLocked
         }
-        await storeRecord(createdRaw, ifCurrent: storeGeneration)
-
-        // Checked before the answer is decrypted with keys captured before a lock.
-        guard recordStore.isCurrent(storeGeneration) else {
-            logger.info("Save finished after lock, dropped: \(createdRaw.id, privacy: .public)")
-            throw VaultError.vaultLocked
+        // The answer is used only if it carries the key Prizm generated, for the owner Prizm chose,
+        // and maps (D4). The item exists on the server either way; an answer Prizm cannot trust is
+        // not stored, cached or listed, and the next sync reads the item through its `key`. Every
+        // failure here is `createdButUnconfirmed`, which keeps Save disabled: a generic error would
+        // let a second Save create a duplicate (security review 2026-10-31).
+        guard createdRaw.organizationId == draft.organizationId,
+              answerCarries(itemKey, createdRaw, wrappedWith: encryptionKeys) else {
+            logger.error("Create answer for \(createdRaw.id, privacy: .public) does not carry the generated item key")
+            throw VaultError.createdButUnconfirmed
         }
-        let (createdItem, cipherKey) = try mapper.map(raw: createdRaw, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot)
+        // Mapped before anything is stored. No suspension since the lock check above, so the keys
+        // captured before a lock are never used here.
+        let createdItem: VaultItem
+        let cipherKey: Data
+        do {
+            (createdItem, cipherKey) = try mapper.map(raw: createdRaw, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot)
+        } catch {
+            logger.error("Create answer for \(createdRaw.id, privacy: .public) does not map: \(ErrorLog.describe(error), privacy: .public)")
+            throw VaultError.createdButUnconfirmed
+        }
+        await storeRecord(createdRaw, ifCurrent: storeGeneration)
         // An attachment added before the next sync needs the new item's key source; without it the
         // key service refuses (fix-org-attachment-key, D2). The cache ignores it when a lock
         // cleared the cache since the request began, so it never reaches the next session; a lock
@@ -707,6 +749,21 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
         buildIndexes()
         logger.info("Vault item created: \(createdItem.id, privacy: .public)")
         return createdItem
+    }
+
+    /// True when `answer.key` unwraps under `wrappingKeys` to exactly `itemKey`. Compared in
+    /// constant time; the unwrapped bytes are zeroed.
+    private func answerCarries(_ itemKey: CryptoKeys, _ answer: RawCipher, wrappedWith wrappingKeys: CryptoKeys) -> Bool {
+        guard let wrapped = answer.key, var unwrapped = try? EncString(string: wrapped).decrypt(keys: wrappingKeys) else {
+            return false
+        }
+        defer { unwrapped.resetBytes(in: unwrapped.startIndex..<unwrapped.endIndex) }
+        var expected = itemKey.toData()
+        defer { expected.resetBytes(in: expected.startIndex..<expected.endIndex) }
+        guard unwrapped.count == expected.count else { return false }
+        var difference: UInt8 = 0
+        for (a, b) in zip(unwrapped, expected) { difference |= a ^ b }
+        return difference == 0
     }
 
     // MARK: - Delete / Restore / Empty Trash

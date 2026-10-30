@@ -201,10 +201,10 @@ protocol PrizmCryptoService: Actor {
     // context — they access no actor-isolated state and can therefore be tested via
     // `any PrizmCryptoService` without requiring `await`.
 
-    /// Generates a cryptographically random 64-byte per-attachment key.
+    /// Generates a cryptographically random 64-byte symmetric key (attachment keys, new item keys).
     ///
     /// See `AttachmentCrypto.swift` for the full specification.
-    nonisolated func generateAttachmentKey() throws -> Data
+    nonisolated func generateSymmetricKey() throws -> Data
 
     /// Encrypts file data using AES-256-CBC + HMAC-SHA256 (Encrypt-then-MAC).
     /// Binary layout: the official EncArrayBuffer `0x02 ‖ IV (16) ‖ HMAC-SHA256 (32) ‖ ciphertext`.

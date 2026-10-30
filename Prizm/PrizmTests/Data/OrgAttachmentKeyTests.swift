@@ -117,30 +117,30 @@ final class OrgAttachmentKeyTests: XCTestCase {
         let vault = await RepositoryFixtures.vaultRepository(
             apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache, vaultKeyCache: cache)
         let service = VaultKeyServiceImpl(cache: cache, orgKeyCache: orgKeyCache, crypto: crypto)
+        // The server stores the keyed request and answers with it under a new id.
+        api.createCipherResponder = { try RepositoryFixtures.echoCreated($0, id: "new-1") }
         return (vault, api, cache, service, vaultKeys, orgKeys)
     }
 
-    func testCreateOrgItem_recordsTheOrganization_andItsKeyIsTheOrgKey() async throws {
+    /// Since per-item-key-on-create a new item has its own key, so the source recorded on create is
+    /// that key, for an org item as for a personal one (PerItemKeyOnCreateTests checks the bytes).
+    func testCreateOrgItem_recordsItsOwnKey() async throws {
         let rig = await makeCreateRig()
-        rig.api.createOrgCipherResponse = KeyedCipherBuilder.login(
-            id: "new-org", name: "New shared", organizationId: "org-1", collectionIds: ["col-a"],
-            activeKeys: rig.orgKeys)
         var draft = DraftVaultItem.blank(type: .login)
         draft.name = "New shared"
         draft.organizationId = "org-1"
         draft.collectionIds = ["col-a"]
 
-        _ = try await rig.vault.create(draft)
+        let created = try await rig.vault.create(draft)
 
-        let source = await rig.cache.source(for: "new-org")
-        XCTAssertEqual(source, .organization(orgId: "org-1"))
-        let key = try await rig.service.cipherKey(for: "new-org")
-        XCTAssertEqual(key, rig.orgKeys.toData(), "An attachment before the next sync uses the org key")
+        let source = await rig.cache.source(for: created.id)
+        guard case .itemKey = source else { return XCTFail("expected the item's own key, got \(String(describing: source))") }
     }
 
     func testCreateFinishingAfterALock_recordsNoKeySource() async throws {
         let rig = await makeCreateRig()
-        rig.api.createCipherResponse = KeyedCipherBuilder.login(id: "new-late", name: "Late", activeKeys: rig.vaultKeys)
+        // The mock answers with the request itself, which carries the new item's key, so the create
+        // reaches the cache write; only the lock may stop it there.
         let cache = rig.cache
         // The lock clears the key cache while the create request is on its way.
         rig.api.whileCreatingCipher = { await cache.clear() }
@@ -149,20 +149,20 @@ final class OrgAttachmentKeyTests: XCTestCase {
 
         _ = try? await rig.vault.create(draft)
 
-        let source = await rig.cache.source(for: "new-late")
+        XCTAssertEqual(rig.api.createCipherCallCount, 1)
+        let source = await rig.cache.source(for: "new-1")
         XCTAssertNil(source, "A source recorded after the lock would outlive the session")
     }
 
-    func testCreatePersonalItem_recordsPersonal() async throws {
+    func testCreatePersonalItem_recordsItsOwnKey() async throws {
         let rig = await makeCreateRig()
-        rig.api.createCipherResponse = KeyedCipherBuilder.login(id: "new-mine", name: "Mine", activeKeys: rig.vaultKeys)
         var draft = DraftVaultItem.blank(type: .login)
         draft.name = "Mine"
 
-        _ = try await rig.vault.create(draft)
+        let created = try await rig.vault.create(draft)
 
-        let source = await rig.cache.source(for: "new-mine")
-        XCTAssertEqual(source, .personal)
+        let source = await rig.cache.source(for: created.id)
+        guard case .itemKey = source else { return XCTFail("expected the item's own key, got \(String(describing: source))") }
     }
 
     // MARK: - 4.1 Attachments wrapped with the personal key
@@ -248,7 +248,7 @@ final class OrgAttachmentKeyTests: XCTestCase {
         let crypto = PrizmCryptoServiceImpl()
         await crypto.unlockWith(keys: vaultKeys)
         let plain = Data("only mine".utf8)
-        var attachmentKey = try crypto.generateAttachmentKey()
+        var attachmentKey = try crypto.generateSymmetricKey()
         defer { attachmentKey.resetBytes(in: attachmentKey.indices) }
         let api = MockPrizmAPIClient()
         api.downloadBlobResult = try crypto.encryptData(plain, attachmentKey: attachmentKey)

@@ -22,6 +22,18 @@ enum RepositoryFixtures {
     /// The profile id of the default sync response of `MockPrizmAPIClient`.
     static let profileId = "pid"
 
+    /// `cipher` as a server answers a create: the request's JSON with `id` and the dates set;
+    /// `edit` changes the JSON before it is decoded (for example to drop `key`).
+    nonisolated static func echoCreated(_ cipher: RawCipher, id: String,
+                                        edit: (inout [String: Any]) -> Void = { _ in }) throws -> RawCipher {
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(cipher)) as? [String: Any])
+        json["id"] = id
+        json["revisionDate"] = "2026-10-30T12:00:00.000000Z"
+        json["creationDate"] = "2026-10-30T12:00:00.000000Z"
+        edit(&json)
+        return try JSONDecoder().decode(RawCipher.self, from: JSONSerialization.data(withJSONObject: json))
+    }
+
     /// 2026-10-26 10:00:00.123 UTC, a whole millisecond.
     ///
     /// A test that saves uses this date for the seeded item and for the draft it saves, so the stored
@@ -134,7 +146,7 @@ enum RepositoryFixtures {
             } else {
                 keys = vaultKeys
             }
-            let record = try mapper.toNewRawCipher(DraftVaultItem(item), encryptedWith: keys, encryptedFor: RepositoryFixtures.profileId)
+            let record = try mapper.toUnkeyedRawCipher(DraftVaultItem(item), encryptedWith: keys, encryptedFor: RepositoryFixtures.profileId)
             let mappedBack = try mapper.map(raw: record, vaultKeys: vaultKeys, orgKeys: orgKeys).item
             guard mappedBack.name == item.name else {
                 throw SeedError(description: "Seeded record of item \(item.id) does not map back to its name")

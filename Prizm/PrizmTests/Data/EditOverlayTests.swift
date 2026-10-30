@@ -217,7 +217,7 @@ final class EditOverlayTests: XCTestCase {
     private func storedRecord(
         for item: VaultItem, keys: CryptoKeys, edit: (inout [String: Any]) -> Void = { _ in }
     ) throws -> RawCipher {
-        let created = try mapper.toNewRawCipher(DraftVaultItem(item), encryptedWith: keys, encryptedFor: RepositoryFixtures.profileId)
+        let created = try mapper.toUnkeyedRawCipher(DraftVaultItem(item), encryptedWith: keys, encryptedFor: RepositoryFixtures.profileId)
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(created)) as? [String: Any])
         // The create path writes no revision; a server record always has one, and a save needs it.
         json["revisionDate"] = RepositoryFixtures.serverRevisionString(for: item.revisionDate)

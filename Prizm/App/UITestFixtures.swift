@@ -97,7 +97,7 @@ enum UITestFixtures {
             } else {
                 keys = vaultKeys
             }
-            let record = try! mapper.toNewRawCipher(DraftVaultItem(item), encryptedWith: keys, encryptedFor: "ui-test-seed")
+            let record = try! mapper.toUnkeyedRawCipher(DraftVaultItem(item), encryptedWith: keys, encryptedFor: "ui-test-seed")
             // The UI-test vault's records follow the same rule as the server's: each carries its
             // item's revision, which the save path relies on to compare revisions. Re-encoding a
             // fixed record cannot fail, so a failure traps in this DEBUG seam, like the other

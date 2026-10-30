@@ -93,7 +93,7 @@ final class RawCipherStoreTests: XCTestCase {
     /// Its name is a real type-2 EncString under `vaultKeys`, as a server record is, so a save built
     /// over it can check the key against it.
     private func richRecord(_ id: String) throws -> RawCipher {
-        let name = try CipherMapper().toNewRawCipher(DraftVaultItem(vaultItem(id)), encryptedWith: vaultKeys, encryptedFor: RepositoryFixtures.profileId).name
+        let name = try CipherMapper().toUnkeyedRawCipher(DraftVaultItem(vaultItem(id)), encryptedWith: vaultKeys, encryptedFor: RepositoryFixtures.profileId).name
         return RawCipher(
             id: id, organizationId: nil, folderId: nil, type: 1, name: name, notes: nil,
             favorite: false, reprompt: nil, deletedDate: nil, creationDate: nil,

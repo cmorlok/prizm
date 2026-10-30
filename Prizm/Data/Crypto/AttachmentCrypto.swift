@@ -86,24 +86,29 @@ extension PrizmCryptoServiceImpl {
 
     private static let logger = Logger(subsystem: "com.prizm", category: "attachments")
 
-    // MARK: - 2.1 generateAttachmentKey
+    // MARK: - 2.1 generateSymmetricKey
 
-    /// Generates a cryptographically random 64-byte per-attachment key.
+    /// Generates a cryptographically random 64-byte symmetric key: a per-attachment key, or a new
+    /// item's own key (per-item-key-on-create). One function for both, so there is one audited
+    /// random source for keys.
     ///
-    /// - Security goal: each file upload gets an independent random key so that
-    ///   compromise of one attachment key does not compromise any other attachment
-    ///   (key isolation per Bitwarden Security Whitepaper §4).
+    /// - Security goal: each file upload and each new item gets an independent random key, so that
+    ///   compromise of one key does not compromise any other (key isolation per Bitwarden Security
+    ///   Whitepaper §4).
     /// - Algorithm: 64 bytes from `SecRandomCopyBytes` (backed by `/dev/urandom`).
     ///   First 32 bytes = AES-256-CBC encryption key; last 32 bytes = HMAC-SHA256 MAC key.
     /// - Spec: Bitwarden Security Whitepaper §4 — "Attachment Key Generation".
     ///
     /// - Returns: 64-byte random key Data.
+    /// - Intentionally NOT done: zeroing the returned `Data`; the caller owns it and zeroes it.
     /// - Throws: `AttachmentCryptoError.keyGenerationFailed` if `SecRandomCopyBytes` fails.
-    nonisolated func generateAttachmentKey() throws -> Data {
+    nonisolated func generateSymmetricKey() throws -> Data {
         var keyBytes = [UInt8](repeating: 0, count: 64)
+        // The working buffer never outlives the copy below.
+        defer { keyBytes.withUnsafeMutableBytes { $0.initializeMemory(as: UInt8.self, repeating: 0) } }
         let status = SecRandomCopyBytes(kSecRandomDefault, 64, &keyBytes)
         guard status == errSecSuccess else {
-            Self.logger.error("SecRandomCopyBytes failed generating attachment key (OSStatus \(status))")
+            Self.logger.error("SecRandomCopyBytes failed generating a symmetric key (OSStatus \(status))")
             throw AttachmentCryptoError.keyGenerationFailed
         }
         return Data(keyBytes)

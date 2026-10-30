@@ -206,7 +206,7 @@ final class AttachmentRepositoryImplTests: XCTestCase {
     // MARK: - Download: using existing Attachment.url
 
     func test_download_withExistingURL_decryptsBlob() async throws {
-        let attachmentKey = try crypto.generateAttachmentKey()
+        let attachmentKey = try crypto.generateSymmetricKey()
         let encBlob       = try crypto.encryptData(plainData, attachmentKey: attachmentKey)
 
         let cipherKeys    = CryptoKeys(
@@ -238,7 +238,7 @@ final class AttachmentRepositoryImplTests: XCTestCase {
     }
 
     func test_download_withNilURL_fetchesFreshURLThenDecrypts() async throws {
-        let attachmentKey = try crypto.generateAttachmentKey()
+        let attachmentKey = try crypto.generateSymmetricKey()
         let encBlob       = try crypto.encryptData(plainData, attachmentKey: attachmentKey)
 
         let cipherKeys = CryptoKeys(
@@ -272,7 +272,7 @@ final class AttachmentRepositoryImplTests: XCTestCase {
     }
 
     func test_download_withSyncURL_downloadsFromTheFreshURL() async throws {
-        let attachmentKey = try crypto.generateAttachmentKey()
+        let attachmentKey = try crypto.generateSymmetricKey()
         let encBlob       = try crypto.encryptData(plainData, attachmentKey: attachmentKey)
 
         let cipherKeys = CryptoKeys(
@@ -383,7 +383,7 @@ final class AttachmentRepositoryImplTests: XCTestCase {
     private func makeSlicedSUT() -> (AttachmentRepositoryImpl, MockPrizmCryptoService) {
         let mock = MockPrizmCryptoService()
         let bytes = Data((0..<192).map { UInt8($0 & 0xFF) })
-        mock.stubbedAttachmentKey    = bytes[16..<80]
+        mock.stubbedSymmetricKey    = bytes[16..<80]
         mock.stubbedDecAttachmentKey = bytes[16..<80]
         mock.stubbedEncryptedData    = bytes[96..<160]
         mock.stubbedDecryptedData    = plainData

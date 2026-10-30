@@ -566,8 +566,9 @@ nonisolated final class CipherMapper: Sendable {
     ///   official web vault uses.
     ///
     /// - What is NOT done:
-    ///   • No `key` is sent: a new item has none, and Prizm does not give new items their own key
-    ///     (that is the separate change `per-item-key-on-create`).
+    ///   • No `key` is sent. This builds the server record of an item WITHOUT its own key, for the
+    ///     UI-test vault and unit tests only; it is never a create path. `create()` uses
+    ///     `toNewKeyedRawCipher(_:itemKey:wrappedWith:encryptedFor:)` (per-item-key-on-create).
     ///   • `deletedDate`, `creationDate`, `revisionDate` are sent as `nil` — the server is
     ///     authoritative for these timestamps and ignores client-provided values.
     ///   • Biometric re-authentication before encryption is not performed here; it is
@@ -580,9 +581,33 @@ nonisolated final class CipherMapper: Sendable {
     ///   profile id of the last sync. Required: Vaultwarden 1.37.4 answers 422 to a create without it.
     /// - Returns: A `RawCipher` with all sensitive string fields encrypted as EncStrings.
     /// - Throws: `EncStringError` if IV generation or AES/HMAC computation fails.
-    func toNewRawCipher(_ draft: DraftVaultItem, encryptedWith keys: CryptoKeys,
-                        encryptedFor: String) throws -> RawCipher {
+    func toUnkeyedRawCipher(_ draft: DraftVaultItem, encryptedWith keys: CryptoKeys,
+                            encryptedFor: String) throws -> RawCipher {
         try buildRawCipher(draft, keys: keys, encryptedFor: encryptedFor, base: nil)
+    }
+
+    /// Converts a new `DraftVaultItem` into the create request of an item with its own key:
+    /// `itemKey` encrypts every field, and `key` carries `itemKey` wrapped with `wrappingKeys`.
+    ///
+    /// - Security goal: an item Prizm creates has the key structure of an item the Bitwarden SDK
+    ///   creates ("Every cipher the SDK encrypts carries its own key", `CipherView::load_cipher_key_slot`,
+    ///   sdk-internal `095bfda`), so no field of it is readable with the vault or organization key
+    ///   alone, and later key operations work on it as on any other keyed item.
+    /// - Algorithm: `key` is `itemKey` (64 bytes: AES-256 key then HMAC-SHA256 key) as an EncString
+    ///   type 2 under `wrappingKeys` (AES-256-CBC, HMAC-SHA256 encrypt-then-MAC, Bitwarden Security
+    ///   Whitepaper §4), as the SDK's `wrap_symmetric_key`. Every field as in `toUnkeyedRawCipher`,
+    ///   under `itemKey`.
+    /// - Intentionally NOT done: choosing a key. The caller passes the vault key or the organization
+    ///   key (no fallback between them) and a key it generated (`generateSymmetricKey()`).
+    ///
+    /// - Throws: `EncStringError` if encryption fails; `CipherMapperError` as `toUnkeyedRawCipher`.
+    func toNewKeyedRawCipher(_ draft: DraftVaultItem, itemKey: CryptoKeys, wrappedWith wrappingKeys: CryptoKeys,
+                             encryptedFor: String) throws -> RawCipher {
+        // The plaintext copy of the key is zeroed after wrapping (Constitution §III, design D1).
+        var plain = itemKey.toData()
+        defer { plain.resetBytes(in: plain.indices) }
+        let wrapped = try EncString.encrypt(data: plain, keys: wrappingKeys).toString()
+        return try buildRawCipher(draft, keys: itemKey, encryptedFor: encryptedFor, base: nil, newKey: wrapped)
     }
 
     /// Converts an edited `DraftVaultItem` into the `RawCipher` for `PUT /ciphers/{id}`, built over
@@ -631,9 +656,10 @@ nonisolated final class CipherMapper: Sendable {
         try buildRawCipher(draft, keys: keys, encryptedFor: encryptedFor, base: base)
     }
 
-    /// The part both entry points share. `base` is nil on create.
+    /// The part all entry points share. `base` is nil on create; `newKey` is the wrapped key of a
+    /// new keyed item.
     private func buildRawCipher(_ draft: DraftVaultItem, keys: CryptoKeys,
-                                encryptedFor: String, base: RawCipher?) throws -> RawCipher {
+                                encryptedFor: String, base: RawCipher?, newKey: String? = nil) throws -> RawCipher {
         let encName  = try encryptString(draft.name, keys: keys)
         let encNotes: String? = try {
             switch draft.content {
@@ -668,7 +694,7 @@ nonisolated final class CipherMapper: Sendable {
             sshKey:         sshKeyData,
             fields:         encFields.isEmpty ? nil : encFields,
             // The stored key string itself, never re-wrapped or re-encoded; nil for an item without one.
-            key:            base?.key,
+            key:            base?.key ?? newKey,
             collectionIds:  draft.collectionIds,
             attachments:    nil,
             encryptedFor:   encryptedFor,

@@ -20,7 +20,7 @@ import os.log
 ///   - File name: `encryptFileName` — EncString type-2 wrapping the plaintext name.
 ///
 /// - Crypto injection: takes `any PrizmCryptoService` (protocol, not concrete type) so that
-///   tests can supply a mock. The 6 attachment crypto methods (`generateAttachmentKey`,
+///   tests can supply a mock. The 6 attachment crypto methods (`generateSymmetricKey`,
 ///   `encryptData`, `decryptData`, `encryptAttachmentKey`, `decryptAttachmentKey`,
 ///   `encryptFileName`) are declared `nonisolated` on the protocol and implemented in
 ///   `AttachmentCrypto.swift` via an extension on `PrizmCryptoServiceImpl`.
@@ -84,7 +84,7 @@ final class AttachmentRepositoryImpl: AttachmentRepository {
         let keys = try splitKey(cipherKey)
 
         // Step 1: Generate per-attachment key (64 random bytes, Constitution §III).
-        var attachmentKey = try crypto.generateAttachmentKey()
+        var attachmentKey = try crypto.generateSymmetricKey()
         defer { attachmentKey.resetBytes(in: attachmentKey.indices) }
 
         // Step 2: Encrypt file name.

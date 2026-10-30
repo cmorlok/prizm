@@ -123,7 +123,7 @@ final class RevisionParsingTests: XCTestCase {
             id: "c1", name: "Login", isFavorite: false, isDeleted: false, creationDate: Date(),
             revisionDate: RepositoryFixtures.revisionDate,
             content: .login(LoginContent(username: "u", password: "p", uris: [], totp: nil, notes: nil, customFields: [])))
-        let record = try CipherMapper().toNewRawCipher(
+        let record = try CipherMapper().toUnkeyedRawCipher(
             DraftVaultItem(item), encryptedWith: vaultKeys, encryptedFor: "pid")
         let stamped = try RepositoryFixtures.withRevision(record, "2026-10-26T18:54:01Z")
 

@@ -75,22 +75,22 @@ final class AttachmentCryptoTests: XCTestCase {
             encryptionKey: Data(repeating: 0x11, count: 32),
             macKey:        Data(repeating: 0x22, count: 32)
         )
-        let rawKey    = try sut.generateAttachmentKey()
+        let rawKey    = try sut.generateSymmetricKey()
         let encString = try sut.encryptAttachmentKey(rawKey, cipherKey: cipherKey)
         XCTAssertTrue(encString.hasPrefix("2."), "EncString type-2 must start with '2.'")
         XCTAssertEqual(encString.filter { $0 == "|" }.count, 2, "Type-2 EncString has two '|' separators")
     }
 
-    // MARK: - generateAttachmentKey
+    // MARK: - generateSymmetricKey
 
-    func test_generateAttachmentKey_produces64Bytes() throws {
-        let key = try sut.generateAttachmentKey()
+    func test_generateSymmetricKey_produces64Bytes() throws {
+        let key = try sut.generateSymmetricKey()
         XCTAssertEqual(key.count, 64)
     }
 
-    func test_generateAttachmentKey_producesUniqueValues() throws {
-        let k1 = try sut.generateAttachmentKey()
-        let k2 = try sut.generateAttachmentKey()
+    func test_generateSymmetricKey_producesUniqueValues() throws {
+        let k1 = try sut.generateSymmetricKey()
+        let k2 = try sut.generateSymmetricKey()
         XCTAssertNotEqual(k1, k2, "Each key generation must produce unique random bytes")
     }
 

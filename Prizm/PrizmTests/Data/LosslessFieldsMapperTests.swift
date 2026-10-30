@@ -168,7 +168,7 @@ final class LosslessFieldsMapperTests: XCTestCase {
                 uris: [LoginURI(uri: "https://k.example.com", matchType: .host)],
                 totp: nil, notes: nil,
                 customFields: [CustomField(name: "Pin", value: "1", type: .hidden, linkedId: nil)])))
-        let request = try mapper.toNewRawCipher(DraftVaultItem(item), encryptedWith: keys,
+        let request = try mapper.toUnkeyedRawCipher(DraftVaultItem(item), encryptedWith: keys,
                                                 encryptedFor: RepositoryFixtures.profileId)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any])
         let field = try XCTUnwrap((json["fields"] as? [[String: Any]])?.first)
