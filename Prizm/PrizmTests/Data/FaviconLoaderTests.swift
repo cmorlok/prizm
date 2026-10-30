@@ -100,7 +100,7 @@ final class FaviconLoaderTests: XCTestCase {
         XCTAssertEqual(WebsiteIconSettings.allowOtherServicesKey, "icons.allowOtherServices")
     }
 
-    func testIconsOff_sendsNothing_andEmptiesTheCache() async {
+    func testIconsOff_sendsNothing_andEmptiesTheCache() async throws {
         IconStub.answer = { _ in .ok(Self.png) }
         let loader = makeLoader()
         loader.configure(iconsBase: base)
@@ -108,6 +108,14 @@ final class FaviconLoaderTests: XCTestCase {
         XCTAssertEqual(IconStub.requests.count, 1)
 
         defaults.set(false, forKey: WebsiteIconSettings.showIconsKey)
+        // The loader resets from a notification task; turning icons on again before it ran would
+        // skip the reset (fix-favicon-test-race).
+        let deadline = ContinuousClock.now + .seconds(2)
+        while await loader.generation == 0, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let resets = await loader.generation
+        XCTAssertEqual(resets, 1, "the loader never reset after icons were turned off")
         let off = await loader.favicon(for: "github.com")
         XCTAssertNil(off)
         XCTAssertEqual(IconStub.requests.count, 1, "no request while icons are off")
