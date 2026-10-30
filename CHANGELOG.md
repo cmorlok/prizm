@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fix: editing an item no longer deletes custom fields without a name or websites without an
+  address, and no longer changes field types, linked fields or website match rules that Prizm does
+  not know. Prizm shows them as "Unnamed field", "Unsupported field type" (read-only, hidden like a
+  password), "Unknown field" and "Unknown match rule"; a website without an address appears only in
+  the edit sheet, as an empty row. Items that earlier versions already changed can't be repaired.
 - Fix: the edit and New Item sheets were so short that only about three fields showed,
   organization items worst. The sheet now asks for 800 pt; in a smaller window it fits the window
   and the fields scroll.

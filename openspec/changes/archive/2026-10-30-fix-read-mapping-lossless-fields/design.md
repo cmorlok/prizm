@@ -85,7 +85,7 @@ them.
 
 ### D2. Presentation of the optional values
 
-- **Nameless custom field.** Detail and edit show the label "Unnamed field" in secondary style. The
+- **Nameless custom field.** Detail and edit show the label "Unnamed field" in place of the name, styled like any other field label. The
   VoiceOver label is "Unnamed field" plus the value. The name stays read-only in edit, as for all
   fields today.
 - **Value-less URI.**
@@ -161,6 +161,48 @@ them.
   them into text. Prizm can't prevent that, but it no longer does it itself.
 - **[Low] Already-damaged items.** Fields and URIs deleted by earlier Prizm edits can't be
   restored. The CHANGELOG says so.
+
+## Review
+
+Independent review on 2026-10-30 (fresh reviewer, branch compared with `origin/develop`). No
+blockers and no correctness bugs: read and save keep all five cases. Seven findings:
+
+- Fixed: the CHANGELOG entry was missing (added at archive, task 5.3).
+- Fixed: the sync debug log still said `org(skipped)=`; org items are no longer skipped, so it
+  says `org=` (task 5.1).
+- Fixed: a value-less website that the user fills in no longer pairs with its stored entry, so that
+  entry's unknown keys are not sent. Accepted and documented in D4: the same holds for any edited
+  address in `fix-cipher-edit-data-loss`.
+- Fixed: nothing in the code protected the equality rule of D3. Each `unknown` case now says it is
+  built by `init(rawValue:)` only, since `.unknown` with a known raw value would compare equal to
+  that case.
+- Declined: several nameless fields get the same accessibility identifier
+  (`row("Unnamed field")`). It matters only for UI tests, and duplicate named fields behave the
+  same way today.
+- Declined: the task 3.3 test checks only the create path. `EditOverlayTests` cover the update
+  path.
+- Declined by Christian (2026-10-30): a visual and VoiceOver hand check of "Unnamed field" plus
+  the value, the read-only edit row of an unknown type, and the disabled "Unknown match rule" entry
+  in the picker. None of them is tested automatically; the label texts are unit-tested and the rig
+  run checks the data end to end.
+
+The live rig run (`20261030T113852Z`, Vaultwarden 1.37.4) found one more problem before this review:
+an omitted `name` or `uri` key stays absent on Vaultwarden, while the spec and the official clients
+send `null`. Fixed: both are now sent as an explicit `null` (`WireWriter.putOrNull`), and the same
+rig run confirmed the server record keeps all five values after a Prizm save.
+
+### Security
+
+Light review (task 5.2), of the code as it is now. `toRawCipher` encrypts every non-`nil` name,
+value and address with the item's effective keys, as before; a `nil` name or address is sent as
+`null` and never encrypted as an empty string. For a website still without an address, no checksum
+is computed; the stored `uriChecksum` goes back as received, an opaque ciphertext Prizm neither
+decrypts nor checks (the SDK computes none without an address either). Stored names and addresses
+are decrypted on save only to pair entries with the stored ones; they stay local strings and are
+not kept. No new logging: the only log line in this path (`toRawFields`) records the item id and
+counts, and the sync debug line records counts per type. A field of an unknown type is masked and
+revealable in the detail view and its value is not shown in the edit sheet, because a newer type
+may hold a secret. No key handling and no algorithm changed.
 
 ## Open Questions
 
