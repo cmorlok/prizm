@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fix: VoiceOver could read the previous item's value, a value from before an edit, or the dots of
+  a revealed password in the item details and the password generator. It now always reads the text
+  on screen.
 - Fix: editing an item in Prizm no longer deletes data that other Bitwarden apps added to it:
   passkeys, password history, the archived state and an SSH key's fingerprint now stay on the item.
 - Fix: items that other Bitwarden apps encrypted with their own key no longer disappear from

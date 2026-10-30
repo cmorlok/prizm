@@ -77,7 +77,7 @@ Tests:
 The UI test vault gives Kappa the website `kappa.example.com/login`. Before, only Gamma had
 websites, so no test could switch between two Website rows. Like Gamma's `example.com/login` it has
 no scheme, so `URL(string:)?.host` is nil and no UI run asks the icon service for it. (The
-measurement in proposal.md was taken with an earlier fixture, `https://kappa.example.com`.) Kappa is used by the attachment and
+measurement in proposal.md was taken with `https://kappa.example.com`, before the review.) Kappa is used by the attachment and
 keyboard tests, which do not look at websites.
 
 ### D4. The UI test runner is signed with the team, so the permission survives rebuilds
@@ -104,6 +104,24 @@ already needs `LocalConfig.xcconfig` for the app target.
   The hand check (task 3.1) found no problem.
 - **[Low] The text-range tests skip without the permission.** → The hand check remains the gate;
   the tests document the cause and how to check it.
+
+## Review
+
+`/code-review` (medium) on 2026-10-30, ten findings:
+- Fixed: Kappa's website had a host, so every UI run asked the icon service for it (D3); the three
+  modifiers were repeated four times (now one modifier, D1); an animated identity change could show
+  the old text next to the new one (`.transition(.identity)`, D1); the probe did not check that it
+  hit the value text (D2); tasks were not ticked (done in the archive commit, with the red and green
+  runs).
+- Accepted and documented under Risks: churn of the generator preview, VoiceOver focus moving when
+  the text under it changes.
+- Declined: (1) the UI test bundle identifier is in the maintainer's namespace: macOS development
+  signing needs no registered App ID, and the runner builds and signs under another team (checked);
+  making it configurable would only force a new permission grant. (2) The revealed password becomes
+  the view identity: while revealed it is already held by the same view, as its text and its
+  accessibility value, which any accessibility client can read; the identity adds no new exposure
+  and is not logged, and a counter instead would add state and a frame with the old text.
+  (3) The text-range tests skip by default: by design (D2); the hand check is the gate.
 
 ## Open Questions
 
