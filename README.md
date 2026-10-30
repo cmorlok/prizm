@@ -45,8 +45,8 @@ Prizm exists to give macOS users a native, auditable, trustworthy interface to t
 
 - **Full vault management** — browse, create, edit, delete, and restore all item types (logins, cards, identities, secure notes, SSH keys) with Trash and favourites support
 - **Organisation & collection support** — view and manage items across organisations; collections shown as a collapsible tree in the sidebar with item counts; create, rename, and delete collections (admin/manager role); org items encrypted with RSA-unwrapped organisation keys
-- **Folder organization** — create, rename, and delete folders; nested subfolders via `/` naming convention with collapsible tree view; drag-and-drop items onto folders; folder-scoped search
-- **Built for power users** — ⌘F global search with match highlighting, ⌘N new item, ⌘L lock, one-keystroke copy for username / password / website, Option to reveal masked fields. [Full shortcut list](#shortcuts)
+- **Folder organization** — create, rename, and delete folders; nested subfolders via `/` naming convention with collapsible tree view; drag-and-drop items onto folders; folder-scoped search; "No Folder" and "My Vault" views
+- **Built for power users** — ⌘F global search (every word must match; accents ignored; also searches notes) with match highlighting, ⌘N new item, ⌘L lock, one-keystroke copy for username / password / website, Option to reveal masked fields. [Full shortcut list](#shortcuts)
 - **File attachments** — upload, download, open, and delete encrypted file attachments on any vault item; drag-and-drop batch upload; two-layer AES-256-CBC + HMAC-SHA256 encryption with per-attachment keys
 - **Verification codes (TOTP)** — see the current one-time code for any login with a TOTP seed, in the item and in a "Codes" list in the sidebar; codes rotate automatically with a countdown, and ⌃⌘C copies the current code (cleared after 30 s). Seeds are read as the official apps read them: a plain base32 secret, an `otpauth://totp` link (SHA-1/256/512, up to 10 digits, any period) or a Steam Guard `steam://` seed (5-character codes). Counter-based `otpauth://hotp` links and secrets too short to give a code show "unavailable". The raw seed is never shown or copied
 - **Password history** — changing a login's password or a hidden custom field keeps the old value (the last five, as the official apps do); the item footer shows when the password last changed and opens the list of earlier values
@@ -150,6 +150,8 @@ Want to shift something up the list? [Open an issue](https://github.com/b0x42/pr
 - **No offline vault creation** — Creating or editing items requires an active server connection.
 - **Attachment size limit** — Files larger than 500 MB are rejected. When a server refuses an upload (for example, attachments need a premium account, or the storage limit is reached), Prizm shows the server's message.
 - **Attachments from Prizm 1.1.0 to 1.5.x** — These versions saved attachment files in a layout other Bitwarden apps can't open. Prizm still opens them, marks them "Prizm format" and offers to convert them (one at a time, or "Convert all" after a sync).
+- **No clone or bulk actions** — Items cannot be cloned, and there is no bulk delete or bulk restore; edit, delete and restore one item at a time.
+- **No adding verification-code seeds** — Prizm shows the codes of items that have a TOTP seed, but a seed can't be added or changed in Prizm yet.
 - **Azure-backed servers** — Uploads to Azure-backed servers (Bitwarden cloud) larger than 256 MB may fail; Prizm sends each file in one request instead of Azure blocks.
 
 ## Contributing
