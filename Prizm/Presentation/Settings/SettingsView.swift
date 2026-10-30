@@ -4,8 +4,8 @@ import os.log
 
 /// macOS Settings window (⌘,).
 ///
-/// Currently contains a Security section with the biometric unlock toggle.
-/// The Security section is hidden entirely when the device has no biometrics.
+/// A Security section (biometric unlock, clipboard clearing) and a Privacy section (website icons).
+/// The biometric toggle is hidden when the device has no biometrics.
 struct SettingsView: View {
 
     let authRepository: any AuthRepository
@@ -31,6 +31,13 @@ struct SettingsView: View {
     @AppStorage(ClipboardClearDelay.defaultsKey)
     private var clipboardClearDelay: String = ClipboardClearDelay.defaultValue.rawValue
 
+    // Read by FaviconLoader at each request and by FaviconView (fix-website-icons-privacy, D2).
+    @AppStorage(WebsiteIconSettings.showIconsKey)
+    private var showWebsiteIcons: Bool = WebsiteIconSettings.showIconsDefault
+
+    @AppStorage(WebsiteIconSettings.allowOtherServicesKey)
+    private var allowOtherServices: Bool = WebsiteIconSettings.allowOtherServicesDefault
+
     var body: some View {
         Form {
             Section("Security") {
@@ -44,6 +51,19 @@ struct SettingsView: View {
                     }
                 }
                 .help("How long a copied password or code stays on the clipboard. Locking, signing out and quitting Prizm always clear it.")
+            }
+            Section("Privacy") {
+                Toggle("Show website icons", isOn: $showWebsiteIcons)
+                    .help("Icons are loaded from your server's icon service, which may contact the websites.")
+                    // A grouped-form switch exposes its title as a separate text, not as its own
+                    // label; name the switch itself (§VIII; seen in the UI test 2026-10-30).
+                    .accessibilityLabel("Show website icons")
+                    .accessibilityIdentifier(AccessibilityID.Settings.showWebsiteIcons)
+                Toggle("Allow icons from other services", isOn: $allowOtherServices)
+                    .help("If your server sends icon requests on to another service, Prizm follows it. That service sees the website addresses and your IP address.")
+                    .disabled(!showWebsiteIcons)
+                    .accessibilityLabel("Allow icons from other services")
+                    .accessibilityIdentifier(AccessibilityID.Settings.allowOtherServices)
             }
         }
         .formStyle(.grouped)
