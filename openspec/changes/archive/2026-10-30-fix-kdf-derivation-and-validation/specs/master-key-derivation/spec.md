@@ -6,9 +6,9 @@
 The system SHALL derive the master key exactly as the Bitwarden SDK does: PBKDF2-SHA256 over the normalized salt, or Argon2id (version 0x13, 32-byte output) over the SHA-256 of the normalized salt with the server's memory value interpreted as MiB.
 
 #### Scenario: SDK known-answer vectors
-- **GIVEN** the PBKDF2 and Argon2id test vectors from the Bitwarden SDK (`kdf.rs` and `master_key.rs`)
+- **GIVEN** the inputs of the Bitwarden SDK's PBKDF2 and Argon2id tests (`kdf.rs` and `master_key.rs`)
 - **WHEN** Prizm derives the master key and the server hash from the same inputs
-- **THEN** every output SHALL equal the SDK's expected bytes
+- **THEN** every output SHALL equal the expected bytes computed by independent reference implementations, which match the SDK's published server hashes
 
 #### Scenario: Argon2id account signs in
 - **GIVEN** an account on Vaultwarden 1.37.4 with Argon2id, 3 iterations, 64 MiB memory and parallelism 4

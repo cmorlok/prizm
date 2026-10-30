@@ -159,7 +159,8 @@ unlock, and a test would have to cover two places.
   lowercases whatever it gets (`kdf.rs:87-93`), so Prizm normalizes the salt too.
 - The salt that decrypted the user key is stored in the Keychain
   (`bw.macos:{userId}:masterPasswordSalt`) and used on unlock. If absent (installs from before this
-  change), unlock falls back to the stored email, normalized. Sign-out deletes it.
+  change), unlock falls back to the stored email, normalized. Any other Keychain error while reading
+  it is logged and refuses the unlock before a key is derived. Sign-out deletes it.
 
 This follows the SDK path. The TS default (flag off) still uses the email. Both give the same
 bytes for every account where the server salt equals the email, which is all accounts today.
@@ -218,7 +219,8 @@ proven, and the old fallback hides missing fields.
   the user can quit Prizm. A tighter cap could lock out real accounts, since neither server caps
   PBKDF2 iterations.
 - **[Low] Server salt that differs from the email** on the official server. → Prizm uses it, as the
-  SDK does. Task 6.1 checks a fresh account on the official server.
+  SDK does. No official server was available for task 6.1; unit tests cover it
+  (`testLogin_usesServerSalt_normalized`).
 
 ## Known-answer vectors
 
@@ -228,6 +230,73 @@ copied from the SDK's tests (the same rule as `ssh-key-import-and-generation` D8
 Context), so they can be checked against the SDK's published results: the PBKDF2 server hash for all
 three email spellings (`wmyadRMy…`) and the Argon2id server hash (`PR6UjYmj…`) come out identical.
 That confirms D1 (SHA-256 salt, memory in MiB) without using SDK code.
+
+## Review
+
+Independent review on 2026-10-30 (fresh reviewer, `git diff` against `origin/develop`, nothing
+built). The reviewer recomputed the PBKDF2 vectors with Python `hashlib`; Argon2id could not be
+recomputed there, but its server hash equals the SDK's published one and Argon2id accounts log in
+on the rig. No blockers. Findings:
+
+- Fixed (S1): unlock read the stored salt with `try?`, so any Keychain error fell back to the email
+  and showed up as a wrong password, with no log. Now only a missing entry falls back (installs from
+  before this change); any other error is logged and stops the unlock before a key is derived
+  (`testUnlock_saltReadFails_isReported_withoutDeriving`).
+- Fixed (N1): iteration counts are capped only at `UInt32.max`, so a hostile server can make a
+  derivation run for a very long time. Recorded as an accepted risk in Risks, in `KdfValidator`'s
+  doc comment and in SECURITY.md.
+- Fixed (N2): the parallelism minimum check could never fire, since the range check already refuses
+  values below 1. The dead branch is gone; a comment says the range check enforces it.
+- Fixed (N3): two new helpers had been inserted between `twoFactorMethod`'s doc comment and its
+  function. The comment is back on its function.
+- Fixed (N4): the KDF error texts named the server and signing in, but they also show at unlock,
+  where the settings come from the Keychain. Both texts are neutral now (D2).
+- Fixed (N5): tasks 5.1 and 5.2 asked for spies; the tests give the legacy fields a wrong JSON type
+  instead, so decoding fails only if a legacy reader runs. The tasks now say so.
+- Fixed (process): the CHANGELOG entry and the TDD note for the tests written after the code were
+  missing; both are in the archive (tasks.md, CHANGELOG).
+
+### Security
+
+Mandatory review (task 6.2), of the code as it is now, against the Bitwarden SDK rules in Context.
+
+- **Salt and memory.** The master password salt is the server's prelogin `salt` when it is
+  non-empty, otherwise the typed email; both are trimmed and lowercased, and the crypto service
+  normalizes the salt again before use. PBKDF2-SHA256 runs over the salt's UTF-8 bytes. For
+  Argon2id the Argon2 salt is the SHA-256 of those bytes and the server's memory value is read as
+  MiB and multiplied by 1024 (version 0x13, 32-byte output). The server hash is
+  PBKDF2(masterKey, password, 1), unchanged. Known-answer vectors from independent implementations
+  match the SDK's published server hashes, and the PBKDF2 and Argon2id rig accounts log in, lock
+  and unlock.
+- **Validation placement.** `KdfValidator` runs first inside `makeMasterKey`, which login and unlock
+  both reach through `deriveMasterKey`. Settings below the SDK minimums, and unusable ones (unknown
+  type, missing, zero or negative values, Argon2id memory above 1024 MiB or parallelism above 16),
+  are refused before any derivation, so at login nothing is sent to `/connect/token`. Stored
+  settings are checked again at unlock. Biometric unlock and the 2FA step derive no key. There is no
+  warn-and-continue path.
+- **Stored settings and salt.** Prizm stores the settings and salt that decrypted the user key, not
+  the token response's values (no more 600 000 default). If `MasterPasswordUnlock.kdf` differs, an
+  `.error` without values is logged. Unlock falls back to the email only when no salt is stored; any
+  other Keychain error stops the unlock. Sign-out deletes the salt.
+- **Logs.** No KDF values, salts or emails in `.public` logs. Public lines carry the KDF type and
+  booleans (settings present, server salt used, salt stored); the email is `.private`; refusals are
+  logged without values; Keychain errors go through `ErrorLog.describe`.
+- **Error mapping.** `insufficientKdfParameters` maps to `AuthError.kdfSettingsTooWeak` and
+  `invalidKdfParameters` to `AuthError.invalidKdfSettings`; both show in the existing login and
+  unlock error areas, never as "invalid credentials". A Keychain failure while reading the salt shows
+  the existing "invalid credentials" text, as the other Keychain failures in unlock do.
+- **Accepted risk.** Huge iteration counts can keep the CPU busy (N1); they cost time, not secrets.
+- **Not covered live.** A server salt that differs from the email (no official self-hosted server
+  in the rig) is covered by unit tests only.
+
+Archive pass and hand check (2026-10-30):
+- Fixed: VoiceOver never read a sign-in or unlock error, and after a refused sign-in focus went back
+  to the server URL field. Errors are announced at high priority through AppKit (on the login
+  screen one second after it reappears, so the screen change does not drop it), and focus goes to
+  the password field. Confirmed by Christian with VoiceOver on rig account D (15 MiB).
+- Fixed: comments and SECURITY.md wording (salt hash reason, where invalid settings come from, the
+  refusal also at unlock); spec scenario and design text name the independently computed vectors,
+  the unlock refusal on a Keychain error, and the missing official-server check.
 
 ## Open Questions
 

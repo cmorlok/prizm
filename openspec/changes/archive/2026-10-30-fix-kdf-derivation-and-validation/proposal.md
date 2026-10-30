@@ -87,8 +87,8 @@ _None._ Related existing specs: `openspec/specs/vault-browser-ui` (login) and
 ## Dependencies
 
 - **Hard (for the interop check only):** `fix-prelogin-identity-endpoint`, landed (fork PR #23).
-- **Soft:** `harden-key-lifecycle-and-logging` changes the same functions (zeroing). Land this
-  change first; that one rebases.
+- **Soft:** `harden-key-lifecycle-and-logging` changes the same functions (zeroing); it has
+  landed, and this change keeps its zeroing (`defer` on the master and stretched keys).
 
 ## Impact
 

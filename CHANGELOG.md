@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Fix: accounts that use Argon2id can sign in and unlock. Before, Prizm derived their key
+  differently from Bitwarden and the server answered "Invalid email or master password". An email
+  typed with spaces before or after it no longer fails to sign in.
+- Security: Prizm refuses to sign in or unlock when an account's key-derivation settings are weaker
+  than the official Bitwarden apps allow (PBKDF2 with fewer than 5,000 iterations; Argon2id with
+  fewer than 2 iterations or less than 16 MiB memory), so a malicious server can't get a password
+  hash that is cheap to crack. Raise the settings in the web vault. Settings Prizm can't use at all
+  (for example a missing or negative value, or Argon2id memory above 1,024 MiB) are refused too.
 - Added: SSH keys can be created in Prizm again. A new SSH key starts with a freshly generated
   Ed25519 key; "Generate new key" makes another, and "Import key…" takes an unencrypted OpenSSH
   Ed25519 private key from the clipboard or a file. Prizm checks that the private and public key
