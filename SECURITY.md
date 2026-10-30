@@ -45,6 +45,28 @@ never receives plaintext vault content or the master key at any point.
 Authentication sends a one-way derived hash (`serverHash`) rather than the master
 password itself.
 
+### Website icons
+
+Logins show the icon of their website. The request goes to the signed-in account's icon service,
+`{server}/icons/{host}/icon.png` (or the icons URL override), and never to a host Prizm picks
+itself; before sign-in, while locked and after sign-out nothing is requested.
+
+- **What it reveals:** the website host of each login shown, to your server (Vaultwarden
+  fetches the icon from the website itself unless `DISABLE_ICON_DOWNLOAD` is set). Only website
+  addresses (`http`, `https` or no scheme) whose host has a dot are sent; `.onion`, `.i2p`, app URIs and dot-less intranet names are
+  not. Paths, user names and passwords in the URI are never part of the request.
+- **No credentials:** icon requests carry no `Authorization`, no `Bitwarden-Client-*` headers and
+  no cookies.
+- **Redirects:** a redirect within the server's own origin (scheme, host, port) is followed. A
+  redirect to another origin, which a server sends when it is set to use an outside icon service
+  (Vaultwarden `ICON_SERVICE`), is refused unless "Allow icons from other services" is on; that
+  service then sees the website host and your IP address.
+- **No disk cache:** an ephemeral session without URL cache or cookie storage; icons are kept in
+  memory only and dropped on lock and sign-out. The shared URL cache that older versions filled
+  is emptied at every launch.
+- **Settings → Privacy:** "Show website icons" (on by default, as in the official apps) stops all
+  icon requests when off; "Allow icons from other services" (off by default) is described above.
+
 ### Algorithms
 
 | Algorithm | Purpose | Implementation |
@@ -344,7 +366,7 @@ item's detail pane and in a "Codes" list.
 
 The app is built with App Sandbox and Hardened Runtime enabled:
 
-- Outbound network connections: allowed (Bitwarden/Vaultwarden API, icon service)
+- Outbound network connections: allowed (Bitwarden/Vaultwarden API, the server's icon service)
 - Inbound network connections: denied
 - File system access: read-only, user-selected files only
 - No access to camera, microphone, contacts, calendars, location, Bluetooth, USB, or printing
