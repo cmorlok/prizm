@@ -167,6 +167,37 @@ Prizm creates no SSH keys); new tests pin the edit path.
 - **[Low] The change reverses two earlier decisions** (`edit-vault-items` editable key fields and
   the SSH creation of `882dede`). → The PR text names both.
 
+## Review
+
+Independent review on 2026-10-30, by a fresh reviewer who read the branch only. No blockers. The
+reviewer mapped every requirement to code and tests. Findings and what was done:
+- Fixed: the type comment of `DraftSSHKeyContent` still said the fingerprint is "auto-derived" and
+  "not sent to the API". It now says that all three key fields are read-only and sent back
+  unchanged (D5).
+- Fixed: the rig result of task 1.1 and the self-hosted gap of task 1.2 were not recorded. Both
+  are now in Context.
+- Accepted: `EditGuardTests.testReasonMessages_arePlainLanguageWithANextStep` now also accepts
+  "Bitwarden app" as the next step. `SSHKeyIntegrityTests.testIncompleteSSHKeyMessage` checks the
+  exact text.
+- Open: no test opens the edit sheet of an SSH key, so the "not a text field" part of the
+  read-only requirement is not checked yet (task 2.5). The UI test vault has no SSH key, so this
+  stays a hand check. `ssh-key-import-and-generation` reuses the same rows on its create sheet, and
+  its UI journey finds them as static texts.
+
+**Security (task 5.2).** On an edit, the private key and the public key come from the decrypted
+stored record. They are `let` fields of the draft, so they reach the request unchanged and are
+encrypted with the item's effective key. The stored `keyFingerprint` EncString goes back exactly
+as received. The mapper blocks an SSH item from editing with `incompleteSSHKey` in these cases:
+its `sshKey` is absent or `null` (what Vaultwarden sends for a key it hides), its private or public
+key is absent or empty, or a key decrypts to an empty string. A full save of a blocked item is
+refused in the repository before any request is sent: the repository checks both the cached item
+and the stored record. Favorite and folder changes use `/partial` and carry no item data. Prizm
+can no longer create an SSH key: the New Item menu does not offer one, and
+`VaultBrowserViewModel.createItemType` refuses one. So Prizm never sends a key without a
+fingerprint. The only new log line is a debug line that names the block reason; it holds no key
+text. Copying a key from the edit sheet uses the app's single clipboard service, which writes
+concealed and clears automatically. The change adds no cryptographic code and no dependency.
+
 ## Open Questions
 
 1. ~~Option C plus read-only key fields, or A or B now?~~ Decided 2026-10-29: C now, then B as

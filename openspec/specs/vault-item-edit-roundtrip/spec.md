@@ -230,10 +230,11 @@ When an item's stored server record is in a format Prizm cannot write back witho
 - **AND** a full save of the item (anything other than a change of folder or favorite alone) SHALL fail with that reason and no request SHALL be sent
 
 #### Scenario: Item whose details are missing
-- **GIVEN** a login, card, identity or SSH key item whose stored record has no `login`, `card`, `identity` or `sshKey` object, or `null` in its place
+- **GIVEN** a login, card or identity item whose stored record has no `login`, `card` or `identity` object, or `null` in its place
 - **WHEN** the user selects it
 - **THEN** Edit SHALL be disabled and the detail pane SHALL show that some of the item's details are missing
 - **AND** a secure note without its `secureNote` object SHALL stay editable
+- **AND** an SSH key item without its `sshKey` object SHALL be blocked as an incomplete SSH key (`ssh-key-integrity`)
 
 #### Scenario: Item with a name in an old encryption format
 - **GIVEN** an item whose stored name is an encrypted string without a MAC (EncString type 0)
