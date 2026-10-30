@@ -602,6 +602,14 @@ actor VaultRepositoryImpl: VaultRepository {
             throw VaultError.vaultLocked
         }
 
+        // Vaultwarden hides an SSH key without all three values; the mapper then checks that the
+        // fingerprint is the one of the public key (ssh-key-import-and-generation, D5).
+        if case .sshKey(let ssh) = draft.content,
+           ![ssh.privateKey, ssh.publicKey, ssh.keyFingerprint].allSatisfy({ $0?.isEmpty == false }) {
+            logger.error("Create refused: SSH key without all three key values")
+            throw CipherMapperError.sshKeyIncomplete
+        }
+
         let orgKeysSnapshot = await orgKeyCache.snapshot()
         let encryptionKeys = try encryptionKeys(organizationId: draft.organizationId, vaultKeys: vaultKeys, orgKeys: orgKeysSnapshot)
         let profileId = try await requireProfileId()

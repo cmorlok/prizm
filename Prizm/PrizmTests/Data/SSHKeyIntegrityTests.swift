@@ -120,9 +120,87 @@ final class SSHKeyIntegrityTests: XCTestCase {
                        "This SSH key is incomplete and can't be edited in Prizm. Open it in a Bitwarden app to repair it.")
     }
 
-    // MARK: - No creation (task 4.1)
+    // MARK: - Fingerprints on create and save (ssh-key-import-and-generation, D5)
 
-    func testOnlySSHKeysAreNotCreatable() {
-        XCTAssertEqual(ItemType.allCases.filter(\.isCreatable), [.login, .card, .identity, .secureNote])
+    private func sshDraft(_ material: SSHKeyMaterial, fingerprint: String? = nil) -> DraftVaultItem {
+        var draft = DraftVaultItem.blank(type: .sshKey)
+        draft.name = "New key"
+        guard case .sshKey(var ssh) = draft.content else { return draft }
+        ssh.replace(with: material)
+        if let fingerprint {
+            ssh = DraftSSHKeyContent(SSHKeyContent(privateKey: material.privateKey, publicKey: material.publicKey,
+                                                   keyFingerprint: fingerprint, notes: nil, customFields: []))
+        }
+        draft.content = .sshKey(ssh)
+        return draft
+    }
+
+    func testCreate_sendsTheComputedFingerprint() throws {
+        let material = try SSHKeyServiceImpl().generate()
+        let request = try mapper.toNewRawCipher(sshDraft(material), encryptedWith: keys,
+                                                encryptedFor: RepositoryFixtures.profileId)
+        let sent = try XCTUnwrap(request.sshKey)
+        XCTAssertEqual(try dec(sent.keyFingerprint), material.fingerprint)
+        XCTAssertEqual(try dec(sent.publicKey), material.publicKey)
+        XCTAssertEqual(try dec(sent.privateKey), material.privateKey)
+    }
+
+    func testCreate_refusesAFingerprintThatDoesNotMatch() throws {
+        let material = try SSHKeyServiceImpl().generate()
+        XCTAssertThrowsError(try mapper.toNewRawCipher(sshDraft(material, fingerprint: "SHA256:wrong"),
+                                                       encryptedWith: keys, encryptedFor: RepositoryFixtures.profileId)) {
+            XCTAssertEqual($0 as? CipherMapperError, .sshKeyFingerprintMismatch)
+        }
+    }
+
+    /// A new SSH item without all three values would be hidden by Vaultwarden; the repository refuses
+    /// it before anything is sent, although the sheet never offers one (review 2026-10-30).
+    func testCreate_refusesAKeyWithoutAllThreeValues() async throws {
+        let rig = await StaleWriteRig.make()
+        let material = try SSHKeyServiceImpl().generate()
+        var withoutFingerprint = sshDraft(material)
+        if case .sshKey(let ssh) = withoutFingerprint.content {
+            withoutFingerprint.content = .sshKey(DraftSSHKeyContent(SSHKeyContent(
+                privateKey: ssh.privateKey, publicKey: ssh.publicKey, keyFingerprint: nil, notes: nil, customFields: [])))
+        }
+        var empty = DraftVaultItem.blank(type: .sshKey)
+        empty.name = "Empty key"
+        for draft in [empty, withoutFingerprint] {
+            do {
+                _ = try await rig.vault.create(draft)
+                XCTFail("An incomplete SSH key must be refused")
+            } catch {
+                XCTAssertEqual(error as? CipherMapperError, .sshKeyIncomplete, "Got \(error)")
+            }
+        }
+        XCTAssertEqual(rig.api.createCipherCallCount, 0, "Nothing is sent")
+    }
+
+    func testEdit_fillsInAMissingOrBlankFingerprint() throws {
+        let material = try SSHKeyServiceImpl().generate()
+        for stored: Any? in [nil, enc(""), enc("  ")] {
+            var sshKey: [String: Any] = ["privateKey": enc(material.privateKey), "publicKey": enc(material.publicKey)]
+            if let stored { sshKey["keyFingerprint"] = stored }
+            let raw = try record(sshKey: sshKey)
+            let draft = DraftVaultItem(try mapper.map(raw: raw, vaultKeys: keys).item)
+            let request = try mapper.toRawCipher(draft, overlaying: raw, effectiveKeys: keys,
+                                                 encryptedFor: RepositoryFixtures.profileId)
+            XCTAssertEqual(try dec(request.sshKey?.keyFingerprint), material.fingerprint, "stored \(String(describing: stored))")
+        }
+    }
+
+    func testEdit_keepsADifferentStoredFingerprint() throws {
+        // `publicKey` above is not a real key, so its computed fingerprint would differ or be nil.
+        let stored = try completeRecord()
+        let request = try mapper.toRawCipher(DraftVaultItem(try mapper.map(raw: stored, vaultKeys: keys).item),
+                                             overlaying: stored, effectiveKeys: keys, encryptedFor: RepositoryFixtures.profileId)
+        XCTAssertEqual(request.sshKey?.keyFingerprint, stored.sshKey?.keyFingerprint)
+    }
+
+    func testEdit_unreadablePublicKeySendsNoFingerprint() throws {
+        let raw = try record(sshKey: ["privateKey": enc(privateKey), "publicKey": enc("not a public key")])
+        let request = try mapper.toRawCipher(DraftVaultItem(try mapper.map(raw: raw, vaultKeys: keys).item),
+                                             overlaying: raw, effectiveKeys: keys, encryptedFor: RepositoryFixtures.profileId)
+        XCTAssertNil(request.sshKey?.keyFingerprint)
     }
 }
