@@ -1,0 +1,40 @@
+# Tasks
+
+Estimates are ideal engineer-days. Write a failing test first for each task (§IV).
+
+## 1. Uniform sampling (1 d)
+
+- [x] 1.1 Failing test that shows today's bias (run before 4.1, while the list has 7,776 words): with a scripted provider that returns every `UInt16` once, word indices below 3,328 are picked 9 times and the rest 8 times. Done differently: the old `UInt16 % 7776` pick is recorded in design.md, Context, and its skew follows from 65,536 = 8 × 7,776 + 3,328 (the first 3,328 words 9 times in 65,536, the rest 8 times); the red run 20261030T194141Z was compile only (the new sampler API did not exist), so no run shows the old code's skew. The new code is covered by `testPassphraseWordPicks_areUniform` (chi-square over the 7,772 filtered words).
+- [x] 1.2 `uniformIndex(below:using:)` tests (design D1): boundary values `limit - 1`, `limit`, `UInt32.max`; 64 rejections throw `randomSourceFailed`; provider errors propagate; chi-square over 100,000 draws for n = 7, 8, 62, 70, 7772 with a seeded SplitMix64 provider added to the test mocks. Update the constant-seed tests in `PasswordGeneratorTests`. Done: `PasswordGeneratorParityTests` (`testRejectionBoundary`, `testPowerOfTwo_acceptsEveryValue`, `testEndlessRejections_throw`, `testProviderErrorPropagates`, `testUniformIndex_isUniform`), `Mocks/SeededRandomnessProvider.swift`; `PasswordGeneratorTests` updated. Red 20261030T194141Z (compile), green 20261030T194736Z (1389 unit tests).
+- [x] 1.3 Use it for set picks, pool picks, Fisher–Yates, word picks, the digit and its word. Remove the wrong-premise comment at `PasswordGenerator.swift:56-58`; the new comment cites the SDK (`password.rs:174-178`) and states the security goal. Done; the security review confirmed every pick goes through `uniformIndex`.
+
+## 2. Sets and minimums (1 d)
+
+- [x] 2.1 Failing tests: special set is exactly `!@#$%^&*`; extended set is exactly `()_+-=[]{}|;':",.<>?/`; with the extended set off the output never contains its characters; avoid-ambiguous removes exactly `I O l 0 1` and `|`. Done: `testDefaultPassword_usesSpecialButNotExtended`, `testExtendedSet_contributes`, `testAvoidAmbiguous_removesExactlyTheseCharacters`.
+- [x] 2.2 Failing tests: `minNumbers` and `minSpecial` honoured (0–9); an enabled set always contributes at least 1; minimums above the length raise `config.length` in the view model (slider and stored value follow); stored minimums clamp to 0–9 and stored word counts to 3–20. Done: `testMinimums_areHonoured`, `testMinimumZero_stillGivesOneWhileTheSetIsOn`, `testMinimumsAboveTheLength_raiseTheLength`, `testMinimumsAboveTheLength_raiseTheShownAndStoredLength`, `testStoredValuesAreClamped`.
+- [x] 2.3 Config: `includeExtendedSymbols` (default off), `minNumbers` 1, `minSpecial` 0, other defaults unchanged (design.md D3). Tests: stored values survive; a stored `includeSymbols = true` with other sets on gives special on, extended off; symbols as the only stored set turns the extended set on once. Done: `testDefaults`, `testNewSettingsDefaults`, `testStoredSymbolsWithOtherSets_keepExtendedOff`, `testStoredSymbolsOnly_turnsTheExtendedSetOnOnce`.
+
+## 3. UI (0.5–1 d)
+
+- [x] 3.1 Toggle "Extended special"; steppers "Minimum numbers" and "Minimum special", enabled only when their set is on, help text "at least 1 while … is on"; the last-enabled-set lock as a view-model helper over five sets, with unit tests (only extended on → locked; only special on → locked). Words stepper 3–20. Separator stays free text. Done: `testLastEnabledSet_amongFive`, `testMinimumSteppers_followTheirSets`, `testTwentyWords_andALongSeparator`.
+- [x] 3.2 VoiceOver: "Extended special characters" with the characters as value or hint; labels and values of the steppers; identifiers `generator.toggle.extendedSymbols`, `generator.minNumbers`, `generator.minSpecial`. Done. Code review: the steppers carry an explicit label, so VoiceOver reads the value once. VoiceOver hand check: Christian, 2026-10-31 (Debug build of the batch-3 integration branch): toggles and steppers read with label and value, each stepper value read once.
+- [x] 3.4 Update `PasswordGeneratorJourneyTests` (word range comment "3 to 10", new controls) and run it (UI run at batch end). Done: `testGeneratorPopover_showsSymbolSetsAndMinimums`; approved full UI run 20261030T205732Z (the class's other tests passed; its only failure was the strength-meter test of `generator-strength-meter`), reruns 20261031T074052Z (5/5) and 20261031T082242Z (5/5).
+- [x] 3.3 Both symbol toggle labels list their characters ("Special (!@#$%^&*)", "Extended special (()_+-=[]{}|;':",.<>?/)"). Done; checked by `testGeneratorPopover_showsSymbolSetsAndMinimums`.
+
+## 4. Passphrase (0.5 d)
+
+- [x] 4.1 Failing test: the filtered list contains no word with "-" and has exactly 7,772 entries; a list without exactly 7,776 words before filtering throws. Done: `testWordList_hasNoHyphenatedWords_and7772Entries`, `testWordListOfTheWrongSize_throws`; code review: the count after filtering is checked too (`testWordList_withTheRightLengthButHyphenatedWords_isUnavailable`; red 20261031T074936Z, green 20261031T075159Z).
+- [x] 4.2 Failing test (injected failing source): `wordListUnavailable` is thrown; the view model logs it, shows its message, announces it, and disables Use and Copy. Done: `testMissingWordList_throwsInsteadOfAnEmptyPassphrase`, `testWordListFailure_showsItsMessage_andOffersNothing`. Code review: the error is also announced when the generator opens in passphrase mode (`onChange(initial: true)`), and a random-source failure shows the generator's own text (`testRandomSourceFailure_showsItsMessage_andOffersNothing`).
+- [x] 4.3 Test that the bundled list loads in the app target. Done: `testWordList_hasNoHyphenatedWords_and7772Entries` reads the bundled list; `testPassphrase_allWordsFromEFFList`.
+
+## 5. Verify (0.5 d)
+
+- [x] 5.1 Mandatory security review: sampler, shuffle, no secrets in logs. Done: fresh reviewer, 2026-10-31, read-only, no findings. Rejection sampler without modulo bias for every pick, Durstenfeld Fisher–Yates, `SecRandomCopyBytes` in production, minimums plus uniform shuffle reveal only "at least k from set S", word list counts checked (bundled file: 7,776 lines, 4 hyphenated words, no duplicates), random-source failure surfaced with no fallback, no generated value in logs, error texts or announcements.
+- [x] 5.2 Character-frequency check: 10,000 passwords with the special set on and the extended set off; within each enabled set the characters are uniform, and every position has the same mix of sets, so the shuffle places required characters anywhere (chi-square, seeded provider, documented in the PR). Each position is not uniform over the union: the required characters raise the share of small sets, as in the SDK. Done: `testDefaultPasswords_frequenciesPerSetAndPosition` (passed as characterisation, green 20261031T075159Z).
+
+## 6. Document (0.5 d)
+
+- [x] 6.1 CHANGELOG "Changed": symbols split into "Special" (`!@#$%^&*`) and "Extended special" (off by default); minimum numbers and special characters added; passphrases up to 20 words. "Fixed": uniform random selection; empty passphrase on word-list failure. Done.
+- [x] 6.2 Add a correction note to `openspec/changes/archive/2026-03-23-password-generator/design.md:95` (Bitwarden clients default to 6 words; the SDK struct default is 3), or, if archived files must stay unchanged, record the correction in this change's design and in the repaired spec. Done the second way (archived files stay unchanged): design.md, Context ("Struct default 3 words …; the clients override this with 6 and \"-\""); the MODIFIED passphrase requirement states the 3–20 range and Prizm's default of 6.
+- [x] 6.3 Main spec `password-generator`: the MODIFIED delta replaces the password and passphrase requirements at archive (the spec already has `## Purpose` since fix/000); its long-requirement warning goes away with the shorter text. Done at archive.
+- [x] 6.4 `openspec validate fix-password-generator --type change --strict`. Done before the archive.

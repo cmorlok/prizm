@@ -160,3 +160,18 @@ file for a failure that a unit test on the app bundle already catches.
 None. Closed 2026-10-30 (Christian): keep length 16 with symbols on; split the symbols into
 "Special" (Bitwarden's 8) and "Extended special" (the other 21); 3–20 words with a separator of any
 length.
+
+## Review
+
+- Spec challenge (fresh agent, before code): 15 findings, all adopted.
+- Code review (fresh agent, 2026-10-31): 0 high/medium, 6 low, all fixed (red 20261031T074936Z,
+  green 20261031T075159Z). The frequency check of task 5.2 passes as a characterisation test: the
+  positions share the set mix, they are not uniform over the union of the sets.
+- Security review (fresh agent, 2026-10-31): clean (uniform sampling via `SecRandomCopyBytes` with
+  rejection, no modulo bias, no values in logs).
+- `/opsx:verify` (2026-10-31): 0 critical, 0 warnings, 5 suggestions, done (toggle titles tested,
+  D5 wording "read once per launch", `password.rs:174-178` cited; green 20261031T180933Z).
+- UI: `PasswordGeneratorJourneyTests` passed in the final batch run 20261031T210247Z. VoiceOver hand
+  check of the new controls (stepper read once): Christian, 2026-10-31.
+- Seen once, not reproduced: `PasswordGeneratorParityTests.testPassphraseWordPicks_areUniform`
+  failed in 0.000 s without a message (20261031T180719Z); every run since passed. Follow-up.
