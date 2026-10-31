@@ -65,3 +65,17 @@ conveyed by color alone (§VIII): the label always names it.
 ## Open Questions
 
 None. Thresholds, colors and the "category · bits" label were decided by Christian (2026-10-30).
+
+## Review
+
+- No separate spec challenge (small change, Christian's own request with fixed thresholds).
+- Code review (fresh agent, 2026-10-31): 1 medium, 2 low, all fixed. Medium: length × log2(pool)
+  overstated the strength when high minimums apply (73 instead of 52.7 bits for length 12 with at
+  least 9 numbers); the meter now counts the passwords the settings allow exactly, so the defaults
+  read "Strong · 97 bits" (red 20261031T075451Z, green 20261031T075927Z).
+- `/opsx:verify` (2026-10-31): 0 critical, 0 warnings, 3 suggestions, done (comments say 97 bits,
+  `StrengthMeterView.color(for:)` tested, settings test extended; green 20261031T181537Z).
+- UI: `PasswordGeneratorJourneyTests.testGeneratorPopover_showsStrengthWithCategoryAndBits` failed
+  in the first full run (a group made with `.accessibilityElement(children: .ignore)` exposed no
+  value on macOS; the text now carries label, value and identifier), then passed, last in the final
+  batch run 20261031T210247Z. VoiceOver hand check: Christian, 2026-10-31.

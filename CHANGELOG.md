@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added: the password generator shows the strength of its settings as a colored bar with a
+  category and the number of bits (for example "Strong · 97 bits"): Weak below 64 bits, OK up to
+  79, Strong up to 127, Very strong from 128. VoiceOver reads the category and the bits.
 - Changed: the password generator's symbols are split into "Special" (`!@#$%^&*`, Bitwarden's set,
   on by default) and "Extended special" (the other 21 symbols, off by default). New options set a
   minimum number of digits and special characters; passphrases can have 3 to 20 words and any
