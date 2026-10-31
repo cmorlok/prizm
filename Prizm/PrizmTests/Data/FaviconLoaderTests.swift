@@ -297,6 +297,21 @@ final class FaviconLoaderTests: XCTestCase {
             XCTAssertEqual(IconStub.requests.count, 1, target)
         }
     }
+
+    // MARK: - The stub itself (fix-favicon-stub-redirect-race)
+
+    /// A redirect target the loading system starts after its test ended carries that test's epoch;
+    /// the stub answers it but keeps it out of the next test's requests (design D2).
+    func testStubRequestOfAnEarlierTest_isAnsweredButNotRecorded() async throws {
+        let stale = NSMutableURLRequest(url: URL(string: "https://vault.example.com/icons/late.example/icon.png")!)
+        URLProtocol.setProperty(IconStub.epoch - 1, forKey: IconStub.epochKey, in: stale)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [IconStub.self]
+        let (_, response) = try await URLSession(configuration: configuration).data(for: stale as URLRequest)
+
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 404)
+        XCTAssertTrue(IconStub.requests.isEmpty, "a request of an earlier test is not recorded")
+    }
 }
 
 /// Answers icon requests from a closure; can redirect and delay. Static state, as `StubURLProtocol`.
@@ -312,6 +327,13 @@ nonisolated final class IconStub: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) private static var _answer: (URLRequest) -> Answer = { _ in .status(404) }
     nonisolated(unsafe) private static var _requests: [URLRequest] = []
     nonisolated(unsafe) private static var _delay: TimeInterval = 0
+    nonisolated(unsafe) private static var _epoch = 0
+
+    /// Counts `reset()` calls. A redirect target carries the epoch of its test, so a follow-up the
+    /// loading system starts after that test ended is not taken for the next test's request
+    /// (fix-favicon-stub-redirect-race, D2).
+    static var epoch: Int { lock.withLock { _epoch } }
+    static let epochKey = "IconStub.epoch"
 
     static var answer: (URLRequest) -> Answer {
         get { lock.withLock { _answer } }
@@ -324,18 +346,26 @@ nonisolated final class IconStub: URLProtocol, @unchecked Sendable {
     }
 
     static func reset() {
-        lock.withLock { _answer = { _ in .status(404) }; _requests = []; _delay = 0 }
+        lock.withLock { _answer = { _ in .status(404) }; _requests = []; _delay = 0; _epoch += 1 }
     }
 
-    private var cancelled = false
+    private let cancelledLock = NSLock()
+    nonisolated(unsafe) private var _cancelled = false
+    private var cancelled: Bool { cancelledLock.withLock { _cancelled } }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
         let request = self.request
-        Self.lock.withLock { Self._requests.append(request) }
-        let answer = Self.answer(request)
+        let epoch = URLProtocol.property(forKey: Self.epochKey, in: request) as? Int
+        let current: Bool = Self.lock.withLock {
+            guard epoch == nil || epoch == Self._epoch else { return false }
+            Self._requests.append(request)
+            return true
+        }
+        let answer = current ? Self.answer(request) : .status(404)
+        let requestEpoch = epoch ?? Self.epoch
         let respond = { [weak self] in
             guard let self, !self.cancelled, let url = request.url else { return }
             switch answer {
@@ -352,11 +382,16 @@ nonisolated final class IconStub: URLProtocol, @unchecked Sendable {
             case .redirect(let location):
                 let response = HTTPURLResponse(url: url, statusCode: 302, httpVersion: "HTTP/1.1",
                                                headerFields: ["Location": location])!
-                self.client?.urlProtocol(self, wasRedirectedTo: URLRequest(url: URL(string: location)!),
-                                         redirectResponse: response)
-                // If the session refuses the redirect, the 302 itself is the result.
-                self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-                self.client?.urlProtocolDidFinishLoading(self)
+                let target = NSMutableURLRequest(url: URL(string: location)!)
+                URLProtocol.setProperty(requestEpoch, forKey: Self.epochKey, in: target)
+                self.client?.urlProtocol(self, wasRedirectedTo: target as URLRequest, redirectResponse: response)
+                // The system stops this protocol when it follows the redirect. Only when it did not
+                // (the policy refused) is the 302 itself the result (D1).
+                DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                    guard let self, !self.cancelled else { return }
+                    self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                    self.client?.urlProtocolDidFinishLoading(self)
+                }
             }
         }
         let delay = Self.delay
@@ -367,5 +402,5 @@ nonisolated final class IconStub: URLProtocol, @unchecked Sendable {
         }
     }
 
-    override func stopLoading() { cancelled = true }
+    override func stopLoading() { cancelledLock.withLock { _cancelled = true } }
 }
