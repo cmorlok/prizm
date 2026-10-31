@@ -42,7 +42,7 @@ final class RawCipherWireModelTests: XCTestCase {
             reprompt: 0
         )
 
-        let raw = try CipherMapper().toNewRawCipher(draft, encryptedWith: vaultKeys, encryptedFor: "pid")
+        let raw = try CipherMapper().toUnkeyedRawCipher(draft, encryptedWith: vaultKeys, encryptedFor: "pid")
         let bytes = try JSONEncoder().encode(raw)
         let top = try XCTUnwrap(try JSONSerialization.jsonObject(with: bytes) as? [String: Any])
         let login = try XCTUnwrap(top["login"] as? [String: Any])

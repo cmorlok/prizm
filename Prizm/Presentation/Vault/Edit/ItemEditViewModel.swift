@@ -46,6 +46,10 @@ final class ItemEditViewModel: ObservableObject {
         case syncFailed(String)
         case itemGone
         case accessLost
+        /// A create went through, but the server's answer did not carry the item key Prizm
+        /// generated (per-item-key-on-create, D4). Save stays blocked: a second save would
+        /// create a duplicate. The next sync lists the item.
+        case createdButUnconfirmed
     }
 
     /// The conflict state; `.none` outside a conflict.
@@ -173,6 +177,7 @@ final class ItemEditViewModel: ObservableObject {
     var bannerMessage: String? {
         if conflict == .itemGone { return Self.itemGoneNote }
         if conflict == .accessLost { return VaultError.savedButAccessLost.localizedDescription }
+        if conflict == .createdButUnconfirmed { return VaultError.createdButUnconfirmed.localizedDescription }
         guard let saveError, !saveError.isEmpty else { return nil }
         return saveError
     }
@@ -180,7 +185,7 @@ final class ItemEditViewModel: ObservableObject {
     /// The status line next to the conflict action: progress, success or the sync error.
     var conflictStatusText: String? {
         switch conflict {
-        case .none, .itemGone, .accessLost: return nil
+        case .none, .itemGone, .accessLost, .createdButUnconfirmed: return nil
         case .syncing:               return "Syncing…"
         case .synced:                return "Synced"
         case .syncFailed(let text):  return text.isEmpty ? nil : text
@@ -198,7 +203,7 @@ final class ItemEditViewModel: ObservableObject {
         switch conflict {
         case .none:                          return nil
         case .syncing, .synced, .syncFailed: return "Discard my changes and reload"
-        case .itemGone, .accessLost:         return "Close"
+        case .itemGone, .accessLost, .createdButUnconfirmed: return "Close"
         }
     }
 
@@ -217,6 +222,7 @@ final class ItemEditViewModel: ObservableObject {
         case .syncing, .synced, .syncFailed: return "Reload the item first."
         case .itemGone:                      return "This item no longer exists."
         case .accessLost:                    return "You no longer have access to this item."
+        case .createdButUnconfirmed:         return "This item was already saved."
         }
     }
 
@@ -227,6 +233,13 @@ final class ItemEditViewModel: ObservableObject {
     /// Used to decide whether the discard confirmation prompt is needed.
     var hasChanges: Bool {
         draft != original
+    }
+
+    /// `true` when Discard and Esc must ask first. Not after a create the server answered without
+    /// the item's key: the item was saved, so "your changes will be lost" would be wrong and could
+    /// make the user enter it again (per-item-key-on-create, D4).
+    var asksBeforeDiscard: Bool {
+        hasChanges && conflict != .createdButUnconfirmed
     }
 
     /// `true` when editing an existing item (as opposed to creating a new one).
@@ -420,6 +433,14 @@ final class ItemEditViewModel: ObservableObject {
                     onItemRemoved?(draft.id)
                     logger.info("Item saved; access ended with its collection change")
                 }
+            } catch VaultError.createdButUnconfirmed {
+                if isDismissed {
+                    logger.info("Create result ignored: the sheet was dismissed meanwhile")
+                } else {
+                    // Announced through the banner like a conflict; Save stays disabled.
+                    conflict = .createdButUnconfirmed
+                    logger.error("Item created, but the server's answer was not confirmed")
+                }
             } catch VaultError.collectionChangeNotSaved {
                 if isDismissed {
                     logger.info("Save error ignored: the sheet was dismissed meanwhile")
@@ -529,7 +550,7 @@ final class ItemEditViewModel: ObservableObject {
                     conflict = .itemGone
                 }
             }
-        case .itemGone, .accessLost:
+        case .itemGone, .accessLost, .createdButUnconfirmed:
             discard()
         }
     }

@@ -137,7 +137,7 @@ final class SSHKeyIntegrityTests: XCTestCase {
 
     func testCreate_sendsTheComputedFingerprint() throws {
         let material = try SSHKeyServiceImpl().generate()
-        let request = try mapper.toNewRawCipher(sshDraft(material), encryptedWith: keys,
+        let request = try mapper.toUnkeyedRawCipher(sshDraft(material), encryptedWith: keys,
                                                 encryptedFor: RepositoryFixtures.profileId)
         let sent = try XCTUnwrap(request.sshKey)
         XCTAssertEqual(try dec(sent.keyFingerprint), material.fingerprint)
@@ -147,7 +147,7 @@ final class SSHKeyIntegrityTests: XCTestCase {
 
     func testCreate_refusesAFingerprintThatDoesNotMatch() throws {
         let material = try SSHKeyServiceImpl().generate()
-        XCTAssertThrowsError(try mapper.toNewRawCipher(sshDraft(material, fingerprint: "SHA256:wrong"),
+        XCTAssertThrowsError(try mapper.toUnkeyedRawCipher(sshDraft(material, fingerprint: "SHA256:wrong"),
                                                        encryptedWith: keys, encryptedFor: RepositoryFixtures.profileId)) {
             XCTAssertEqual($0 as? CipherMapperError, .sshKeyFingerprintMismatch)
         }

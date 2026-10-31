@@ -43,7 +43,7 @@ final class PasswordRevisionDateTests: XCTestCase {
     private func storedRecord(
         _ item: VaultItem, keys: CryptoKeys? = nil, edit: (inout [String: Any]) -> Void = { _ in }
     ) throws -> RawCipher {
-        let created = try CipherMapper().toNewRawCipher(DraftVaultItem(item), encryptedWith: keys ?? vaultKeys, encryptedFor: RepositoryFixtures.profileId)
+        let created = try CipherMapper().toUnkeyedRawCipher(DraftVaultItem(item), encryptedWith: keys ?? vaultKeys, encryptedFor: RepositoryFixtures.profileId)
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(created)) as? [String: Any])
         // The create path writes no revision; a server record always has one, and a save needs it.
         json["revisionDate"] = RepositoryFixtures.serverRevisionString(for: item.revisionDate)

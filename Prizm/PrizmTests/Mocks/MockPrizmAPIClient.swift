@@ -190,13 +190,17 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
     nonisolated(unsafe) var lastCreatedCipher: RawCipher?
     /// Runs while a create request (personal or org) is "in flight", for example to lock the vault.
     nonisolated(unsafe) var whileCreatingCipher: (@Sendable () async -> Void)?
+    /// Builds the answer to a create (personal or org) from the request, for example the request
+    /// echoed with a server id; used when the matching `...Response` is nil.
+    nonisolated(unsafe) var createCipherResponder: ((RawCipher) throws -> RawCipher)?
 
     func createCipher(cipher: RawCipher) async throws -> RawCipher {
         createCipherCallCount += 1
         lastCreatedCipher = cipher
         await whileCreatingCipher?()
         if let err = createCipherShouldThrow { throw err }
-        return createCipherResponse ?? cipher
+        if let createCipherResponse { return createCipherResponse }
+        return try createCipherResponder?(cipher) ?? cipher
     }
 
     // MARK: - Stubs: createOrgCipher
@@ -211,7 +215,8 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
         lastCreatedOrgCipher = cipher
         await whileCreatingCipher?()
         if let err = createCipherShouldThrow { throw err }
-        return createOrgCipherResponse ?? cipher
+        if let createOrgCipherResponse { return createOrgCipherResponse }
+        return try createCipherResponder?(cipher) ?? cipher
     }
 
     // MARK: - Stubs: softDeleteCipher

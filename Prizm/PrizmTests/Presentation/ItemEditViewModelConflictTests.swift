@@ -556,7 +556,7 @@ final class ItemEditViewModelConflictTests: XCTestCase {
     func testFailClosedSaveErrors_showTheMessageWithoutActionsAndKeepTheDraft() async {
         let errors: [VaultError] = [
             .organizationKeyUnavailable, .itemRecordUnavailable, .itemKeyUnavailable,
-            .itemNotEditable(.unsupportedFormat), .itemRevisionUnavailable,
+            .itemNotEditable(.unsupportedFormat), .itemRevisionUnavailable, .itemKeyGenerationFailed,
         ]
         for error in errors {
             let rig = makeRig(results: [.failure(error)])

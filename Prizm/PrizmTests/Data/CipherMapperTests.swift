@@ -266,7 +266,7 @@ final class CipherMapperTests: XCTestCase {
             folderId: "folder-xyz"
         )
         let draft = DraftVaultItem(item)
-        let raw = try sut.toNewRawCipher(draft, encryptedWith: mockKeys, encryptedFor: RepositoryFixtures.profileId)
+        let raw = try sut.toUnkeyedRawCipher(draft, encryptedWith: mockKeys, encryptedFor: RepositoryFixtures.profileId)
         XCTAssertEqual(raw.folderId, "folder-xyz")
     }
 
@@ -277,7 +277,7 @@ final class CipherMapperTests: XCTestCase {
             content: .secureNote(SecureNoteContent(notes: nil, customFields: []))
         )
         let draft = DraftVaultItem(item)
-        let raw = try sut.toNewRawCipher(draft, encryptedWith: mockKeys, encryptedFor: RepositoryFixtures.profileId)
+        let raw = try sut.toUnkeyedRawCipher(draft, encryptedWith: mockKeys, encryptedFor: RepositoryFixtures.profileId)
         XCTAssertNil(raw.folderId)
     }
 }

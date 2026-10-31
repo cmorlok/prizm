@@ -193,6 +193,12 @@ nonisolated enum VaultError: Error, LocalizedError {
     /// An organization item and its collection change were saved, and the server reports that the
     /// user can no longer see the item. It was removed from the local vault (fix-collection-assignment).
     case savedButAccessLost
+    /// Prizm could not generate or wrap the new item's own key; nothing was sent
+    /// (per-item-key-on-create).
+    case itemKeyGenerationFailed
+    /// The server created the item, but its answer did not carry the key Prizm generated, so Prizm
+    /// did not use it. The next sync lists the item; the create sheet must not save it a second time.
+    case createdButUnconfirmed
 
     var errorDescription: String? {
         switch self {
@@ -228,6 +234,10 @@ nonisolated enum VaultError: Error, LocalizedError {
             return "Your changes were saved, but the collection change failed. Try again."
         case .savedButAccessLost:
             return "Saved. You no longer have access to this item."
+        case .itemKeyGenerationFailed:
+            return "Prizm couldn't create an encryption key for this item. Nothing was saved. Try again."
+        case .createdButUnconfirmed:
+            return "Saved, but Prizm couldn't confirm the new item. Sync to see it."
         }
     }
 }

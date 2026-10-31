@@ -122,14 +122,20 @@ actor MockPrizmCryptoService: PrizmCryptoService {
 
     // MARK: - Attachment crypto stubs
 
-    nonisolated(unsafe) var stubbedAttachmentKey: Data = Data(count: 32)
+    /// The bytes `generateSymmetricKey()` returns; nil gives 64 fresh random bytes per call, so an
+    /// item created through the mock gets a usable key of its own.
+    nonisolated(unsafe) var stubbedSymmetricKey: Data?
+    nonisolated(unsafe) var symmetricKeyError: Error?
     nonisolated(unsafe) var stubbedEncryptedData: Data = Data()
     nonisolated(unsafe) var stubbedDecryptedData: Data = Data()
     nonisolated(unsafe) var stubbedEncAttachmentKey: String = "2.stubEncKey|stub|stub"
     nonisolated(unsafe) var stubbedDecAttachmentKey: Data = Data(count: 32)
     nonisolated(unsafe) var stubbedEncFileName: String = "2.stubName|stub|stub"
 
-    nonisolated func generateAttachmentKey() throws -> Data { stubbedAttachmentKey }
+    nonisolated func generateSymmetricKey() throws -> Data {
+        if let symmetricKeyError { throw symmetricKeyError }
+        return stubbedSymmetricKey ?? KeyedCipherBuilder.randomKeys().toData()
+    }
     nonisolated func encryptData(_ data: Data, attachmentKey: Data) throws -> Data { stubbedEncryptedData }
     nonisolated func decryptData(_ data: Data, attachmentKey: Data) throws -> Data { stubbedDecryptedData }
     nonisolated func encryptAttachmentKey(_ key: Data, cipherKey: CryptoKeys) throws -> String { stubbedEncAttachmentKey }
