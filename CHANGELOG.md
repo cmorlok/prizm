@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Security: for items with their own encryption key, Prizm now checks each website's integrity
+  checksum, as the official Bitwarden apps do. A website whose checksum is missing or wrong (for
+  example one a server added or swapped) is not shown, searched, used for icons or saved back; the
+  item says how many websites were hidden. Websites Prizm saves carry a correct checksum.
 - Security: new items now get their own encryption key, as in the official Bitwarden apps. Their
   fields and attachments are encrypted with it, and the key is stored wrapped with your key or the
   organization's. If the server's answer does not carry that key, Prizm says the item was saved but

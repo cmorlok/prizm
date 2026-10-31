@@ -137,3 +137,20 @@ same helper). Recorded as a requirement there (task 4.2).
 ## Open Questions
 
 None. Closed 2026-10-30 (Christian): no "Remove now" action; the notice waits for the next edit (D4).
+
+## Review
+
+- Code review (fresh agent, 2026-10-31): 0 high/medium, 3 low, all fixed: a notice-only row when
+  every website is hidden (testable condition + test), a draft website no longer takes the extras of
+  a hidden stored website with the same text, and non-canonical base64 checksums are refused as in
+  the SDK (red 20261031T074715Z, green 20261031T074650Z).
+- Security review (fresh agent, 2026-10-31): 0 high/medium, 1 low (informational): an address that
+  does not decrypt on a keyed item still drops the whole item at sync (pre-existing, outside this
+  change). Goal wording narrowed to "the same decision for every decryptable input"; follow-up:
+  hide and count an undecryptable address instead.
+- `/opsx:verify` (2026-10-31): 0 critical, 0 warnings, 2 suggestions, both done (plural hint text,
+  all-websites-hidden mapping test; red 20261031T180538Z, green 20261031T180558Z).
+- Rig: the official `bw` CLI hides the swapped website like Prizm (20261031T170329Z; batch run
+  20261031T081759Z). VoiceOver hand check of the notice: Christian, 2026-10-31.
+- UI: `VaultBrowserJourneyTests` (incl. `testHiddenWebsitesNotice`) passed in the final batch run
+  20261031T210247Z.
