@@ -102,6 +102,8 @@ nonisolated enum AccessibilityID {
         static let itemName          = "detail.name"
         static let createdDate       = "detail.created"
         static let updatedDate       = "detail.updated"
+        /// The notice row for websites the integrity check hid (uri-checksum-validation).
+        static let hiddenWebsitesNotice = "detail.hiddenWebsites"
         /// Accessibility identifier for a `DetailSectionCard` header label.
         static func cardHeader(_ title: String) -> String {
             "detail.cardHeader.\(title.lowercased().replacingOccurrences(of: " ", with: "."))"

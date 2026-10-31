@@ -56,7 +56,11 @@ enum KeyedCipherBuilder {
         } else {
             wrappedKey = nil
         }
-        let uris: [RawURI]? = website.map { [RawURI(uri: encrypt($0, keys: keysForFields), match: nil)] }
+        // With its checksum, as every current Bitwarden client writes one (uri-checksum-validation).
+        let uris: [RawURI]? = website.map {
+            [RawURI(uri: encrypt($0, keys: keysForFields), match: nil,
+                    uriChecksum: encrypt(CipherMapper.uriChecksumPlaintext($0), keys: keysForFields))]
+        }
         return RawCipher(
             id: id, organizationId: organizationId, folderId: nil, type: 1,
             name: encrypt(name, keys: keysForFields), notes: nil, favorite: false, reprompt: 0,

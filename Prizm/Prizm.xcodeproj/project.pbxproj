@@ -203,6 +203,7 @@
 		EE11223344556677889900BB /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF00112233445566778899AA /* DesignSystem.swift */; };
 		F5A6B7C8D9E04893F6A7B8C9 /* SyncTimestampRepositoryImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4F5A6B7C8D94893E5F6A7B8 /* SyncTimestampRepositoryImpl.swift */; };
 		F6A7B8C9D0E14CF3A4B5C6D7 /* CipherMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0E5C8073B744BF79C30A5E1 /* CipherMapper.swift */; };
+		422CA84C8F1DD8A5F153F466 /* URIChecksum.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2218F0E79BF0199A6E06AD53 /* URIChecksum.swift */; };
 		F945AAE42C17412F9A786BA1 /* RenameFolderUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 548AFB0AB0424A62BEAE1492 /* RenameFolderUseCaseImpl.swift */; };
 		FD30240C189E483CBB5E2E3B /* SidebarSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7044163F8FD4199B4925DD2 /* SidebarSelection.swift */; };
 		FE3145A0627D44CABC58ADCE /* MaskedFieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8197007AA7E412D96A52B14 /* MaskedFieldView.swift */; };
@@ -433,6 +434,7 @@
 		EF90E0F31DF248FB9D12F74D /* VaultItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultItem.swift; sourceTree = "<group>"; };
 		F0DA2B1AD4924580BCE20BF3 /* AuthRepositoryImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthRepositoryImpl.swift; sourceTree = "<group>"; };
 		F0E5C8073B744BF79C30A5E1 /* CipherMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CipherMapper.swift; sourceTree = "<group>"; };
+		2218F0E79BF0199A6E06AD53 /* URIChecksum.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URIChecksum.swift; sourceTree = "<group>"; };
 		F1A2B3C4D5E64896F2A3B4C5 /* SyncLabelFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncLabelFormatter.swift; sourceTree = "<group>"; };
 		F1A2B3C4D5E6F7A8B9C0D1E2 /* FolderTreeNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderTreeNode.swift; sourceTree = "<group>"; };
 		F53A563DEF9F47329635DE6F /* Presentation/Unlock/BiometricEnrollmentPromptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Presentation/Unlock/BiometricEnrollmentPromptView.swift; sourceTree = "<group>"; };
@@ -681,6 +683,7 @@
 			isa = PBXGroup;
 			children = (
 				F0E5C8073B744BF79C30A5E1 /* CipherMapper.swift */,
+				2218F0E79BF0199A6E06AD53 /* URIChecksum.swift */,
 				AA100C00000000000000000C /* AttachmentMapper.swift */,
 			);
 			path = Mappers;
@@ -1261,6 +1264,7 @@
 				713C8E9BAAAE7DA5849D88CD /* CipherCollectionsResult.swift in Sources */,
 				E5F6A7B8C9D04BE2F3A4B5C6 /* SyncResponse.swift in Sources */,
 				F6A7B8C9D0E14CF3A4B5C6D7 /* CipherMapper.swift in Sources */,
+				422CA84C8F1DD8A5F153F466 /* URIChecksum.swift in Sources */,
 				A2B3C4D5E6F74718B9C0D1E2 /* KeychainService.swift in Sources */,
 				AA11BB22CC3344DD55EE66FF /* AccessibilityIdentifiers.swift in Sources */,
 				CB1A2B3C4D5E6F7A8B9C0D1E /* CardBackground.swift in Sources */,

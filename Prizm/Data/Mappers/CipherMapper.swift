@@ -403,7 +403,8 @@ nonisolated final class CipherMapper: Sendable {
         // 1=Login, 2=SecureNote, 3=Card, 4=Identity, 5=SSHKey.
         // Reference: github.com/bitwarden/server CipherType.cs; vaultwarden CipherType enum.
         switch type {
-        case 1: return try mapLogin(raw.login,       notes: notes, fields: fields, keys: keys)
+        case 1: return try mapLogin(raw.login,       notes: notes, fields: fields, keys: keys,
+                                    checksAddresses: raw.key != nil, cipherId: raw.id)
         case 2: return mapSecureNote(                notes: notes, fields: fields)
         case 3: return try mapCard(raw.card,         notes: notes, fields: fields, keys: keys)
         case 4: return try mapIdentity(raw.identity, notes: notes, fields: fields, keys: keys)
@@ -419,14 +420,30 @@ nonisolated final class CipherMapper: Sendable {
         _ data: RawLoginData?,
         notes:  String?,
         fields: [CustomField],
-        keys:   CryptoKeys
+        keys:   CryptoKeys,
+        checksAddresses: Bool,
+        cipherId: String
     ) throws -> ItemContent {
         let login = data ?? RawLoginData(username: nil, password: nil, uris: [], totp: nil)
         // A website without an address and a match rule Prizm does not know are kept as they are,
         // so a save sends them back unchanged (fix-read-mapping-lossless-fields, D1 and D3).
-        let uris: [LoginURI] = try (login.uris ?? []).map { rawURI in
-            LoginURI(uri: try rawURI.uri.map { try decryptRequired($0, field: "uri", keys: keys) },
-                     matchType: rawURI.match.map(URIMatchType.init(rawValue:)))
+        let decoded: [(uri: LoginURI, valid: Bool)] = try (login.uris ?? []).map { rawURI in
+            let address = try rawURI.uri.map { try decryptRequired($0, field: "uri", keys: keys) }
+            let uri = LoginURI(uri: address, matchType: rawURI.match.map(URIMatchType.init(rawValue:)))
+            guard checksAddresses else { return (uri, true) }
+            return (uri, URIChecksum.isValid(uri: address, checksumPlaintext: checksumPlaintext(of: rawURI, keys: keys)))
+        }
+        // Only items with their own key are checked, as in the Bitwarden SDK (`cipher.rs`, "for
+        // compatibility we only remove URLs with invalid checksums if the cipher has a key"): older
+        // items without one predate checksums. A website that fails is dropped, not hidden behind a
+        // flag, so a save leaves it out as an official client's save does (uri-checksum-validation, D1, D3).
+        // TODO: also check every item on V2 (COSE) accounts, as the SDK does from security state 2;
+        // deferred until Prizm supports V2 accounts.
+        let uris = decoded.filter(\.valid).map(\.uri)
+        let hidden = decoded.count - uris.count
+        if hidden > 0 {
+            // `.error`: the server or another app changed the item; never log an address.
+            Self.logger.error("Hid \(hidden, privacy: .public) website(s) of cipher \(cipherId, privacy: .public) that failed the checksum check")
         }
         return .login(LoginContent(
             username:     try login.username.map { try decryptRequired($0, field: "username", keys: keys) },
@@ -434,8 +451,16 @@ nonisolated final class CipherMapper: Sendable {
             uris:         uris,
             totp:         try login.totp.map { try decryptRequired($0, field: "totp", keys: keys) },
             notes:        notes,
-            customFields: fields
+            customFields: fields,
+            hiddenURICount: hidden
         ))
+    }
+
+    /// The decrypted checksum of a website, or nil when it is absent or does not decrypt under
+    /// `keys`; either way the website fails the check, and the item itself is still shown.
+    private func checksumPlaintext(of uri: RawURI, keys: CryptoKeys) -> String? {
+        guard let checksum = uri.uriChecksum else { return nil }
+        return try? decryptRequired(checksum, field: "uriChecksum", keys: keys)
     }
 
     // MARK: - Secure Note
@@ -733,7 +758,7 @@ nonisolated final class CipherMapper: Sendable {
         // Must match the forward mapper (mapContent) and the Bitwarden server CipherType enum.
         switch content {
         case .login(let c):
-            return (1, try toRawLogin(c, keys: keys, base: base?.login), nil, nil, nil, nil)
+            return (1, try toRawLogin(c, keys: keys, base: base?.login, checksAddresses: base?.key != nil), nil, nil, nil, nil)
         case .secureNote:
             return (2, nil, nil, nil, RawSecureNoteData(type: 0), nil)
         case .card(let c):
@@ -747,7 +772,8 @@ nonisolated final class CipherMapper: Sendable {
 
     // MARK: - Private: Login reverse map
 
-    private func toRawLogin(_ c: DraftLoginContent, keys: CryptoKeys, base: RawLoginData?) throws -> RawLoginData {
+    private func toRawLogin(_ c: DraftLoginContent, keys: CryptoKeys, base: RawLoginData?,
+                            checksAddresses: Bool) throws -> RawLoginData {
         // An empty address is not sent (the edit sheet drops blank rows already; this is the
         // backstop). Every other address gets a checksum computed from the exact string that is
         // encrypted as `uri`, under the same keys, so official clients accept it.
@@ -762,6 +788,13 @@ nonisolated final class CipherMapper: Sendable {
         // an address. A stored address's text is read here under the item's key because it is a
         // field Prizm shows anyway; it is a comparison key and is not kept.
         var storedURIs = try readStoredURIs(base?.uris, keys: keys)
+        if checksAddresses {
+            // A stored website the read check hid (`mapLogin`) contributes nothing to the save, not
+            // even its unknown keys to a shown website with the same text (uri-checksum-validation, D3).
+            storedURIs = zip(storedURIs, base?.uris ?? []).filter { stored, raw in
+                URIChecksum.isValid(uri: stored.text, checksumPlaintext: checksumPlaintext(of: raw, keys: keys))
+            }.map(\.0)
+        }
         let rawURIs: [RawURI] = try c.uris.filter { $0.uri?.isEmpty != true }.map { uri in
             var stored: (text: String?, checksum: String?, extras: [String: JSONValue])?
             if let match = storedURIs.firstIndex(where: { $0.text == uri.uri }) {

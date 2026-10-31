@@ -43,6 +43,8 @@ enum Fixture {
     static let kappa = "kappa"
     /// Kappa's only website. Gamma's first website is `file:///Applications/Calculator.app`.
     static let kappaWebsite = "kappa.example.com/login"
+    /// Gamma also has one website the integrity check hid; this is its notice row.
+    static let hiddenWebsitesNotice = "detail.hiddenWebsites"
     static let card = "card1"
     static let identity = "ident1"
     static let note = "note1"
