@@ -34,3 +34,12 @@ follow-up request the loading system starts later.
 ## Open Questions
 
 None.
+
+## Review
+
+- Found 2026-10-31 while diagnosing FaviconLoaderTests flakes that `fix-favicon-test-race` did not
+  explain (`testRepeatedRequest_comesFromTheMemoryCache`, `testRedirectToAnotherHost_isFollowedWhenAllowed`):
+  a redirect follow-up of one test reached `IconStub` after the next test's `reset()`.
+- Red 20261031T182105Z (compile); green three runs in a row (20261031T182225Z, 182241Z, 182254Z),
+  18 FaviconLoaderTests passing each time; per-commit run 20261031T183649Z (1365).
+- Test-only change: no app code, no CHANGELOG entry, no UI impact.
