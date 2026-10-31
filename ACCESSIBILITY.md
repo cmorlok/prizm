@@ -47,7 +47,7 @@ Prizm is a native macOS SwiftUI application. It inherits platform accessibility 
 | 3.3.1 Error Identification | Supports | Errors are identified in text. VoiceOver announcements are posted for error banners. The edit sheet's conflict banner announces its message, then offers the reload button right after it; the decorative warning icon, spinner and checkmark are hidden from VoiceOver. |
 | 3.3.2 Labels or Instructions | Supports | All form fields have visible labels. |
 | 4.1.1 Parsing | Not Applicable | Not applicable to native applications. |
-| 4.1.2 Name, Role, Value | Supports | All interactive controls expose name, role, and value to the accessibility API. Stateful controls (favorite star) expose current value. |
+| 4.1.2 Name, Role, Value | Supports | All interactive controls expose name, role, and value to the accessibility API. Stateful controls (favorite star) expose current value. Password history rows are named by their date ("History entry from <date>"), with the value "hidden" until revealed. |
 
 ## WCAG 2.1 Level AA
 

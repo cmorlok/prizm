@@ -314,6 +314,27 @@ item's detail pane and in a "Codes" list.
 
 ---
 
+## Password History
+
+When a login's password or a hidden custom field changes, the old value is kept in the item's
+password history, as the official Bitwarden apps do (last five entries, `"<name>: <value>"` for
+hidden fields; sdk-internal `c1c9b9a5`, `cipher.rs:1009-1027`).
+
+- **Encrypted like the rest of the item** — New entries are encrypted with the key the item
+  itself uses (the per-item key if it has one, otherwise the organisation or user key) on the
+  save path that encrypts the other fields; existing entries are sent back byte for byte.
+- **Not decrypted at sync** — The vault keeps only the number of entries and the password's
+  change date. Values are decrypted on demand, when the "Password history" list is opened.
+- **In memory only while viewed** — The decrypted list lives in the sheet's view model. Closing
+  the sheet, switching items or locking the vault empties it; on lock this happens in the same
+  main-actor turn as the lock notification, and a decryption that finishes after the lock is
+  dropped. Swift `String` values cannot be zeroed, so the guarantee is that no reference outlives
+  the sheet.
+- **Copy** — Copying an entry goes through the clipboard service and is cleared after the
+  user's clipboard delay.
+- **Nothing logged** — Values never appear in logs, errors or accessibility labels (rows are
+  named by date; the value reads "hidden" until revealed).
+
 ## Threat Model
 
 ### What this app defends against
