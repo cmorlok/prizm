@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Security: new items now get their own encryption key, as in the official Bitwarden apps. Their
+  fields and attachments are encrypted with it, and the key is stored wrapped with your key or the
+  organization's. If the server's answer does not carry that key, Prizm says the item was saved but
+  could not be confirmed and does not offer to save it a second time.
 - Tests: unit tests no longer read or change the developer's Touch ID setting, and no longer
   fail at random when run in parallel. When Prizm only hosts the unit tests, it starts signed out
   with empty in-memory keychains, so it never touches the stored login.

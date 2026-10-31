@@ -122,9 +122,10 @@ Vaultwarden.
   unreadable everywhere. → Tests decrypt the request body independently: the key is unwrapped with
   the vault or org key, then every field is decrypted with the item key. An interop check reads the
   item in an official client.
-- **[Low] Older official clients** that predate cipher key encryption cannot read keyed items. Task
-  1.1 records the oldest official client that reads them. Items
-  keyed by official clients already exist in the same vaults.
+- **[Low] Older official clients** that predate cipher key encryption cannot read keyed items.
+  Official clients read item keys since 2024.2.0, the version Vaultwarden's `/api/config` names for
+  individual cipher key encryption (`src/api/core/mod.rs:228-230`, task 1.1). Items keyed by
+  official clients already exist in the same vaults.
 - **[Low] Cache and response disagree.** → D4 checks the answer before anything is cached, so the
   cached key is both.
 
@@ -133,3 +134,22 @@ Vaultwarden.
 1. Should a follow-up change add a key to existing unkeyed items on edit, as the SDK does? Deferred:
    it requires re-encrypting fields that `fix-cipher-edit-data-loss` keeps opaque (see proposal.md,
    Non-Goals).
+
+## Review
+
+- Spec challenge (fresh agent, before code): 11 findings, all adopted (answer key check →
+  `createdButUnconfirmed`, `itemKeyGenerationFailed`, `toNewRawCipher` renamed `toUnkeyedRawCipher`).
+- Code review (fresh agent, 2026-10-31): 0 high/medium, 4 low; R1–R3 fixed (red 20261031T074813Z,
+  green 20261031T074829Z), R4 by rewording task 4.1.
+- Security review (fresh agent, 2026-10-31): 0 high/medium, 2 low, both fixed. LOW-1: an answer with
+  the right key but another organization, or with a field that fails its MAC, was stored before it
+  was mapped and left Save enabled, so a second Save duplicated the item; now the organization is
+  checked and the answer mapped before anything is stored, and either failure gives
+  `createdButUnconfirmed`. LOW-2: the item key halves are zeroed after use (red 20261031T171001Z,
+  green 20261031T171045Z).
+- `/opsx:verify` (2026-10-31): 0 critical, 0 warnings, 4 suggestions; org-create-answered-as-personal
+  test and a comment at the `EncStringError` mapping added (green 20261031T180640Z), the others are
+  task evidence.
+- Rig (Vaultwarden 1.37.4, `bw` 2026.9.1): a personal and an organization item created by Prizm,
+  each with an attachment and no sync in between, carry a key; `bw` reads them and their
+  attachments, edits them, and Prizm reads the edits (20261031T171553Z, 20261031T171658Z).
