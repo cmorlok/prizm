@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import Prizm
 
@@ -152,5 +153,38 @@ final class PasswordGeneratorViewModelTests: XCTestCase {
     func testToggleTitles_listTheirCharacters() {
         XCTAssertEqual(PasswordGeneratorView.specialToggleTitle, "Special (!@#$%^&*)")
         XCTAssertEqual(PasswordGeneratorView.extendedToggleTitle, #"Extended special (()_+-=[]{}|;':",.<>?/)"#)
+    }
+
+    // MARK: - generator-strength-meter
+
+    func testStrength_followsTheSettings() {
+        let vm = makeVM()
+        XCTAssertEqual(vm.strength?.label, "Strong · 97 bits")
+        vm.includeSymbols = false
+        XCTAssertNotEqual(vm.strength?.label, "Strong · 97 bits", "a set off changes the strength")
+        vm.includeSymbols = true
+        vm.length = 8
+        XCTAssertEqual(vm.strength?.category, .weak)
+        vm.mode = .passphrase
+        XCTAssertEqual(vm.strength?.label, "OK · 77 bits")
+        vm.wordCount = 7
+        XCTAssertEqual(vm.strength?.label, "Strong · 90 bits", "7 × log2(7,772) ≈ 90.4")
+        let sevenWords = vm.strength?.label
+        vm.includeNumber = true
+        XCTAssertNotEqual(vm.strength?.label, sevenWords, "the number option changes the strength")
+    }
+
+    /// Spec scenario "Short password": the weak bar is red; strong is green.
+    func testStrengthColor_weakIsRed_strongIsGreen() throws {
+        let vm = makeVM()
+        XCTAssertEqual(StrengthMeterView.color(for: try XCTUnwrap(vm.strength)), .green)
+        vm.length = 8
+        XCTAssertEqual(StrengthMeterView.color(for: try XCTUnwrap(vm.strength)), .red)
+    }
+
+    func testStrength_isHiddenOnError() {
+        let vm = makeVM(generator: PasswordGenerator(wordListSource: FailingWordList()))
+        vm.mode = .passphrase
+        XCTAssertNil(vm.strength)
     }
 }

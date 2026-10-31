@@ -30,6 +30,8 @@ final class PasswordGeneratorViewModel: ObservableObject {
 
     @Published private(set) var generatedValue: String = ""
     @Published private(set) var errorMessage: String?
+    /// The strength of the current settings; nil while there is no value (generator-strength-meter).
+    @Published private(set) var strength: GeneratorStrength?
 
     /// `true` when there is a value to copy or use; never an empty one (fix-password-generator, D5).
     var canUse: Bool { errorMessage == nil && !generatedValue.isEmpty }
@@ -112,18 +114,24 @@ final class PasswordGeneratorViewModel: ObservableObject {
                 generatedValue = try generator.generatePassphrase(config: config, provider: provider)
             }
             errorMessage = nil
+            // The word list is read only for passphrases; its failure is caught below like the
+            // generator's own.
+            let wordListSize = mode == .passphrase ? try generator.wordList().count : 0
+            strength = GeneratorStrength.of(config, wordListSize: wordListSize)
             config.save(to: defaults)
         } catch PasswordGeneratorError.wordListUnavailable {
             // A missing bundled resource is a build defect (design D5).
             Self.logger.fault("Passphrase word list unavailable")
             errorMessage = PasswordGeneratorError.wordListUnavailable.localizedDescription
             generatedValue = ""
+            strength = nil
         } catch {
             Self.logger.error("Generation failed: \(String(describing: type(of: error)), privacy: .public)")
             // Every other failure comes from the random source (the provider's own error type has
             // no user-facing text).
             errorMessage = (error as? PasswordGeneratorError ?? .randomSourceFailed).localizedDescription
             generatedValue = ""
+            strength = nil
         }
     }
 

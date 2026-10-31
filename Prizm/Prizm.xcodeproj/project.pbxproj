@@ -108,6 +108,7 @@
 		AA0001010000000100000001 /* RandomnessProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0002010000000100000001 /* RandomnessProvider.swift */; };
 		AA0001020000000200000002 /* PasswordGeneratorConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0002020000000200000002 /* PasswordGeneratorConfig.swift */; };
 		AA0001030000000300000003 /* PasswordGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0002030000000300000003 /* PasswordGenerator.swift */; };
+		443DF00A752BEB03FB530A02 /* GeneratorStrength.swift in Sources */ = {isa = PBXBuildFile; fileRef = E43B4A31C410B308EEAD61A1 /* GeneratorStrength.swift */; };
 		AA0001040000000400000004 /* CryptographicRandomnessProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0002040000000400000004 /* CryptographicRandomnessProvider.swift */; };
 		AA0001050000000500000005 /* PasswordGeneratorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0002050000000500000005 /* PasswordGeneratorViewModel.swift */; };
 		AA0001060000000600000006 /* PasswordGeneratorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0002060000000600000006 /* PasswordGeneratorView.swift */; };
@@ -333,6 +334,7 @@
 		AA0002010000000100000001 /* RandomnessProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RandomnessProvider.swift; sourceTree = "<group>"; };
 		AA0002020000000200000002 /* PasswordGeneratorConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordGeneratorConfig.swift; sourceTree = "<group>"; };
 		AA0002030000000300000003 /* PasswordGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordGenerator.swift; sourceTree = "<group>"; };
+		E43B4A31C410B308EEAD61A1 /* GeneratorStrength.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratorStrength.swift; sourceTree = "<group>"; };
 		AA0002040000000400000004 /* CryptographicRandomnessProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptographicRandomnessProvider.swift; sourceTree = "<group>"; };
 		AA0002050000000500000005 /* PasswordGeneratorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordGeneratorViewModel.swift; sourceTree = "<group>"; };
 		AA0002060000000600000006 /* PasswordGeneratorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordGeneratorView.swift; sourceTree = "<group>"; };
@@ -925,6 +927,7 @@
 				AA0002010000000100000001 /* RandomnessProvider.swift */,
 				AA0002020000000200000002 /* PasswordGeneratorConfig.swift */,
 				AA0002030000000300000003 /* PasswordGenerator.swift */,
+				E43B4A31C410B308EEAD61A1 /* GeneratorStrength.swift */,
 				5C4F1CA442CEB4D208ED7FCC /* TOTPSeedParser.swift */,
 				9BF035335283019BA2C1E3B6 /* URILaunchPolicy.swift */,
 				7D72A8F03C8D7FDF19E3FF08 /* WebsiteIconHost.swift */,
@@ -1293,6 +1296,7 @@
 				AA0001010000000100000001 /* RandomnessProvider.swift in Sources */,
 				AA0001020000000200000002 /* PasswordGeneratorConfig.swift in Sources */,
 				AA0001030000000300000003 /* PasswordGenerator.swift in Sources */,
+				443DF00A752BEB03FB530A02 /* GeneratorStrength.swift in Sources */,
 				AA0001040000000400000004 /* CryptographicRandomnessProvider.swift in Sources */,
 				AA0001050000000500000005 /* PasswordGeneratorViewModel.swift in Sources */,
 				AA0001060000000600000006 /* PasswordGeneratorView.swift in Sources */,

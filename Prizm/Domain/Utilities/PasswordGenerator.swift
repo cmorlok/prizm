@@ -89,25 +89,32 @@ struct PasswordGenerator {
 
     // MARK: - Password generation
 
+    /// The enabled sets after the ambiguous filter, each with the number of its characters every
+    /// password contains (at least 1). The generator and `GeneratorStrength` both use it, so the
+    /// meter and the generator can never disagree about the sets. The sets are disjoint.
+    static func characterSets(_ config: PasswordGeneratorConfig) -> [(chars: [Character], minimum: Int)] {
+        var sets: [(chars: [Character], minimum: Int)] = []
+        if config.includeUppercase       { sets.append((uppercaseChars, 1)) }
+        if config.includeLowercase       { sets.append((lowercaseChars, 1)) }
+        if config.includeDigits          { sets.append((digitChars, max(config.minNumbers, 1))) }
+        if config.includeSymbols         { sets.append((specialChars, max(config.minSpecial, 1))) }
+        if config.includeExtendedSymbols { sets.append((extendedSpecialChars, 1)) }
+        // The view never lets the last set be switched off; a config built elsewhere falls back
+        // to lowercase rather than producing nothing.
+        if sets.isEmpty { sets.append((lowercaseChars, 1)) }
+        if config.avoidAmbiguous {
+            sets = sets.map { ($0.chars.filter { !ambiguousChars.contains($0) }, $0.minimum) }
+        }
+        return sets
+    }
+
     /// Generates a random character-based password.
     ///
     /// Each enabled set contributes its minimum (at least 1), the rest comes from the union of the
     /// enabled sets, then a Fisher–Yates shuffle; the same order as the Bitwarden SDK.
     /// - Throws: `PasswordGeneratorError` or the provider's error.
     func generatePassword(config: PasswordGeneratorConfig, provider: RandomnessProvider) throws -> String {
-        var sets: [(chars: [Character], minimum: Int)] = []
-        if config.includeUppercase       { sets.append((Self.uppercaseChars, 1)) }
-        if config.includeLowercase       { sets.append((Self.lowercaseChars, 1)) }
-        if config.includeDigits          { sets.append((Self.digitChars, max(config.minNumbers, 1))) }
-        if config.includeSymbols         { sets.append((Self.specialChars, max(config.minSpecial, 1))) }
-        if config.includeExtendedSymbols { sets.append((Self.extendedSpecialChars, 1)) }
-        // The view never lets the last set be switched off; a config built elsewhere falls back
-        // to lowercase rather than producing nothing.
-        if sets.isEmpty { sets.append((Self.lowercaseChars, 1)) }
-        if config.avoidAmbiguous {
-            sets = sets.map { ($0.chars.filter { !Self.ambiguousChars.contains($0) }, $0.minimum) }
-        }
-
+        let sets = Self.characterSets(config)
         let pool = sets.flatMap(\.chars)
         var result: [Character] = []
         for set in sets {

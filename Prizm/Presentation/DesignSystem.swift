@@ -134,4 +134,7 @@ enum Spacing {
     /// Highest the edit sheet's collection checkbox list grows (about five rows) before it scrolls,
     /// so an organization with many collections cannot push the form out of the sheet.
     static let collectionListMaxHeight: CGFloat = 170
+
+    /// Height of the strength bar in the password generator (generator-strength-meter).
+    static let strengthBarHeight: CGFloat = 6
 }

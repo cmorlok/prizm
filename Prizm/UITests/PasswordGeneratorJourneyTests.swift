@@ -151,6 +151,37 @@ final class PasswordGeneratorJourneyTests: PrizmUITestCase {
         if discardButton.waitForExistence(timeout: 2) { discardButton.click() }
     }
 
+    // MARK: - Strength meter (generator-strength-meter, task 3.1)
+
+    /// The meter is one element named "Strength" whose value names the category and the bits,
+    /// for example "Strong, 97 bits". Nothing is toggled: the run shares the developer's
+    /// generator preferences, so the category is not fixed.
+    func testGeneratorPopover_showsStrengthWithCategoryAndBits() throws {
+        let sidebarLogins = app.sidebarRow("Login")
+        XCTAssertTrue(sidebarLogins.waitForExistence(timeout: 5))
+        sidebarLogins.click()
+        let firstRow = app.element(Fixture.row(Fixture.alpha))
+        XCTAssertTrue(firstRow.waitForExistence(timeout: 5))
+        firstRow.click()
+        let editButton = app.buttons["edit.button.edit"]
+        XCTAssertTrue(editButton.waitForExistence(timeout: 3))
+        editButton.click()
+        let generatorButton = app.buttons["generator.button.trigger"]
+        XCTAssertTrue(generatorButton.waitForExistence(timeout: 3))
+        generatorButton.click()
+
+        let meter = app.descendants(matching: .any)["generator.strength"].firstMatch
+        XCTAssertTrue(meter.waitForExistence(timeout: 3), "The strength meter is shown")
+        XCTAssertEqual(meter.label, "Strength")
+        let value = try XCTUnwrap(meter.value as? String)
+        XCTAssertNotNil(value.range(of: #"^(Weak|OK|Strong|Very strong), \d+ bits$"#, options: .regularExpression),
+                        "Value names a category and bits: \(value)")
+
+        app.typeKey(.escape, modifierFlags: [])
+        let discardButton = app.buttons["edit.button.discard"]
+        if discardButton.waitForExistence(timeout: 2) { discardButton.click() }
+    }
+
     // MARK: - Task 5.2: Switch to Passphrase mode, change word count, verify preview
 
     func testGeneratorPopover_passphraseMode_wordCountUpdatesPreview() throws {

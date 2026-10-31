@@ -230,6 +230,7 @@ nonisolated enum AccessibilityID {
         static let capitalizeToggle    = "generator.toggle.capitalize"
         static let includeNumberToggle = "generator.toggle.includeNumber"
         static let preview             = "generator.preview"
+        static let strength            = "generator.strength"
         static let refreshButton       = "generator.button.refresh"
         static let copyButton          = "generator.button.copy"
         static let useButton           = "generator.button.use"
