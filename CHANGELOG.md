@@ -197,7 +197,10 @@
   sync. Your vault and sign-in are not affected.
 - Add verification codes: a login with a TOTP seed now shows its current one-time code and a
   countdown in the item, and a new "Codes" sidebar entry lists every item that has
-  one. Supports base32 secrets and `otpauth://totp` links (SHA-1, SHA-256, SHA-512; 6 to 8 digits).
+  one. Seeds are read the way the official apps read them: base32 secrets, `otpauth://totp` links
+  (SHA-1, SHA-256, SHA-512; up to 10 digits; any period; unusual labels or repeated parameters),
+  and Steam Guard seeds (`steam://`, 5-character codes); letters outside the base32 alphabet are
+  ignored. Counter-based (HOTP) seeds show "unavailable" instead of a wrong code.
 - **Changed**: "Copy Code" (⌃⌘C) now copies the current generated code instead of the raw TOTP
   seed, and the raw seed can no longer be copied.
 - Fix a crash when locking the vault (including sleep and screen lock) by using

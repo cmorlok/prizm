@@ -152,3 +152,20 @@ enforces nothing on the server and would only copy another client's licensing de
 
 None. Closed 2026-10-30: the SDK wraps for 10 digits, Prizm keeps RFC arithmetic (D3, from source);
 no entitlement gate (Christian, D5).
+
+## Review
+
+- Spec challenge (fresh agent, before code): 14 findings, all adopted; trimming surrounding
+  whitespace kept as a recorded difference (D2).
+- Code review (fresh agent, 2026-10-31): 0 high/medium, 4 low, all fixed (percent escapes decoded
+  one at a time as WHATWG does, algorithm lowercased after decoding, host without userinfo or
+  port, more tests incl. the entitlement source scan of task 4.1; red 20261031T080821Z, green
+  20261031T080903Z).
+- Security review: the seed is never logged or put in an error (Constitution §III, §V); parsing is
+  an encoding, not cryptography; HMAC stays behind `PrizmCryptoService`.
+- `/opsx:verify` (2026-10-31): 0 critical, 0 warnings, 2 suggestions, done (Steam copy test, comment;
+  green 20261031T182647Z).
+- Rig (Vaultwarden 1.37.4, `bw` 2026.9.1): plain, `otpauth` SHA-256/8/60 and `steam://` seeds give
+  the same codes as `bw get totp` (20261031T081759Z).
+- UI: `VerificationCodeJourneyTests` passed in the final batch run 20261031T210247Z. VoiceOver
+  hand check of a Steam row: Christian, 2026-10-31.
