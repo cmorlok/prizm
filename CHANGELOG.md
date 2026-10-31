@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Changed: the password generator's symbols are split into "Special" (`!@#$%^&*`, Bitwarden's set,
+  on by default) and "Extended special" (the other 21 symbols, off by default). New options set a
+  minimum number of digits and special characters; passphrases can have 3 to 20 words and any
+  separator.
+- Fix: every character and word is now picked with equal probability (before, some were slightly
+  more likely), and a missing word list shows an error instead of an empty passphrase.
 - Security: for items with their own encryption key, Prizm now checks each website's integrity
   checksum, as the official Bitwarden apps do. A website whose checksum is missing or wrong (for
   example one a server added or swapped) is not shown, searched, used for icons or saved back; the

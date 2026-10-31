@@ -1,8 +1,13 @@
+import AppKit
 import SwiftUI
 
 /// Password/passphrase generator popover.
 /// Receives a binding to write the generated value into the target field.
 struct PasswordGeneratorView: View {
+
+    /// The visible toggle titles list every character of their set (fix-password-generator, D2).
+    static var specialToggleTitle: String { "Special (\(String(PasswordGenerator.specialChars)))" }
+    static var extendedToggleTitle: String { "Extended special (\(String(PasswordGenerator.extendedSpecialChars)))" }
 
     @ObservedObject var viewModel: PasswordGeneratorViewModel
     @Binding var targetValue: String?
@@ -41,6 +46,18 @@ struct PasswordGeneratorView: View {
         }
         .padding()
         .frame(width: 320)
+        // An error replaces the preview silently otherwise (§VIII).
+        // `initial: true`: the view model generates in its init, so an error can exist on open.
+        .onChange(of: viewModel.errorMessage, initial: true) { _, message in
+            if let message { Self.announce(message) }
+        }
+    }
+
+    /// Posts through AppKit, as the edit sheet does, because macOS VoiceOver ignores the priority
+    /// that SwiftUI's announcement carries.
+    private static func announce(_ text: String) {
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                             userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 
     // MARK: - Password controls
@@ -64,17 +81,44 @@ struct PasswordGeneratorView: View {
             .accessibilityIdentifier(AccessibilityID.Generator.lengthSlider)
 
             Toggle("Uppercase (A–Z)", isOn: $viewModel.includeUppercase)
-                .disabled(isLastEnabledSet(\.includeUppercase))
+                .disabled(viewModel.isLastEnabledSet(.uppercase))
                 .accessibilityIdentifier(AccessibilityID.Generator.uppercaseToggle)
             Toggle("Lowercase (a–z)", isOn: $viewModel.includeLowercase)
-                .disabled(isLastEnabledSet(\.includeLowercase))
+                .disabled(viewModel.isLastEnabledSet(.lowercase))
                 .accessibilityIdentifier(AccessibilityID.Generator.lowercaseToggle)
             Toggle("Digits (0–9)", isOn: $viewModel.includeDigits)
-                .disabled(isLastEnabledSet(\.includeDigits))
+                .disabled(viewModel.isLastEnabledSet(.digits))
                 .accessibilityIdentifier(AccessibilityID.Generator.digitsToggle)
-            Toggle("Symbols (!@#$…)", isOn: $viewModel.includeSymbols)
-                .disabled(isLastEnabledSet(\.includeSymbols))
+            // The labels list every character of their set (fix-password-generator, D2).
+            Toggle(Self.specialToggleTitle, isOn: $viewModel.includeSymbols)
+                .disabled(viewModel.isLastEnabledSet(.symbols))
+                .accessibilityLabel("Special characters")
+                .accessibilityHint(String(PasswordGenerator.specialChars))
                 .accessibilityIdentifier(AccessibilityID.Generator.symbolsToggle)
+            Toggle(isOn: $viewModel.includeExtendedSymbols) {
+                Text(verbatim: Self.extendedToggleTitle)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .disabled(viewModel.isLastEnabledSet(.extendedSymbols))
+            // VoiceOver reads a run of punctuation poorly: a name, with the characters as the hint.
+            .accessibilityLabel("Extended special characters")
+            .accessibilityHint(String(PasswordGenerator.extendedSpecialChars))
+            .accessibilityIdentifier(AccessibilityID.Generator.extendedSymbolsToggle)
+            Stepper("Minimum numbers: \(viewModel.minNumbers)", value: $viewModel.minNumbers,
+                    in: PasswordGeneratorConfig.minimumRange)
+                .disabled(!viewModel.isMinNumbersEnabled)
+                .help("At least 1 while digits are on.")
+                // The visible label carries the value; VoiceOver gets it once, as the value.
+                .accessibilityLabel("Minimum numbers")
+                .accessibilityValue("\(viewModel.minNumbers)")
+                .accessibilityIdentifier(AccessibilityID.Generator.minNumbersStepper)
+            Stepper("Minimum special: \(viewModel.minSpecial)", value: $viewModel.minSpecial,
+                    in: PasswordGeneratorConfig.minimumRange)
+                .disabled(!viewModel.isMinSpecialEnabled)
+                .help("At least 1 while special characters are on.")
+                .accessibilityLabel("Minimum special")
+                .accessibilityValue("\(viewModel.minSpecial)")
+                .accessibilityIdentifier(AccessibilityID.Generator.minSpecialStepper)
             Toggle("Avoid ambiguous characters", isOn: $viewModel.avoidAmbiguous)
                 .accessibilityIdentifier(AccessibilityID.Generator.avoidAmbiguousToggle)
         }
@@ -85,7 +129,8 @@ struct PasswordGeneratorView: View {
     @ViewBuilder
     private var passphraseControls: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Stepper("Words: \(viewModel.wordCount)", value: $viewModel.wordCount, in: 3...10)
+            Stepper("Words: \(viewModel.wordCount)", value: $viewModel.wordCount,
+                    in: PasswordGeneratorConfig.wordCountRange)
                 .accessibilityIdentifier(AccessibilityID.Generator.wordCountStepper)
             HStack {
                 Text("Separator")
@@ -140,7 +185,7 @@ struct PasswordGeneratorView: View {
             Button("Copy") {
                 viewModel.copyToClipboard()
             }
-            .disabled(viewModel.errorMessage != nil)
+            .disabled(!viewModel.canUse)
             .accessibilityHint("Copies to clipboard")
             .accessibilityIdentifier(AccessibilityID.Generator.copyButton)
 
@@ -150,22 +195,9 @@ struct PasswordGeneratorView: View {
                 targetValue = viewModel.generatedValue
                 dismiss()
             }
-            .disabled(viewModel.errorMessage != nil)
+            .disabled(!viewModel.canUse)
             .buttonStyle(.borderedProminent)
             .accessibilityIdentifier(AccessibilityID.Generator.useButton)
         }
-    }
-
-    // MARK: - Helpers
-
-    /// Returns `true` if the given toggle is the last enabled character set.
-    private func isLastEnabledSet(_ keyPath: KeyPath<PasswordGeneratorViewModel, Bool>) -> Bool {
-        let enabled = [
-            viewModel.includeUppercase,
-            viewModel.includeLowercase,
-            viewModel.includeDigits,
-            viewModel.includeSymbols
-        ].filter { $0 }.count
-        return enabled == 1 && viewModel[keyPath: keyPath]
     }
 }

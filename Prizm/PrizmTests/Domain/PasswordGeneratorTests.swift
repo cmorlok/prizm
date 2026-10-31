@@ -69,10 +69,9 @@ final class PasswordGeneratorTests: XCTestCase {
         var config = PasswordGeneratorConfig()
         config.length = 5
         // Run multiple times with different seeds.
-        for seed in [Array<UInt8>(repeating: 0, count: 256),
-                     Array<UInt8>(repeating: 127, count: 256),
-                     Array<UInt8>(repeating: 255, count: 256)] {
-            let p = MockRandomnessProvider(seed: seed)
+        // Seeded sources: a constant-byte source now fails by design (design D1, 64 rejections).
+        for seed in [1, 2, 3] as [UInt64] {
+            let p = SeededRandomnessProvider(seed: seed)
             let result = try generator.generatePassword(config: config, provider: p)
             XCTAssertTrue(result.contains(where: { $0.isUppercase }), "Missing uppercase in: \(result)")
             XCTAssertTrue(result.contains(where: { $0.isLowercase }), "Missing lowercase in: \(result)")
@@ -95,11 +94,9 @@ final class PasswordGeneratorTests: XCTestCase {
     func testPassword_noWhitespace_withSymbolsEnabled() async throws {
         var config = PasswordGeneratorConfig()
         config.length = 128
-        for seed in [Array<UInt8>(repeating: 0, count: 256),
-                     Array<UInt8>(repeating: 127, count: 256),
-                     Array<UInt8>(repeating: 255, count: 256),
-                     Array<UInt8>(0...255)] {
-            let p = MockRandomnessProvider(seed: seed)
+        config.includeExtendedSymbols = true
+        for seed in [1, 2, 3, 4] as [UInt64] {
+            let p = SeededRandomnessProvider(seed: seed)
             let result = try generator.generatePassword(config: config, provider: p)
             XCTAssertFalse(result.contains(where: { $0.isWhitespace }), "Password contains whitespace: \(result)")
         }
@@ -112,6 +109,7 @@ final class PasswordGeneratorTests: XCTestCase {
         config.includeLowercase = false
         config.includeDigits = false
         config.includeSymbols = false
+        config.includeExtendedSymbols = false
         config.length = 10
         let result = try generator.generatePassword(config: config, provider: provider)
         XCTAssertEqual(result.count, 10)
@@ -128,12 +126,12 @@ final class PasswordGeneratorTests: XCTestCase {
         XCTAssertEqual(words.count, 3)
     }
 
-    func testPassphrase_wordCountBounds_maximum10() async throws {
+    func testPassphrase_wordCountBounds_maximum20() async throws {
         var config = PasswordGeneratorConfig()
-        config.wordCount = 10
+        config.wordCount = 20
         let result = try generator.generatePassphrase(config: config, provider: provider)
         let words = result.components(separatedBy: config.separator)
-        XCTAssertEqual(words.count, 10)
+        XCTAssertEqual(words.count, 20)
     }
 
     func testPassphrase_defaultWordCount_is6() async throws {
@@ -183,9 +181,7 @@ final class PasswordGeneratorTests: XCTestCase {
     }
 
     func testPassphrase_allWordsFromEFFList() async throws {
-        let wordList = Set(PasswordGenerator.effWordList)
-        // Skip if word list not loaded (test bundle may not include resources).
-        guard !wordList.isEmpty else { return }
+        let wordList = Set(try generator.wordList())
 
         var config = PasswordGeneratorConfig()
         config.wordCount = 6
@@ -206,11 +202,11 @@ final class PasswordGeneratorTests: XCTestCase {
         XCTAssertEqual(words.count, 3)
     }
 
-    func testPassphrase_wordCountClamped_above10() async throws {
+    func testPassphrase_wordCountClamped_above20() async throws {
         var config = PasswordGeneratorConfig()
-        config.wordCount = 20
+        config.wordCount = 30
         let result = try generator.generatePassphrase(config: config, provider: provider)
         let words = result.components(separatedBy: config.separator)
-        XCTAssertEqual(words.count, 10)
+        XCTAssertEqual(words.count, 20)
     }
 }
