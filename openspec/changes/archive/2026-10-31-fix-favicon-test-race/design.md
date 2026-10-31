@@ -26,3 +26,11 @@ None.
 ## Open Questions
 
 None.
+
+## Review
+
+- Code review (2026-10-31, in the batch-3 review round): no finding.
+- `/opsx:verify` (2026-10-31): clean (one optional helper suggestion declined: two uses only).
+- Unit tests green three times in a row (20261030T195711Z, 195729Z, 195743Z) and at the branch tip
+  (20261031T182225Z-series runs on the stacked `fix-favicon-stub-redirect-race`). A second flake in
+  the same class had another cause and is fixed by `fix-favicon-stub-redirect-race`.
