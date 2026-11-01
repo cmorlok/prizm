@@ -7,6 +7,8 @@ import XCTest
 final class AuthRepositoryImplTests: XCTestCase {
 
     private var sut: AuthRepositoryImpl!
+
+    private let gate = SessionGateImpl()
     private var mockAPI: MockPrizmAPIClient!
     private var mockCrypto: MockPrizmCryptoService!
     private var mockKeychain: MockKeychainService!
@@ -25,8 +27,7 @@ final class AuthRepositoryImplTests: XCTestCase {
             biometricKeychain: mockBiometricKeychain,
             vaultKeyCache: VaultKeyCache(),
             orgKeyCache:   OrgKeyCache(),
-            defaults:      makePrivateDefaults()
-        )
+            defaults:      makePrivateDefaults(), gate: gate)
     }
 
     // MARK: - T023: loginWithPassword

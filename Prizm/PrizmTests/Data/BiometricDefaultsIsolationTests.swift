@@ -31,8 +31,7 @@ final class BiometricDefaultsIsolationTests: XCTestCase {
             biometricKeychain: MockBiometricKeychainService(),
             vaultKeyCache: VaultKeyCache(),
             orgKeyCache: OrgKeyCache(),
-            defaults: store
-        )
+            defaults: store, gate: SessionGateImpl())
         seedStoredSession()
     }
 

@@ -134,11 +134,17 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
         )
     }
 
+    /// Runs while the refresh request is "in flight", for example to sign out meanwhile.
+    nonisolated(unsafe) var whileRefreshing: (@Sendable () async -> Void)?
+    /// A rotated refresh token in the answer; nil keeps the stored one.
+    nonisolated(unsafe) var refreshRotatedRefreshToken: String?
+
+    /// Like the real client: returns the tokens and stores nothing (lock-state-machine, D3).
     func refreshAccessToken(refreshToken: String) async throws -> (accessToken: String, refreshToken: String?) {
+        await whileRefreshing?()
         if let err = refreshShouldThrow { throw err }
         let token = refreshResponse ?? "refreshed-access-token"
-        storedAccessToken = token
-        return (token, nil)
+        return (token, refreshRotatedRefreshToken)
     }
 
     nonisolated(unsafe) var lastUpdatedCipher: RawCipher?

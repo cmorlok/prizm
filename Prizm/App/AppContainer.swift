@@ -137,7 +137,8 @@ final class AppContainer: ObservableObject {
             biometricKeychain: biometricKeychain,
             vaultKeyCache: keyCache,
             orgKeyCache:   orgKeyCache,
-            defaults:      preferences
+            defaults:      preferences,
+            gate:          sessionGate
         )
         let sync = SyncRepositoryImpl(
             apiClient:       api,

@@ -23,7 +23,7 @@ final class KdfLoginTests: XCTestCase {
         sut = AuthRepositoryImpl(apiClient: api, crypto: crypto, keychain: keychain,
                                  biometricKeychain: MockBiometricKeychainService(),
                                  vaultKeyCache: VaultKeyCache(), orgKeyCache: OrgKeyCache(),
-                                 defaults: makePrivateDefaults())
+                                 defaults: makePrivateDefaults(), gate: SessionGateImpl())
         try await sut.setServerEnvironment(ServerEnvironment(base: URL(string: "https://vault.example.com")!, overrides: nil))
         api.tokenResponse = tokenResponse()
     }

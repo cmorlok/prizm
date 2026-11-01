@@ -33,8 +33,7 @@ final class AuthRepositoryImplBiometricTests: XCTestCase {
             biometricKeychain: mockBiometricKeychain,
             vaultKeyCache: VaultKeyCache(),
             orgKeyCache:   OrgKeyCache(),
-            defaults:      defaults
-        )
+            defaults:      defaults, gate: SessionGateImpl())
         // Seed Keychain with a stored session so account(for:) works.
         seedStoredSession()
     }

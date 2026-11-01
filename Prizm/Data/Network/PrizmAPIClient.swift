@@ -1389,8 +1389,10 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = formEncoded(params)
 
+        // Returned, not stored: the caller installs the token only while its unlock is still
+        // current, so a refresh that a sign-out overtook leaves no token here
+        // (lock-state-machine, design D3).
         let tokenResponse: TokenResponse = try await perform(request: request)
-        accessToken = tokenResponse.accessToken
 
         if DebugConfig.isEnabled {
             logger.debug("[debug] refreshAccessToken ← new token obtained")

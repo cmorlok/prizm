@@ -57,8 +57,7 @@ final class UITestSeamTests: XCTestCase {
                 biometricKeychain: InMemoryBiometricKeychainService(),
                 vaultKeyCache: VaultKeyCache(),
                 orgKeyCache: OrgKeyCache(),
-                defaults: makePrivateDefaults()
-            )
+                defaults: makePrivateDefaults(), gate: SessionGateImpl())
             let account = try XCTUnwrap(auth.storedAccount(), "state \(state)")
             XCTAssertEqual(account.email, UITestFixtures.accountEmail)
             XCTAssertEqual(account.serverEnvironment.base, UITestFixtures.serverURL)

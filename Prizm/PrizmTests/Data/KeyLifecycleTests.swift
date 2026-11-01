@@ -8,6 +8,7 @@ import XCTest
 final class KeyLifecycleTests: XCTestCase {
 
     private var sut: AuthRepositoryImpl!
+    private var gate: SessionGateImpl!
     private var api: MockPrizmAPIClient!
     private var crypto: MockPrizmCryptoService!
     private var keychain: MockKeychainService!
@@ -26,10 +27,11 @@ final class KeyLifecycleTests: XCTestCase {
         vaultKeyCache = VaultKeyCache()
         orgKeyCache = OrgKeyCache()
         defaults = makePrivateDefaults()
+        gate = SessionGateImpl()
         sut = AuthRepositoryImpl(apiClient: api, crypto: crypto, keychain: keychain,
                                  biometricKeychain: MockBiometricKeychainService(),
                                  vaultKeyCache: vaultKeyCache, orgKeyCache: orgKeyCache,
-                                 defaults: defaults)
+                                 defaults: defaults, gate: gate)
         zeroed = []
         sut.zeroedKeyObserver = { [weak self] in self?.zeroed.append($0) }
         try await sut.setServerEnvironment(env)
@@ -57,6 +59,14 @@ final class KeyLifecycleTests: XCTestCase {
                 XCTAssertTrue(entry.bytes.allSatisfy { $0 == 0 }, "\(label) still holds key bytes", file: file, line: line)
             }
         }
+    }
+
+    /// A lock as `RootViewModel` runs it: the gate closes first, the teardown opens it last
+    /// (lock-state-machine, design D1).
+    private func lock() async {
+        gate.end()
+        await sut.lockVault()
+        gate.open()
     }
 
     // MARK: - 1.1 / 1.3 One teardown path
@@ -116,7 +126,7 @@ final class KeyLifecycleTests: XCTestCase {
         await orgKeyCache.replaceAll(with: ["org-1": CryptoKeys(encryptionKey: Data(repeating: 1, count: 32),
                                                                 macKey: Data(repeating: 2, count: 32))])
 
-        await sut.lockVault()
+        await lock()
 
         let orgKeys = await orgKeyCache.snapshot()
         XCTAssertTrue(orgKeys.isEmpty)
@@ -143,7 +153,7 @@ final class KeyLifecycleTests: XCTestCase {
     func testUnlock_wrongPassword_zeroesTheKeys() async throws {
         api.tokenResponse = tokenResponse()
         _ = try await sut.loginWithPassword(email: "a@example.com", masterPassword: Data("pw".utf8))
-        await sut.lockVault()
+        await lock()
         zeroed = []
         crypto.decryptSymmetricKeyError = PrizmCryptoServiceError.invalidEncUserKey
 
@@ -177,13 +187,13 @@ final class KeyLifecycleTests: XCTestCase {
     func testLockDuringUnlock_loadsNoKeys() async throws {
         api.tokenResponse = tokenResponse()
         _ = try await sut.loginWithPassword(email: "a@example.com", masterPassword: Data("pw".utf8))
-        await sut.lockVault()
+        await lock()
         let gate = holdKeyDerivation()
         defer { gate.released.withLock { $0 = true } }
 
         let unlock = Task { try await self.sut.unlockWithPassword(Data("pw".utf8)) }
         try await waitUntilEntered(gate)
-        await sut.lockVault()
+        await lock()
         gate.released.withLock { $0 = true }
 
         do {
@@ -199,11 +209,11 @@ final class KeyLifecycleTests: XCTestCase {
     func testLockWhileLoadingKeys_unloadsAndZeroesThem() async throws {
         api.tokenResponse = tokenResponse()
         _ = try await sut.loginWithPassword(email: "a@example.com", masterPassword: Data("pw".utf8))
-        await sut.lockVault()
+        await lock()
         zeroed = []
-        crypto.whileUnlockingWith = { [sut, crypto] in
+        crypto.whileUnlockingWith = { [weak self, crypto] in
             crypto?.whileUnlockingWith = nil
-            await sut!.lockVault()
+            await self?.lock()
         }
 
         do {
@@ -261,7 +271,7 @@ final class KeyLifecycleTests: XCTestCase {
     func testTwoFactor_lock_zeroesThePendingKeys() async throws {
         try await startTwoFactor()
 
-        await sut.lockVault()
+        await lock()
 
         assertZeroedInPlace(["pendingEncryptionKey", "pendingMacKey"])
     }
@@ -270,7 +280,7 @@ final class KeyLifecycleTests: XCTestCase {
     /// zeroed and no two-factor step is pending (lock-during-unlock-sync, D6).
     func testTwoFactorChallengeAfterALock_keepsNoKeys() async throws {
         api.tokenResponse = tokenResponse(twoFactorProviders: [0])
-        api.whileRequestingToken = { [sut] in await sut!.lockVault() }
+        api.whileRequestingToken = { [weak self] in await self?.lock() }
 
         do {
             _ = try await sut.loginWithPassword(email: "a@example.com", masterPassword: Data("pw".utf8))
@@ -308,6 +318,72 @@ final class KeyLifecycleTests: XCTestCase {
         for allowed in ["grant_type=password", "client_id=desktop", "twoFactorProvider=0"] {
             XCTAssertTrue(text.contains(allowed), "\(allowed) should be logged")
         }
+    }
+    // MARK: - Token refresh during an unlock (lock-state-machine, design D3, gap 3)
+
+    private func keychainString(_ name: String) -> String? {
+        (try? keychain.read(key: KeychainKey.user("u1", name))).flatMap { String(data: $0, encoding: .utf8) }
+    }
+
+    /// "Sign Out" while an unlock refreshes the token: the refreshed tokens of the signed-out account
+    /// reach neither the Keychain nor the API client.
+    func testSignOutDuringTheUnlocksRefresh_writesNoTokensBack() async throws {
+        api.tokenResponse = tokenResponse()
+        _ = try await sut.loginWithPassword(email: "a@example.com", masterPassword: Data("pw".utf8))
+        await lock()
+        api.refreshRotatedRefreshToken = "rotated-rt"
+        api.whileRefreshing = { [sut, gate] in
+            gate?.end()
+            try? await sut?.signOut()
+            gate?.open()
+        }
+
+        do {
+            _ = try await sut.unlockWithPassword(Data("pw".utf8))
+            XCTFail("An unlock overtaken by a sign-out must not succeed")
+        } catch AuthError.lockedWhileUnlocking {}
+
+        XCTAssertNil(keychainString("accessToken"))
+        XCTAssertNil(keychainString("refreshToken"))
+        XCTAssertNil(api.storedAccessToken, "The API client holds no token of the signed-out account")
+        XCTAssertFalse(crypto.isUnlocked)
+    }
+
+    /// A lock while an unlock refreshes the token: the account stays signed in, so the rotated tokens
+    /// are kept in the Keychain, but the API client gets none and no keys stay loaded.
+    func testLockDuringTheUnlocksRefresh_keepsTheRotatedTokensOnlyInTheKeychain() async throws {
+        api.tokenResponse = tokenResponse()
+        _ = try await sut.loginWithPassword(email: "a@example.com", masterPassword: Data("pw".utf8))
+        await lock()
+        api.storedAccessToken = nil
+        api.refreshRotatedRefreshToken = "rotated-rt"
+        api.whileRefreshing = { [sut, gate] in
+            gate?.end()
+            await sut?.lockVault()
+            gate?.open()
+        }
+
+        do {
+            _ = try await sut.unlockWithPassword(Data("pw".utf8))
+            XCTFail("An unlock overtaken by a lock must not succeed")
+        } catch AuthError.lockedWhileUnlocking {}
+
+        XCTAssertEqual(keychainString("accessToken"), "refreshed-access-token")
+        XCTAssertEqual(keychainString("refreshToken"), "rotated-rt")
+        XCTAssertNil(api.storedAccessToken, "The API client gets no token of an overtaken unlock")
+        XCTAssertFalse(crypto.isUnlocked)
+    }
+
+    /// No lock: the refreshed token is stored and installed, as before.
+    func testUnlockWithRefresh_installsTheRefreshedToken() async throws {
+        api.tokenResponse = tokenResponse()
+        _ = try await sut.loginWithPassword(email: "a@example.com", masterPassword: Data("pw".utf8))
+        await lock()
+
+        _ = try await sut.unlockWithPassword(Data("pw".utf8))
+
+        XCTAssertEqual(keychainString("accessToken"), "refreshed-access-token")
+        XCTAssertEqual(api.storedAccessToken, "refreshed-access-token")
     }
 }
 
@@ -351,4 +427,5 @@ final class UserKeyBufferTests: XCTestCase {
         XCTAssertEqual(keys.encryptionKey.startIndex, 0)
         XCTAssertEqual(keys.macKey.startIndex, 0)
     }
+
 }
