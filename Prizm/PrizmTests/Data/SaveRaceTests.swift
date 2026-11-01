@@ -37,8 +37,10 @@ final class SaveRaceTests: XCTestCase {
         XCTAssertNotEqual(fresh, token)
         XCTAssertTrue(store.isCurrent(fresh))
 
+        // The store never ends the gate itself: only the lock's initiator does, before the clear
+        // (lock-state-machine, D1; code review C12). A clear outside a teardown keeps it open.
         await store.clear()
-        XCTAssertFalse(store.isCurrent(fresh), "clear() also makes earlier tokens stale")
+        XCTAssertTrue(store.isCurrent(fresh), "clear() alone leaves the session gate to the root")
     }
 
     func testUpdateFinishingAfterLock_throwsAndLeavesNothing() async throws {
@@ -47,7 +49,7 @@ final class SaveRaceTests: XCTestCase {
         try await rig.storeRecord(of: item, revision: RepositoryFixtures.serverRevisionString(for: item.revisionDate))
         await rig.cache(item)
         let vault = rig.vault
-        rig.api.whileUpdatingCipher = { await vault.clearVault() }
+        rig.api.whileUpdatingCipher = { await vault.lockAsTheRootDoes() }
 
         await assertThrowsVaultLocked { _ = try await rig.vault.update(StaleWriteRig.renamed(item)) }
 
@@ -58,7 +60,7 @@ final class SaveRaceTests: XCTestCase {
     func testCreateFinishingAfterLock_throwsAndLeavesNothing() async throws {
         let rig = await StaleWriteRig.make()
         let vault = rig.vault
-        rig.api.whileCreatingCipher = { await vault.clearVault() }
+        rig.api.whileCreatingCipher = { await vault.lockAsTheRootDoes() }
 
         await assertThrowsVaultLocked { _ = try await rig.vault.create(DraftVaultItem(StaleWriteRig.login("n1", name: "New"))) }
 
@@ -69,7 +71,7 @@ final class SaveRaceTests: XCTestCase {
     func testOrgUpdateLockDuringCollections_throwsAndLeavesNothing() async throws {
         let (rig, item) = try await orgRig()
         let vault = rig.vault
-        rig.api.whileUpdatingCollections = { await vault.clearVault() }
+        rig.api.whileUpdatingCollections = { await vault.lockAsTheRootDoes() }
 
         await assertThrowsVaultLocked {
             var draft = StaleWriteRig.renamed(item)
@@ -87,7 +89,7 @@ final class SaveRaceTests: XCTestCase {
     func testOrgUpdateWhenTheCollectionsRequestFailsAfterALock_throwsLockedAndLeavesNothing() async throws {
         let (rig, item) = try await orgRig()
         let vault = rig.vault
-        rig.api.whileUpdatingCollections = { await vault.clearVault() }
+        rig.api.whileUpdatingCollections = { await vault.lockAsTheRootDoes() }
         rig.api.updateCipherCollectionsShouldThrow = URLError(.networkConnectionLost)
 
         await assertThrowsVaultLocked {
@@ -107,7 +109,7 @@ final class SaveRaceTests: XCTestCase {
         let (rig, item) = try await orgRig()
         let vault = rig.vault
         rig.api.updateCipherCollectionsShouldThrow = URLError(.networkConnectionLost)
-        rig.api.whileGettingCipher = { await vault.clearVault() }
+        rig.api.whileGettingCipher = { await vault.lockAsTheRootDoes() }
 
         await assertThrowsVaultLocked {
             var draft = StaleWriteRig.renamed(item)
@@ -135,7 +137,7 @@ final class SaveRaceTests: XCTestCase {
         let seeded = await scratch.record(for: "c1")
         let nextRecord = try XCTUnwrap(seeded)
         rig.api.whileUpdatingCipher = {
-            await vault.clearVault()
+            await vault.lockAsTheRootDoes()
             store.openAfterTeardown()
             await vault.populate(items: [nextItem], folders: [], organizations: [], collections: [], syncedAt: Date())
             await store.upsert(nextRecord, ifCurrent: store.currentGeneration())
@@ -206,7 +208,7 @@ final class SaveRaceTests: XCTestCase {
         let listed = try await rig.vault.allItems().map(\.name)
         XCTAssertEqual(listed, ["Synced"], "A populate with the current session goes through")
 
-        await rig.vault.clearVault()
+        await rig.vault.lockAsTheRootDoes()
         let countsAfterLock = try await rig.vault.itemCounts()
         await rig.vault.populate(items: [item], folders: [], organizations: [], collections: [],
                                  syncedAt: Date(), session: session)
@@ -323,7 +325,7 @@ final class SaveRaceTests: XCTestCase {
         XCTAssertTrue(firstInFlight)
         let second = Task { try await vault.update(StaleWriteRig.renamed(item)) }
         await settle()
-        await vault.clearVault()
+        await vault.lockAsTheRootDoes()
         await gate.open()
 
         for save in [first, second] {

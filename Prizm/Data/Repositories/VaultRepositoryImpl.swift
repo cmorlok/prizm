@@ -142,14 +142,20 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
     }
     #endif
 
-    func clearVault() async {
-        // First: lock and sign-out both reach this hook (RootViewModel), so neither the id nor the
-        // records outlive the session. The invalidation is the very first statement, before any
-        // suspension: it is synchronous, so a save that resumes on this actor after this call sees
-        // the lock at its next `isCurrent` check, and `clear()` below only has to empty the store.
-        // The second bump `clear()` makes is harmless; the first one is what the item-cache checks
-        // in `update` and `create` rely on.
+    #if DEBUG
+    /// Test seam: a lock as `RootViewModel` runs it, for Data tests without a root: the session gate
+    /// ends first (lock-state-machine, design D1), then the vault is cleared.
+    func lockAsTheRootDoes() async {
         recordStore.invalidate()
+        await clearVault()
+    }
+    #endif
+
+    func clearVault() async {
+        // Lock and sign-out both reach this hook (RootViewModel), so neither the id nor the records
+        // outlive the session. The root ended the session gate before calling it (lock-state-machine,
+        // design D1), so every save and sync that started before is already stale at its next
+        // `isCurrent` check; this only empties.
         await recordStore.clear()
         await profileIds.clear()
         items             = []

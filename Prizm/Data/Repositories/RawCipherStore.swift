@@ -19,7 +19,9 @@ import os.log
 ///   item (the restore or collections answer, or a fetch of the item:
 ///   `VaultRepositoryImpl.refreshRecord`). Emptied by: permanent delete (per id) and `clear()`.
 ///
-/// - The fence: `clear()` and `invalidate()` replace the current `Generation` token with a new one.
+/// - The fence: the `Generation` token is the session gate's (lock-state-machine, design D1). The
+///   lock or sign-out ends the gate as its first step, before `clearVault()`; the store itself never
+///   ends or opens it, so no caller of `clear()` can leave the gate closed.
 ///   Every write takes the token an operation read when it STARTED and is refused when it is stale.
 ///   The token must be read at the start of a sync or save, before its first network await: a token
 ///   read right before the write is always current and fences nothing. A write that is refused
@@ -28,7 +30,7 @@ import os.log
 ///   true again for the old operation.
 ///
 /// - The generation is read, compared and replaced synchronously (`currentGeneration()`,
-///   `isCurrent(_:)` and `invalidate()` are `nonisolated` over a lock-protected token). That lets
+///   `isCurrent(_:)` are `nonisolated` over the gate's lock-protected token). That lets
 ///   `VaultRepositoryImpl` check a token and write its own item cache in ONE actor turn, with no
 ///   suspension point in between: an `await` between the check and the write would let a lock land
 ///   after the check, and the plaintext item would be cached anyway. Tokens for the repository's
@@ -83,16 +85,13 @@ actor RawCipherStore {
         gate.isCurrent(token)
     }
 
-    /// Makes every token handed out before stale, without touching the records. `clear()` calls it;
-    /// `VaultRepositoryImpl.clearVault()` calls it first, before any suspension, so that a save on
-    /// the repository's own actor sees the lock at its next check. It closes the gate and does not
-    /// open it: `RootViewModel` closed it already as the lock's first step and opens it as the
-    /// teardown's last (lock-state-machine, design D1), so a teardown is never reopened from here.
+    #if DEBUG
+    /// Test seam: the lock's first step, as `RootViewModel` takes it (`gate.end()`), for Data tests
+    /// without a root. Every token handed out before is stale; the records stay.
     nonisolated func invalidate() {
         gate.end()
     }
 
-    #if DEBUG
     /// Test seam: opens the gate as `RootViewModel`'s teardown does at its end, for Data tests that
     /// model "lock, then unlock" with `clearVault()` alone.
     nonisolated func openAfterTeardown() {
@@ -133,7 +132,6 @@ actor RawCipherStore {
     /// Drops every record and invalidates every token handed out before. Idempotent.
     func clear() {
         records = [:]
-        invalidate()
         logger.info("RawCipherStore: cleared")
     }
 
