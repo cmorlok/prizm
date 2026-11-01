@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added: password history. When you change a login's password, or change, rename or remove a
+  hidden custom field, Prizm keeps the old value in the item's history (the last five, as the
+  official apps do). The item footer shows when the password last changed and a "Password history"
+  button that lists the entries with their dates; values are decrypted only while the list is open.
 - Added: the password generator shows the strength of its settings as a colored bar with a
   category and the number of bits (for example "Strong · 97 bits"): Weak below 64 bits, OK up to
   79, Strong up to 127, Very strong from 128. VoiceOver reads the category and the bits.

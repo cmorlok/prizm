@@ -153,3 +153,23 @@ short window; `lock-state-machine` (gap 7) closes it for every read.
 ## Open Questions
 
 None. Closed 2026-10-30 (Christian): footer button only, no context menu entry or shortcut.
+
+## Review
+
+- Spec challenge (fresh agent, before code): 13 findings, all adopted.
+- Code review (fresh agent, 2026-10-31): 0 high/medium, 3 low, all fixed (switching items clears
+  the sheet and Close dismisses directly; buffers zeroed before decryption errors can return;
+  org-read, missing-org-key, card-removal, boolean/linked and count-after-save tests; green
+  20261031T080312Z).
+- Security review (fresh agent, 2026-10-31): 0 high/medium, 2 low, both fixed: the lock observer
+  dismisses in the notification's own main-actor turn; a long history scrolls in a lazy stack at a
+  fixed height. The repository-side window between `lockVault()` and the token bump is gap 7 of
+  `lock-state-machine`.
+- `/opsx:verify` (2026-10-31): 0 critical, 0 warnings, 4 suggestions (doc comment moved back;
+  `ItemFooterModel` stays in the view file because new app files need project entries; link colour
+  seen in the hand check; the retry case is covered by the double-save test).
+- Rig (Vaultwarden 1.37.4, `bw` 2026.9.1): Prizm's history entries for a password and a hidden field
+  read back in the official format, and a password changed with `bw` shows in Prizm's sheet
+  (20261031T081759Z).
+- UI: the planned XCUITest never saw the sheet in four approved runs and was dropped (Christian,
+  2026-10-31); hand checks with VoiceOver cover task 4.3.
