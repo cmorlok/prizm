@@ -48,7 +48,8 @@ final class LoginViewModelTests: XCTestCase {
         sut.signIn()
         gate.end()
         gate.open()
-        while mockUseCase.receivedFlows.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
+        let deadline = ContinuousClock.now + .seconds(2)
+        while mockUseCase.receivedFlows.isEmpty, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(5)) }
 
         XCTAssertEqual(mockUseCase.receivedFlows.first, before, "the token of the moment the user signed in")
         XCTAssertFalse(gate.isCurrent(mockUseCase.receivedFlows[0]))

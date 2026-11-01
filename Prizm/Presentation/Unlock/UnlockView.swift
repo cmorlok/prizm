@@ -28,8 +28,9 @@ struct UnlockView: View {
 
                 // Inline Touch ID badge — LAAuthenticationView routes auth through
                 // the app's own view hierarchy so no system modal dialog appears.
-                // Re-armed via .id(biometricContextVersion) after each attempt.
-                if viewModel.biometricUnlockAvailable {
+                // Re-armed via .id(biometricContextVersion) after each attempt. Hidden while an
+                // unlock runs, so no second unlock starts beside it (lock-state-machine, D9).
+                if viewModel.biometricUnlockAvailable && !viewModel.isFlowRunning {
                     EmbeddedTouchIDView(context: viewModel.biometricContext)
                     .frame(width: 32, height: 32)
                     .offset(x: 6, y: 6)
@@ -99,6 +100,9 @@ struct UnlockView: View {
             .buttonStyle(.plain)
             .font(Typography.screenBody)
             .foregroundStyle(.secondary)
+            // No sign-out in the middle of an unlock (lock-state-machine, D9); the menu's
+            // Sign Out stays available as the way out.
+            .disabled(viewModel.isFlowRunning)
             .padding(.bottom, 24)
             .accessibilityIdentifier(AccessibilityID.Unlock.switchAccount)
         }

@@ -44,6 +44,14 @@ final class RootViewModelLockTests: XCTestCase {
         }
     }
 
+    /// A real sign-in through the mock use case, so its `.vault` belongs to a current flow.
+    private func signIn() {
+        sut.loginVM.serverURL = "https://vault.example.com"
+        sut.loginVM.email = "alice@example.com"
+        sut.loginVM.password = "pw"
+        sut.loginVM.signIn()
+    }
+
     // MARK: - 1.1 lockVault() transitions screen to .unlock
 
     func testLockVault_transitionsToUnlock() async throws {
@@ -309,7 +317,7 @@ final class RootViewModelLockTests: XCTestCase {
             if case .vault = screen { baseWhenShown = .some(deps!.faviconLoader.iconsBase) }
         }
         defer { observer.cancel() }
-        sut.handleLoginFlow(.vault)
+        signIn()
         try await waitUntil { if case .vault = self.sut.screen { true } else { false } }
 
         XCTAssertEqual(baseWhenShown, .some(URL(string: "https://vault.example.com/icons")!))
@@ -518,19 +526,24 @@ final class RootViewModelLockDuringSyncTests: XCTestCase {
         XCTAssertEqual(mockAuth.lockVaultCalledCount, 1, "The new session is not locked again")
     }
 
-    /// Final review 1a: a sign-in whose start reached the auth layer only after the lock (a lock
-    /// during its server setup) loads keys; its stale `.vault` tears them down.
-    func testStaleSignInWithKeysLoadedAfterTheLock_tearsThemDown() async throws {
+    /// Final review 1a, rewritten for lock-state-machine (design D2, D7): a sign-in takes its token
+    /// when the user signs in, so the auth layer never loads keys for one a lock overtook, and a
+    /// late `.vault` of it changes nothing. There is no teardown of "its keys" any more: it would
+    /// tear down the keys of whatever session is current.
+    func testStaleSignInsLateVault_changesNothing() async throws {
+        sut.loginVM.serverURL = "https://vault.example.com"
+        sut.loginVM.email = "alice@example.com"
+        sut.loginVM.password = "pw"
+        sut.loginVM.signIn()
         sut.screen = .loading
-        sut.handleLoginFlow(.loading)
         sut.lockVault()
         try await waitUntil { self.isUnlockScreen && self.mockAuth.lockVaultCalledCount == 1 }
-        mockAuth.stubbedIsVaultUnlocked = true   // the sign-in loaded its keys after the lock
+        mockAuth.stubbedIsVaultUnlocked = true
 
         sut.handleLoginFlow(.vault)
-        try await waitUntil { self.mockAuth.lockVaultCalledCount == 2 }
+        try await Task.sleep(for: .milliseconds(100))
 
-        XCTAssertEqual(mockAuth.lockVaultCalledCount, 2, "Keys torn down")
+        XCTAssertEqual(mockAuth.lockVaultCalledCount, 1, "No teardown by a stale flow")
         XCTAssertTrue(isUnlockScreen, "Expected the lock screen, got \(sut.screen)")
     }
 
@@ -575,7 +588,10 @@ final class RootViewModelLockDuringSyncTests: XCTestCase {
         XCTAssertTrue(sut.canLock, "A lock applies while the unlock derives keys")
         sut.lockVault()
         try await waitUntil { self.mockAuth.lockVaultCalledCount == 1 && self.isUnlockScreen }
-        XCTAssertTrue(sut.unlockVM === unlock, "The running unlock is kept, so its end is checked")
+        // Replaced and ended (lock-state-machine, design D6; it was kept before so its end reached
+        // the outcome checks that the flow tokens replace).
+        XCTAssertFalse(sut.unlockVM === unlock)
+        XCTAssertTrue(unlock.isEnded)
         screens.removeAll()
 
         gate.withLock { $0 = true }               // the key derivation ends after the lock
@@ -652,14 +668,23 @@ final class RootViewModelLockDuringSyncTests: XCTestCase {
         XCTAssertNil(sut.unlockVM)
     }
 
-    /// 1.4: the normal flows still reach the vault.
+    /// 1.4: the normal flows still reach the vault. Driven through real flows: a `.vault` without a
+    /// current flow behind it shows nothing (lock-state-machine, design D7).
     func testUnlockAndLoginFlows_stillReachTheVault() async throws {
-        sut.handleUnlockFlow(.vault)
+        mockAuth.stubbedStoredAccount = account
+        mockAuth.stubbedLoginResult = .success(account)
+        sut.unlockVM = deps.makeUnlockViewModel(account: account)
+        sut.screen = .unlock
+        sut.unlockVM?.password = "pw"
+        sut.unlockVM?.unlock()
         try await waitUntil { if case .vault = self.sut.screen { true } else { false } }
         guard case .vault = sut.screen else { return XCTFail("Expected the vault, got \(sut.screen)") }
 
         sut.screen = .login
-        sut.handleLoginFlow(.vault)
+        sut.loginVM.serverURL = "https://vault.example.com"
+        sut.loginVM.email = "alice@example.com"
+        sut.loginVM.password = "pw"
+        sut.loginVM.signIn()
         try await waitUntil { if case .vault = self.sut.screen { true } else { false } }
         guard case .vault = sut.screen else { return XCTFail("Expected the vault, got \(sut.screen)") }
     }
@@ -687,6 +712,9 @@ final class MockRootDependencies: RootViewModelDependencies {
     let gate = SessionGateImpl()
     var sessionGate: any SessionGate { gate }
 
+    /// Embedded Touch ID for the unlock view models it makes; nil = the system-prompt path.
+    var embeddedBiometric: (any EmbeddedBiometricUnlock)?
+
     private let mockLoginUseCase = MockLoginUseCase()
     /// Shared by every unlock view model it makes; tests can hold its sync with `onExecute`.
     let mockSyncUseCase = MockSyncUseCase()
@@ -708,7 +736,7 @@ final class MockRootDependencies: RootViewModelDependencies {
 
     func makeUnlockViewModel(account: Account) -> UnlockViewModel {
         UnlockViewModel(auth: authRepo as! MockAuthRepository, sync: mockSyncUseCase, account: account,
-                        defaults: defaults, gate: gate)
+                        embeddedBiometric: embeddedBiometric, defaults: defaults, gate: gate)
     }
 
     func makeVaultBrowserViewModel() -> VaultBrowserViewModel {

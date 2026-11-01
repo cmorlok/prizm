@@ -719,7 +719,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
     /// Evaluates biometric policy on `context` then reads the vault key and unlocks.
     /// If `LAAuthenticationView` was paired with `context` before this call (via
     /// `EmbeddedTouchIDView`), `evaluatePolicy` routes inline — no modal appears.
-    func unlockWithBiometrics(context: LAContext, flow: FlowToken) async throws -> Account {
+    func unlockWithBiometrics(context: LAContext, flow: FlowToken, onAuthenticated: () -> Void) async throws -> Account {
         logger.info("Embedded biometric unlock attempt")
         let start = startFlow(flow)
         guard let userId = try? readString(key: KeychainKey.activeUserId) else {
@@ -751,6 +751,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
             // Let LAError (cancel, lockout) propagate — caller handles re-arming.
             throw error
         }
+        onAuthenticated()
 
         // The keys get their own buffers; the 64-byte blob read from the keychain is zeroed.
         defer { keyData.resetBytes(in: keyData.indices) }

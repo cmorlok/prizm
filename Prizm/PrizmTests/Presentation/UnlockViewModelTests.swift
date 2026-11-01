@@ -43,9 +43,50 @@ final class UnlockViewModelTests: XCTestCase {
         sut.password = "pw"
 
         sut.unlock()
-        while mockAuth.receivedFlows.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
+        try await waitUntil { !self.mockAuth.receivedFlows.isEmpty }
 
         XCTAssertEqual(mockAuth.receivedFlows.first, before)
+    }
+
+    /// A second Enter while an unlock runs starts no second unlock (code review C10).
+    func testUnlock_whileAnUnlockRuns_startsNoSecond() async throws {
+        mockAuth.stubbedLoginResult = .success(stubAccount)
+        let release = AsyncGate()
+        mockAuth.whileUnlockingWithPassword = { await release.wait() }
+        sut.password = "pw"
+        sut.unlock()
+        try await waitUntil { !self.mockAuth.receivedFlows.isEmpty }
+
+        sut.password = "pw"
+        sut.unlock()
+        try await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(mockAuth.receivedFlows.count, 1)
+        await release.open()
+    }
+
+    /// A sync progress report that arrives after the vault was reported does not bring
+    /// "Syncing" back over the vault (code review C11).
+    func testLateSyncProgress_afterTheVault_isIgnored() async throws {
+        mockAuth.stubbedLoginResult = .success(stubAccount)
+        mockSync.progressMessage = "Decrypting…"
+        sut.password = "pw"
+
+        sut.unlock()
+        // Waits for the end of the flow, not for `.vault`: the late report would replace it.
+        try await waitUntil { self.mockSync.executeCalled && !self.sut.isFlowRunning }
+        try await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(sut.flowState, .vault)
+    }
+
+    /// Every wait has a deadline: a test that never sees its state fails instead of hanging the
+    /// test host.
+    private func waitUntil(timeout: Duration = .seconds(2), _ condition: @escaping () -> Bool) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while !condition(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
     }
 
     /// An unlock that a lock overtook after the keys loaded neither syncs nor reports the vault.

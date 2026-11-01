@@ -1,4 +1,5 @@
 import XCTest
+import LocalAuthentication
 @testable import Prizm
 
 /// Tests for `AuthRepositoryImpl` biometric unlock methods.
@@ -127,6 +128,31 @@ final class AuthRepositoryImplBiometricTests: XCTestCase {
             XCTAssertFalse(defaults.bool(forKey: "biometricUnlockEnabled"))
             XCTAssertFalse(defaults.bool(forKey: "biometricEnrollmentPromptShown"))
         }
+    }
+
+    // MARK: - Embedded Touch ID reports the accepted finger (lock-state-machine, D5)
+
+    /// The view model marks the unlock as running from this report on, so it must come before
+    /// any key can load.
+    func testEmbeddedUnlock_reportsTheTouch_beforeTheKeysLoad() async throws {
+        let keys = CryptoKeys(encryptionKey: Data(count: 32), macKey: Data(count: 32))
+        try mockBiometricKeychain.writeBiometric(data: keys.toData(), key: KeychainKey.biometricVaultKey(testUserId))
+        var unlockedAtTouch: [Bool] = []
+
+        _ = try await sut.unlockWithBiometrics(context: LAContext(), flow: gate.begin()) {
+            unlockedAtTouch.append(self.mockCrypto.isUnlocked)
+        }
+
+        XCTAssertEqual(unlockedAtTouch, [false], "reported once, before the keys were loaded")
+    }
+
+    func testEmbeddedUnlock_withoutAnAcceptedFinger_reportsNothing() async {
+        mockBiometricKeychain.readError = LAError(.userCancel)
+        var reported = false
+
+        _ = try? await sut.unlockWithBiometrics(context: LAContext(), flow: gate.begin()) { reported = true }
+
+        XCTAssertFalse(reported)
     }
 
     // MARK: - signOut clears biometric

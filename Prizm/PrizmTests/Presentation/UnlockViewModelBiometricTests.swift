@@ -36,6 +36,44 @@ final class UnlockViewModelBiometricTests: XCTestCase {
         try await super.tearDown()
     }
 
+    private func waitUntil(timeout: Duration = .seconds(2), _ condition: @escaping () -> Bool) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while !condition(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+    }
+
+    // MARK: - Embedded Touch ID: a running unlock from the accepted finger on (lock-state-machine, D5)
+
+    func testEmbeddedTouchID_isARunningUnlockFromTheTouchOn() async throws {
+        mockAuth.stubbedBiometricUnlockAvailable = true
+        let touch = HeldEmbeddedBiometric(account: stubAccount)
+        sut = UnlockViewModel(auth: mockAuth, sync: mockSync, account: stubAccount, embeddedBiometric: touch,
+                              defaults: defaults, gate: gate)
+
+        sut.triggerEmbeddedBiometricIfAvailable()
+        XCTAssertFalse(sut.isFlowRunning, "a sensor waiting for a finger is no running unlock")
+        try await waitUntil { touch.touched }
+
+        XCTAssertTrue(sut.isFlowRunning, "keys can load from the touch on")
+        await touch.release.open()
+    }
+
+    func testEmbeddedTouchID_failingAfterTheTouch_isNoLongerRunning() async throws {
+        mockAuth.stubbedBiometricUnlockAvailable = true
+        let touch = HeldEmbeddedBiometric(account: stubAccount)
+        touch.error = AuthError.biometricUnavailable
+        sut = UnlockViewModel(auth: mockAuth, sync: mockSync, account: stubAccount, embeddedBiometric: touch,
+                              defaults: defaults, gate: gate)
+
+        sut.triggerEmbeddedBiometricIfAvailable()
+        try await waitUntil { touch.touched }
+        await touch.release.open()
+        try await waitUntil { self.sut.errorMessage != nil }
+
+        XCTAssertFalse(sut.isFlowRunning)
+    }
+
     // MARK: - biometricUnlockAvailable
 
     func testBiometricUnlockAvailable_reflectsAuthRepository() {

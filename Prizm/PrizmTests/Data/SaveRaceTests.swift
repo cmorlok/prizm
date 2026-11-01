@@ -231,7 +231,7 @@ final class SaveRaceTests: XCTestCase {
     /// like a token from before a lock.
     func testTokenBuiltOutsideTheStore_isNeverCurrent() async throws {
         let rig = await StaleWriteRig.make()
-        let forged = VaultSessionToken()
+        let forged = FlowToken()
 
         XCTAssertFalse(rig.store.isCurrent(forged), "A token the store did not hand out is never current")
         XCTAssertNotEqual(forged, rig.store.currentGeneration())

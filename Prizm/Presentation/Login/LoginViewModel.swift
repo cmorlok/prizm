@@ -9,7 +9,6 @@ enum LoginFlowState: Equatable {
     case login
     case loading
     case totpPrompt
-    case syncing(message: String)
     case vault
 }
 
@@ -140,6 +139,25 @@ final class LoginViewModel: ObservableObject {
                 errorMessage = error.localizedDescription
                 flowState    = .totpPrompt
             }
+        }
+    }
+
+    /// Whether the running sign-in is still current (no lock or sign-out since it started).
+    var isFlowCurrent: Bool {
+        signInFlow.map { gate.isCurrent($0) } ?? false
+    }
+
+    /// Ends a running sign-in or two-factor step because a lock or sign-out started
+    /// (lock-state-machine, design D1, D6). Called in the lock's first turn; no-op otherwise.
+    func endFlow() {
+        switch flowState {
+        case .loading:
+            endOvertakenSignIn()
+        case .totpPrompt:
+            loginUseCase.cancelTOTP()
+            endOvertakenSignIn()
+        case .login, .vault:
+            break
         }
     }
 

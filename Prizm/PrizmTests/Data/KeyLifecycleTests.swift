@@ -109,13 +109,16 @@ final class KeyLifecycleTests: XCTestCase {
                                                       serverEnvironment: env),
                                      defaults: defaults, gate: gate)
 
-        unlock.signInWithDifferentAccount()
-        let deadline = ContinuousClock.now + .seconds(5)
-        while unlock.flowState != .login, ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(10))
+        // The root wires this to its sign-out (lock-state-machine, D1); here straight to the
+        // repository's, whose key teardown is what this test is about.
+        let signedOut = expectation(description: "signed out")
+        unlock.onSignOutRequested = { [sut] in
+            Task { try? await sut!.signOut(); signedOut.fulfill() }
         }
 
-        XCTAssertEqual(unlock.flowState, .login)
+        unlock.signInWithDifferentAccount()
+        await fulfillment(of: [signedOut], timeout: 5)
+
         let orgKeys = await orgKeyCache.snapshot()
         XCTAssertTrue(orgKeys.isEmpty)
         let itemKey = await vaultKeyCache.key(for: "c1")

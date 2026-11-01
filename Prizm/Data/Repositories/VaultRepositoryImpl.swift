@@ -118,7 +118,7 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
     /// cleared while the sync ran. The check is the first statement and synchronous, so nothing is
     /// changed when the token is stale or was not handed out by the record store.
     func populate(items: [VaultItem], folders: [Folder], organizations: [Organization],
-                  collections: [OrgCollection], syncedAt: Date, session: VaultSessionToken) async {
+                  collections: [OrgCollection], syncedAt: Date, session: FlowToken) async {
         guard recordStore.isCurrent(session) else {
             logger.info("Sync result dropped: the vault was cleared while it ran")
             return

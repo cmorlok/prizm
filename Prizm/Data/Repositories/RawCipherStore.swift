@@ -47,10 +47,9 @@ import os.log
 ///   • No fallback for a missing record: `VaultRepositoryImpl.update` reads the store and refuses a
 ///     full save without a record (`itemRecordUnavailable`), so the store is not optional.
 ///
-/// - Only a token handed out here can be current (a `VaultSessionToken` equals only copies of
-///   itself). Tokens are independent of `AuthRepositoryImpl.lockEpoch` and of the view model's lock
-///   generation, so the open `lock-state-machine` change can derive them from its session token
-///   later without changing any caller.
+/// - Only a token handed out by the session gate can be current (a `FlowToken` equals only copies
+///   of itself). The store's generation is the gate's token, so a sign-in or unlock passes its own
+///   flow token to the sync that ends it (lock-state-machine, design D1, D8).
 ///
 /// - Logging: counts only. Neither the records nor their ids are logged here, and the type prints
 ///   as "RawCipherStore(redacted)".
@@ -58,7 +57,7 @@ actor RawCipherStore {
 
     /// The token type is shared with Domain (`VaultRepository.populate` carries it). A token built
     /// anywhere else is never current, and none survives a `clear()`.
-    typealias Generation = VaultSessionToken
+    typealias Generation = FlowToken
 
     private let logger = Logger(subsystem: "com.prizm", category: "RawCipherStore")
 

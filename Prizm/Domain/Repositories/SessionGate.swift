@@ -33,7 +33,27 @@ nonisolated protocol SessionGate: Sendable {
     var isOpen: Bool { get }
 }
 
-/// A flow's marker of the session epoch it started in; it equals only copies of itself
-/// (see `VaultSessionToken`).
-// TODO: rename `VaultSessionToken` to `FlowToken` once every caller moved to the gate (task 1.2).
-typealias FlowToken = VaultSessionToken
+/// A flow's marker of the session epoch it started in, compared with `==`.
+///
+/// What it guarantees: a token equals only copies of itself. The gate holds the current token and
+/// replaces it on every lock or sign-out, so a token read before a lock is never current again, and a
+/// token built anywhere else (`FlowToken()`) is never current at all: no caller can make a current
+/// token without asking the gate for it.
+/// What it does not guarantee: that the caller read it at the start of its operation. A token read
+/// right before the write it guards is always current and fences nothing.
+///
+/// Why it lives in Domain: `VaultRepository.populate` and the use cases carry it. It holds no secret
+/// and no key material.
+nonisolated struct FlowToken: Equatable, Sendable {
+    /// The token is the identity of this object: two separately created markers are never the same.
+    nonisolated private final class Marker: Sendable {}
+
+    private let marker = Marker()
+
+    /// A new token, unequal to every token created before it.
+    init() {}
+
+    static func == (lhs: FlowToken, rhs: FlowToken) -> Bool {
+        lhs.marker === rhs.marker
+    }
+}
