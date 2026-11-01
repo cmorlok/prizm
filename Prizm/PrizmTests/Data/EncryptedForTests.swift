@@ -333,6 +333,7 @@ final class EncryptedForTests: XCTestCase {
 
         await vault.clearVault()
         await vault.clearVault()  // idempotent
+        store.openAfterTeardown()  // the next session (RootViewModel opens the gate after a lock)
 
         let heldAfterClear = await profileIds.current()
         XCTAssertNil(heldAfterClear)

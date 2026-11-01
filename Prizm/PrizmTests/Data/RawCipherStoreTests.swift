@@ -325,6 +325,7 @@ final class RawCipherStoreTests: XCTestCase {
 
         // Lock and unlock (the crypto mock stays unlocked, which is what the unlock looks like).
         await rig.vault.clearVault()
+        rig.store.openAfterTeardown()
         let result = try await rig.sync.sync(progress: { _ in })
         XCTAssertEqual(result.totalCiphers, 6, "The new session's sync ran")
 
@@ -355,6 +356,7 @@ final class RawCipherStoreTests: XCTestCase {
         XCTAssertFalse(removed)
         XCTAssertEqual(countAfterStale, 0, "Refused writes change nothing")
 
+        store.openAfterTeardown()
         let fresh = await store.currentGeneration()
         let replacedFresh = await store.replaceAll([rawCipher("a")], ifCurrent: fresh)
         let upsertedFresh = await store.upsert(rawCipher("b"), ifCurrent: fresh)
@@ -654,6 +656,7 @@ final class RawCipherStoreTests: XCTestCase {
         let newRecord = rawCipher("t1", revisionDate: "new")
         rig.api.whileDeletingCipher = {
             await vault.clearVault()
+            store.openAfterTeardown()
             let token = await store.currentGeneration()
             await store.replaceAll([newRecord], ifCurrent: token)
         }
@@ -675,6 +678,7 @@ final class RawCipherStoreTests: XCTestCase {
         let newRecords = [rawCipher("t1", revisionDate: "new"), rawCipher("t2", revisionDate: "new")]
         rig.api.whileDeletingCiphers = {
             await vault.clearVault()
+            store.openAfterTeardown()
             let token = await store.currentGeneration()
             await store.replaceAll(newRecords, ifCurrent: token)
         }

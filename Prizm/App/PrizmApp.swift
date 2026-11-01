@@ -234,6 +234,9 @@ protocol RootViewModelDependencies: AnyObject {
     var attachmentTempFiles: any TempFileManaging { get }
     /// Website icon loader; pointed at the signed-in server, cleared on lock and sign-out.
     var faviconLoader: FaviconLoader { get }
+    /// The app's lock fence: closed first by every lock and sign-out, opened by its teardown
+    /// (lock-state-machine, design D1).
+    var sessionGate: any SessionGate { get }
     func makeLoginViewModel() -> LoginViewModel
     func makeUnlockViewModel(account: Account) -> UnlockViewModel
     func makeVaultBrowserViewModel() -> VaultBrowserViewModel
@@ -298,6 +301,9 @@ final class RootViewModel: ObservableObject {
     private var lockGeneration = 0
     /// True from `lockVault()` until its teardown has finished.
     private var isLocking = false
+    /// Lock and sign-out teardowns still running. The session gate opens only when the last one
+    /// finished, so an overlapping lock is never opened by an earlier teardown (design D1).
+    private var pendingTeardowns = 0
     /// `lockGeneration` when the current sign-in or unlock started (`.loading`), nil when none runs.
     private var loginFlowStart: Int?
     private var unlockFlowStart: Int?
@@ -462,9 +468,11 @@ final class RootViewModel: ObservableObject {
                     // No newer flow, so the keys came from this one: its start reached the auth
                     // layer only after the lock (for example a lock during the sign-in's server
                     // setup). Tear them down (D2).
+                    beginTeardown()
                     vaultBrowserVM.clearSession()
                     await container.authRepo.lockVault()
                     await container.vaultRepo.clearVault()
+                    endTeardown()
                 }
                 showLockedScreen()
                 return
@@ -580,6 +588,7 @@ final class RootViewModel: ObservableObject {
 
     /// Clears all session data and returns to the login screen.
     func signOut() {
+        beginTeardown()
         // Counts as a lock for flows still running: their `.vault` must not open the vault (D6).
         lockGeneration += 1
         // Drop the vault browser's decrypted copies right away, not after the awaits below.
@@ -603,6 +612,7 @@ final class RootViewModel: ObservableObject {
             vaultBrowserVM.clearSession()
             // The next account must not start in a folder or collection of this one.
             vaultBrowserVM.sidebarSelection = .allItems
+            endTeardown()
             unlockVM = nil
             screen   = .login
             logger.info("Sign out completed")
@@ -611,10 +621,26 @@ final class RootViewModel: ObservableObject {
 
     // MARK: - Lock
 
+    /// Closes the session gate and counts a teardown. The first statement of every lock and
+    /// sign-out, before any await: from here on no running flow can pass a check, and nothing that
+    /// starts before the teardown ends counts (lock-state-machine, design D1).
+    private func beginTeardown() {
+        container.sessionGate.end()
+        pendingTeardowns += 1
+    }
+
+    /// The last step of a teardown: opens the gate when no other teardown still runs, right before
+    /// the unlock or login screen that starts new flows is shown.
+    private func endTeardown() {
+        pendingTeardowns -= 1
+        if pendingTeardowns == 0 { container.sessionGate.open() }
+    }
+
     /// Zeros in-memory key material, clears the vault cache, and transitions to the unlock screen.
     /// No-op if the vault is not currently unlocked.
     func lockVault() {
         guard canLock else { return }
+        beginTeardown()
         // An unlock in progress keeps its view model, so its end still reaches the checks of
         // `showVaultIfUnlocked` (D5); the auth layer refuses its keys (D6).
         let keepUnlockFlow = isUnlockInProgress
@@ -641,6 +667,7 @@ final class RootViewModel: ObservableObject {
             container.attachmentTempFiles.sweepAll()
             // Again: a vault shown while the teardown ran must not keep its items (D2).
             vaultBrowserVM.clearSession()
+            endTeardown()
             if let account = container.authRepo.storedAccount() {
                 if !keepUnlockFlow { unlockVM = container.makeUnlockViewModel(account: account) }
                 screen = .unlock

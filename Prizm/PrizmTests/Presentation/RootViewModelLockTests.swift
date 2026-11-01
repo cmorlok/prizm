@@ -681,6 +681,9 @@ final class MockRootDependencies: RootViewModelDependencies {
                                       protocolClasses: [IconStub.self])
     let authRepo: any AuthRepository
     let vaultRepo: any VaultRepository
+    /// The app's lock fence, as `AppContainer.sessionGate` (lock-state-machine, D1).
+    let gate = SessionGateImpl()
+    var sessionGate: any SessionGate { gate }
 
     private let mockLoginUseCase = MockLoginUseCase()
     /// Shared by every unlock view model it makes; tests can hold its sync with `onExecute`.

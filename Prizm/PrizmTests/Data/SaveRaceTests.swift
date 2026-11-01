@@ -29,7 +29,10 @@ final class SaveRaceTests: XCTestCase {
         XCTAssertFalse(refused, "A write with a stale token is refused")
         let countAfterRefusal = await store.count
         XCTAssertEqual(countAfterRefusal, 0)
+        XCTAssertFalse(store.isCurrent(store.currentGeneration()),
+                       "until the lock's teardown opens the gate, no token is current (lock-state-machine, D1)")
 
+        store.openAfterTeardown()
         let fresh = store.currentGeneration()
         XCTAssertNotEqual(fresh, token)
         XCTAssertTrue(store.isCurrent(fresh))
@@ -133,6 +136,7 @@ final class SaveRaceTests: XCTestCase {
         let nextRecord = try XCTUnwrap(seeded)
         rig.api.whileUpdatingCipher = {
             await vault.clearVault()
+            store.openAfterTeardown()
             await vault.populate(items: [nextItem], folders: [], organizations: [], collections: [], syncedAt: Date())
             await store.upsert(nextRecord, ifCurrent: store.currentGeneration())
         }

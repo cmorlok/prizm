@@ -86,13 +86,20 @@ actor RawCipherStore {
 
     /// Makes every token handed out before stale, without touching the records. `clear()` calls it;
     /// `VaultRepositoryImpl.clearVault()` calls it first, before any suspension, so that a save on
-    /// the repository's own actor sees the lock at its next check. Idempotent in effect.
-    // TODO: stop reopening here once `RootViewModel` ends the gate first and opens it as the
-    // teardown's last step (lock-state-machine, task 2.7); until then this keeps today's behaviour.
+    /// the repository's own actor sees the lock at its next check. It closes the gate and does not
+    /// open it: `RootViewModel` closed it already as the lock's first step and opens it as the
+    /// teardown's last (lock-state-machine, design D1), so a teardown is never reopened from here.
     nonisolated func invalidate() {
         gate.end()
+    }
+
+    #if DEBUG
+    /// Test seam: opens the gate as `RootViewModel`'s teardown does at its end, for Data tests that
+    /// model "lock, then unlock" with `clearVault()` alone.
+    nonisolated func openAfterTeardown() {
         gate.open()
     }
+    #endif
 
     // MARK: - Writes
 

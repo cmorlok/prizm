@@ -94,9 +94,14 @@ final class MockAuthRepository: AuthRepository {
 
     func signOut() async throws {
         signOutCalled = true
+        await whileTearingDown?()
     }
 
+    /// Runs inside `lockVault()` and `signOut()`, to hold a lock's teardown in that window.
+    var whileTearingDown: (() async -> Void)?
+
     func lockVault() async {
+        await whileTearingDown?()
         lockVaultCalledCount += 1
         lockCount += 1
         stubbedIsVaultUnlocked = false
