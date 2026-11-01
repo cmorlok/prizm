@@ -27,6 +27,10 @@ final class AppContainer: ObservableObject {
     /// (Constitution §III).
     let orgKeyCache: OrgKeyCache
 
+    /// The one lock fence of the app (lock-state-machine, design D1): the record store derives its
+    /// generation from it, and `RootViewModel` ends it first on every lock and sign-out.
+    let sessionGate: any SessionGate
+
     #if DEBUG
     /// The one record store, also held here so the UI-test seam can fill it (`seedUITestRecords`).
     private let uiTestRecordStore: RawCipherStore
@@ -115,12 +119,14 @@ final class AppContainer: ObservableObject {
         keychain          = KeychainServiceImpl()
         biometricKeychain = BiometricKeychainServiceImpl()
         #endif
+        let sessionGate   = SessionGateImpl()
+        self.sessionGate  = sessionGate
         let keyCache      = VaultKeyCache()
         let orgKeyCache   = OrgKeyCache()
         // One holder for both repositories: sync fills it, saves read it.
         let profileIds    = ProfileIdCache()
         // Exactly one store: sync fills it, `clearVault()` (lock and sign-out) empties it.
-        let recordStore   = RawCipherStore()
+        let recordStore   = RawCipherStore(gate: sessionGate)
         let vault         = VaultRepositoryImpl(apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache, profileIds: profileIds, recordStore: recordStore, vaultKeyCache: keyCache)
         let vaultKeyService = VaultKeyServiceImpl(cache: keyCache, orgKeyCache: orgKeyCache, crypto: crypto)
 

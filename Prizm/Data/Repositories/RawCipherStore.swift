@@ -1,6 +1,5 @@
 import Foundation
 import os.log
-import Synchronization
 
 // MARK: - RawCipherStore
 
@@ -63,28 +62,36 @@ actor RawCipherStore {
 
     private let logger = Logger(subsystem: "com.prizm", category: "RawCipherStore")
 
-    /// The current token behind the fence. A `Mutex` and not an actor-isolated `var`, so that the
-    /// check in `isCurrent(_:)` needs no suspension (see the type comment).
-    private let generation = Mutex<Generation>(Generation())
+    /// The lock fence. Its token is the store's generation (openspec change `lock-state-machine`,
+    /// design D1): one gate for every layer, so a lock seen by the view model is seen here too.
+    /// `AppContainer` passes the app's gate; a store built without one has a private gate.
+    private let gate: any SessionGate
     private var records: [String: RawCipher] = [:]
+
+    init(gate: any SessionGate = SessionGateImpl()) {
+        self.gate = gate
+    }
 
     // MARK: - Fence
 
     /// The current generation. Read it at the start of the operation whose writes it guards.
     nonisolated func currentGeneration() -> Generation {
-        generation.withLock { $0 }
+        gate.begin()
     }
 
     /// Whether `token` is still the current generation, i.e. nothing cleared the vault since.
     nonisolated func isCurrent(_ token: Generation) -> Bool {
-        generation.withLock { $0 } == token
+        gate.isCurrent(token)
     }
 
     /// Makes every token handed out before stale, without touching the records. `clear()` calls it;
     /// `VaultRepositoryImpl.clearVault()` calls it first, before any suspension, so that a save on
     /// the repository's own actor sees the lock at its next check. Idempotent in effect.
+    // TODO: stop reopening here once `RootViewModel` ends the gate first and opens it as the
+    // teardown's last step (lock-state-machine, task 2.7); until then this keeps today's behaviour.
     nonisolated func invalidate() {
-        generation.withLock { $0 = Generation() }
+        gate.end()
+        gate.open()
     }
 
     // MARK: - Writes

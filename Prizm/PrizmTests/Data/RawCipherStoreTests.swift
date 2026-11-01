@@ -719,4 +719,25 @@ final class RawCipherStoreTests: XCTestCase {
         XCTAssertEqual(String(describing: store), "RawCipherStore(redacted)")
         XCTAssertEqual(String(reflecting: store), "RawCipherStore(redacted)")
     }
+
+    // MARK: - Session gate (lock-state-machine, design D1)
+
+    /// A lock that ends the app's gate fences the store, without the store being cleared.
+    func testEndingTheSharedGate_makesTheStoreTokenStale() async {
+        let gate = SessionGateImpl()
+        let store = RawCipherStore(gate: gate)
+        let token = store.currentGeneration()
+        gate.end()
+        XCTAssertFalse(store.isCurrent(token))
+        let written = await store.upsert(rawCipher("x"), ifCurrent: token)
+        XCTAssertFalse(written)
+    }
+
+    /// While the gate is closed (a lock's teardown), the store hands out no current token.
+    func testClosedGate_storeTokenIsNeverCurrent() {
+        let gate = SessionGateImpl()
+        let store = RawCipherStore(gate: gate)
+        gate.end()
+        XCTAssertFalse(store.isCurrent(store.currentGeneration()))
+    }
 }
