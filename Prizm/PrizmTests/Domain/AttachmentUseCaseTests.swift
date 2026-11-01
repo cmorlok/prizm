@@ -18,8 +18,10 @@ private final class MockAttachmentRepository: AttachmentRepository {
         uploadCalled = true
         return try uploadResult.get()
     }
+    var whileDownloading: (() -> Void)?
     func download(cipherId: String, attachment: Attachment, cipherKey: Data) async throws -> Data {
         downloadCalled = true
+        whileDownloading?()
         return try downloadResult.get()
     }
     func delete(cipherId: String, attachmentId: String) async throws {
@@ -39,8 +41,11 @@ private final class MockVaultKeyService: VaultKeyService, @unchecked Sendable {
     var keyResult: Result<Data, Error> = .success(Data(repeating: 0xAB, count: 64))
     var cipherKeyCalled = false
 
+    var whileResolvingKey: (() -> Void)?
+
     func cipherKey(for cipherId: String) async throws -> Data {
         cipherKeyCalled = true
+        whileResolvingKey?()
         return try keyResult.get()
     }
 
@@ -121,7 +126,40 @@ final class DownloadAttachmentUseCaseTests: XCTestCase {
     override func setUp() async throws {
         mockRepo       = MockAttachmentRepository()
         mockKeyService = MockVaultKeyService()
-        sut            = DownloadAttachmentUseCaseImpl(repository: mockRepo, vaultKeyService: mockKeyService)
+        sut            = DownloadAttachmentUseCaseImpl(repository: mockRepo, vaultKeyService: mockKeyService,
+                                                       gate: SessionGateImpl())
+    }
+
+    // MARK: - Lock fence (lock-state-machine, design D8, gap 7)
+
+    /// The file was decrypted when the lock came: its content must not be returned.
+    func test_execute_lockDuringTheDownload_returnsNothing() async {
+        let gate = SessionGateImpl()
+        let sut = DownloadAttachmentUseCaseImpl(repository: mockRepo, vaultKeyService: mockKeyService, gate: gate)
+        mockRepo.whileDownloading = { gate.end() }
+        do {
+            _ = try await sut.execute(cipherId: "c-1", attachment: stubAttachment)
+            XCTFail("Expected vaultLocked")
+        } catch VaultError.vaultLocked {
+            // expected
+        } catch {
+            XCTFail("Expected vaultLocked, got \(error)")
+        }
+    }
+
+    /// A download that starts during a lock's teardown (gate closed) returns nothing either.
+    func test_execute_duringALocksTeardown_returnsNothing() async {
+        let gate = SessionGateImpl()
+        gate.end()
+        let sut = DownloadAttachmentUseCaseImpl(repository: mockRepo, vaultKeyService: mockKeyService, gate: gate)
+        do {
+            _ = try await sut.execute(cipherId: "c-1", attachment: stubAttachment)
+            XCTFail("Expected vaultLocked")
+        } catch VaultError.vaultLocked {
+            // expected
+        } catch {
+            XCTFail("Expected vaultLocked, got \(error)")
+        }
     }
 
     func test_execute_fetchesCipherKeyInternally() async throws {
@@ -205,7 +243,8 @@ final class ConvertAttachmentUseCaseTests: XCTestCase {
     func test_execute_refusesASecondConversionOfTheSameFileWhileTheFirstRuns() async throws {
         let repo = MockAttachmentRepository()
         repo.whileConverting = { try? await Task.sleep(for: .milliseconds(300)) }
-        let sut = ConvertAttachmentUseCaseImpl(repository: repo, vaultKeyService: MockVaultKeyService())
+        let sut = ConvertAttachmentUseCaseImpl(repository: repo, vaultKeyService: MockVaultKeyService(),
+                                               gate: SessionGateImpl())
         let attachment = Attachment(id: "att-old", fileName: "plan.pdf", encryptedKey: "2.k|k|k", size: 64,
                                     sizeName: "64 B", url: nil, storedInLegacyPrizmFormat: true)
 
@@ -224,5 +263,25 @@ final class ConvertAttachmentUseCaseTests: XCTestCase {
         repo.whileConverting = nil
         _ = try await sut.execute(cipherId: "c1", attachment: attachment)
         XCTAssertEqual(repo.convertCount, 2)
+    }
+
+    /// A lock while the keys are resolved: the conversion does not start (lock-state-machine, D8).
+    func test_execute_lockBeforeTheConversionStarts_convertsNothing() async {
+        let repo = MockAttachmentRepository()
+        let keys = MockVaultKeyService()
+        let gate = SessionGateImpl()
+        keys.whileResolvingKey = { gate.end() }
+        let sut = ConvertAttachmentUseCaseImpl(repository: repo, vaultKeyService: keys, gate: gate)
+        let attachment = Attachment(id: "att-old", fileName: "plan.pdf", encryptedKey: "2.k|k|k", size: 64,
+                                    sizeName: "64 B", url: nil, storedInLegacyPrizmFormat: true)
+        do {
+            _ = try await sut.execute(cipherId: "c1", attachment: attachment)
+            XCTFail("Expected vaultLocked")
+        } catch VaultError.vaultLocked {
+            // expected
+        } catch {
+            XCTFail("Expected vaultLocked, got \(error)")
+        }
+        XCTAssertEqual(repo.convertCount, 0)
     }
 }

@@ -211,9 +211,9 @@ final class AppContainer: ObservableObject {
         // Attachment use cases — Upload and Download inject VaultKeyService;
         // Delete does NOT (no key material required, Constitution §VI).
         self.uploadAttachmentUseCase   = UploadAttachmentUseCaseImpl(repository: attachmentRepo, vaultKeyService: vaultKeyService)
-        self.downloadAttachmentUseCase = DownloadAttachmentUseCaseImpl(repository: attachmentRepo, vaultKeyService: vaultKeyService)
+        self.downloadAttachmentUseCase = DownloadAttachmentUseCaseImpl(repository: attachmentRepo, vaultKeyService: vaultKeyService, gate: sessionGate)
         self.deleteAttachmentUseCase   = DeleteAttachmentUseCaseImpl(repository: attachmentRepo)
-        self.convertAttachmentUseCase  = ConvertAttachmentUseCaseImpl(repository: attachmentRepo, vaultKeyService: vaultKeyService)
+        self.convertAttachmentUseCase  = ConvertAttachmentUseCaseImpl(repository: attachmentRepo, vaultKeyService: vaultKeyService, gate: sessionGate)
         self.tempFileManager           = AttachmentTempFileManager()
         // Launch sweep: files a crash or a forced quit left behind are gone before any screen
         // appears (fix-attachment-transfer-flow, D7).

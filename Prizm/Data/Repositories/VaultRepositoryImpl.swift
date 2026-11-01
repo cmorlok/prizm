@@ -351,8 +351,27 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
             logger.info("Password history dropped, the vault was cleared while it loaded: \(itemId, privacy: .public)")
             throw VaultError.vaultLocked
         }
-        return mapper.passwordHistoryEntries(of: base, keys: keys)
+        let entries = mapper.passwordHistoryEntries(of: base, keys: keys)
+        #if DEBUG
+        afterPasswordHistoryDecrypted?()
+        #endif
+        // Again after decrypting: the lock closes the gate from the main actor while this actor
+        // decrypts on its own copy of the key, so a lock can land in between (lock-state-machine,
+        // gap 7). The entries are dropped then.
+        guard recordStore.isCurrent(token) else {
+            logger.info("Password history dropped, the vault was locked while it decrypted: \(itemId, privacy: .public)")
+            throw VaultError.vaultLocked
+        }
+        return entries
     }
+
+    #if DEBUG
+    /// Test seam: runs right after the password history is decrypted, to lock in that window.
+    private var afterPasswordHistoryDecrypted: (@Sendable () -> Void)?
+    func setAfterPasswordHistoryDecrypted(_ hook: (@Sendable () -> Void)?) {
+        afterPasswordHistoryDecrypted = hook
+    }
+    #endif
 
     // MARK: - Update (write path — called by EditVaultItemUseCaseImpl)
 

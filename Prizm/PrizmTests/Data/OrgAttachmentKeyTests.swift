@@ -265,7 +265,8 @@ final class OrgAttachmentKeyTests: XCTestCase {
         await orgKeyCache.replaceAll(with: ["org-1": orgKeys])
         let download = DownloadAttachmentUseCaseImpl(
             repository: AttachmentRepositoryImpl(apiClient: api, crypto: crypto, vaultRepository: MockVaultRepository()),
-            vaultKeyService: VaultKeyServiceImpl(cache: cache, orgKeyCache: orgKeyCache, crypto: crypto))
+            vaultKeyService: VaultKeyServiceImpl(cache: cache, orgKeyCache: orgKeyCache, crypto: crypto),
+            gate: SessionGateImpl())
         let flagged = Attachment(
             id: "att-1", fileName: "plan.pdf",
             encryptedKey: try crypto.encryptAttachmentKey(attachmentKey, cipherKey: vaultKeys),

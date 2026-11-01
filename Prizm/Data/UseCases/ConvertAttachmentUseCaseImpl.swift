@@ -15,17 +15,24 @@ final class ConvertAttachmentUseCaseImpl: ConvertAttachmentUseCase {
     /// Attachments being converted now. The row's Convert and "Convert all" share this use case; a
     /// second conversion of a file while the first runs would upload a duplicate.
     private let running = RunningConversions()
+    private let gate:            any SessionGate
 
-    init(repository: any AttachmentRepository, vaultKeyService: any VaultKeyService) {
+    init(repository: any AttachmentRepository, vaultKeyService: any VaultKeyService, gate: any SessionGate) {
         self.repository      = repository
         self.vaultKeyService = vaultKeyService
+        self.gate            = gate
     }
 
     func execute(cipherId: String, attachment: Attachment) async throws -> Attachment {
+        // Taken before the keys are resolved: a conversion does not start after a lock started
+        // (lock-state-machine, design D8). Once started it runs to its end, because the server
+        // already holds the new upload; it returns no decrypted data.
+        let session = gate.begin()
         guard await running.begin(attachment.id) else { throw AttachmentError.conversionAlreadyRunning }
         do {
             let uploadKey = try await vaultKeyService.cipherKey(for: cipherId)
             let downloadKey = attachment.wrappedWithPersonalKey ? try await vaultKeyService.personalKey() : uploadKey
+            guard gate.isCurrent(session) else { throw VaultError.vaultLocked }
             let converted = try await repository.convertLegacyFormat(
                 cipherId: cipherId, attachment: attachment, downloadKey: downloadKey, uploadKey: uploadKey)
             await running.end(attachment.id)
