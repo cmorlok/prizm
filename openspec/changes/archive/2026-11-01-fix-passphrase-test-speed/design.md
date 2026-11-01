@@ -22,3 +22,9 @@ fewer samples in the test (weaker statistics at the chosen p = 0.001 bound).
 
 - **[Low] A caller passes a list that did not come from `wordList()`.** → Only the test does; the
   doc comment states the contract.
+
+## Review
+
+- Found 2026-11-01 from Christian's report (frozen Prizm window, a 98.7 s test). Only this test was
+  slow; the fix changes no app behaviour (the public method still validates on every call).
+- Unit tests green at both commits (20261101T081625Z, 1582 passed); timing in tasks 1.2.
