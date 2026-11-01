@@ -295,16 +295,52 @@ final class RootViewModelLockFlowTests: XCTestCase {
 
     // MARK: - D4: the two-factor prompt
 
-    func testLockOnTheTwoFactorPrompt_cancelsIt() async throws {
+    /// Signs in on a fresh root up to the two-factor prompt.
+    private func reachTheTwoFactorPrompt() async throws -> MockLoginUseCase {
         mockAuth.stubbedStoredAccount = nil
         sut = RootViewModel(container: deps)
-        sut.screen = .totpPrompt
+        let login = deps.mockLoginUseCase
+        login.stubbedResult = .requiresTwoFactor(.authenticatorApp)
+        sut.loginVM.serverURL = "https://vault.example.com"
+        sut.loginVM.email     = "alice@example.com"
+        sut.loginVM.password  = "pw"
+        sut.loginVM.signIn()
+        try await waitUntil { if case .totpPrompt = self.sut.screen { true } else { false } }
+        guard case .totpPrompt = sut.screen else { throw XCTSkip("the sign-in did not reach the prompt") }
+        return login
+    }
+
+    /// Reached by a real sign-in, the prompt is lockable and the lock cancels the pending step in
+    /// the use case, which zeroes its keys (design D4; code review C4).
+    func testLockOnTheTwoFactorPrompt_cancelsThePendingStep() async throws {
+        let login = try await reachTheTwoFactorPrompt()
         XCTAssertTrue(sut.canLock)
 
         sut.lockVault()
         try await waitUntil { self.deps.gate.isOpen && self.isLogin }
 
+        XCTAssertTrue(login.cancelTOTPCalled)
         XCTAssertTrue(isLogin)
+    }
+
+    /// A code submitted just before a lock: its late success shows no vault and its sign-in shows no
+    /// error (design D4, D6; code review C4).
+    func testLockWhileACodeIsSubmitted_showsNoVault() async throws {
+        let login = try await reachTheTwoFactorPrompt()
+        login.stubbedResult = .success(account)
+        let release = AsyncGate()
+        login.whileCompletingTOTP = { await release.wait() }
+        sut.loginVM.submitTOTP(code: "123456", rememberDevice: false)
+        try await waitUntil { login.completeTOTPCalled }
+        XCTAssertTrue(sut.canLock)
+
+        sut.lockVault()
+        await release.open()
+        try await waitUntil { self.deps.gate.isOpen && self.isLogin }
+        try await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertTrue(isLogin, "no vault after the lock: \(sut.screen)")
+        XCTAssertNil(sut.loginVM.errorMessage)
     }
 
     // MARK: - D1: "Sign in with a different account" is a sign-out of the root

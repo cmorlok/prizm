@@ -715,7 +715,8 @@ final class MockRootDependencies: RootViewModelDependencies {
     /// Embedded Touch ID for the unlock view models it makes; nil = the system-prompt path.
     var embeddedBiometric: (any EmbeddedBiometricUnlock)?
 
-    private let mockLoginUseCase = MockLoginUseCase()
+    /// The use case behind every login view model it makes, to drive a real sign-in.
+    let mockLoginUseCase = MockLoginUseCase()
     /// Shared by every unlock view model it makes; tests can hold its sync with `onExecute`.
     let mockSyncUseCase = MockSyncUseCase()
     private let mockVault: MockVaultRepository
