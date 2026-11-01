@@ -149,8 +149,15 @@ struct PasswordGenerator {
     /// Generates a word-based passphrase from the EFF Large Wordlist.
     /// - Throws: `PasswordGeneratorError` or the provider's error; never returns an empty value.
     func generatePassphrase(config: PasswordGeneratorConfig, provider: RandomnessProvider) throws -> String {
+        try generatePassphrase(config: config, provider: provider, from: wordList())
+    }
+
+    /// Generates a passphrase from `list`, a result of `wordList()`. Lets a caller that makes many
+    /// passphrases validate the list once: filtering 7,776 words per passphrase made the uniformity
+    /// test take about 100 s in Debug builds.
+    func generatePassphrase(config: PasswordGeneratorConfig, provider: RandomnessProvider,
+                            from list: [String]) throws -> String {
         let wordCount = PasswordGeneratorConfig.clampedWordCount(config.wordCount)
-        let list = try wordList()
         var words: [String] = []
         for _ in 0..<wordCount {
             var word = list[try Self.uniformIndex(below: list.count, using: provider)]

@@ -75,7 +75,8 @@ final class PasswordGeneratorParityTests: XCTestCase {
         config.separator = " "
         let provider = SeededRandomnessProvider(seed: 42)
         for _ in 0..<50_000 {
-            for word in try generator.generatePassphrase(config: config, provider: provider).split(separator: " ") {
+            for word in try generator.generatePassphrase(config: config, provider: provider, from: list)
+                .split(separator: " ") {
                 counts[index[String(word)]!] += 1
             }
         }
