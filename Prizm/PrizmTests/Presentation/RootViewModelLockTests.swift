@@ -584,7 +584,9 @@ final class RootViewModelLockDuringSyncTests: XCTestCase {
 
         XCTAssertTrue(isUnlockScreen, "Expected the lock screen, got \(sut.screen)")
         XCTAssertFalse(screens.contains { $0.hasPrefix("syncing") || $0 == "vault" }, "Shown after the lock: \(screens)")
-        XCTAssertEqual(unlock.errorMessage, AuthError.lockedWhileUnlocking.errorDescription)
+        // An unlock that a lock overtook ends without a message: the user locked, nothing failed
+        // (lock-state-machine, design D6; it showed "locked while unlocking" before).
+        XCTAssertNil(unlock.errorMessage)
         XCTAssertEqual(mockAuth.lockVaultCalledCount, 1)
     }
 
@@ -701,12 +703,12 @@ final class MockRootDependencies: RootViewModelDependencies {
     }
 
     func makeLoginViewModel() -> LoginViewModel {
-        LoginViewModel(loginUseCase: mockLoginUseCase)
+        LoginViewModel(loginUseCase: mockLoginUseCase, gate: gate)
     }
 
     func makeUnlockViewModel(account: Account) -> UnlockViewModel {
         UnlockViewModel(auth: authRepo as! MockAuthRepository, sync: mockSyncUseCase, account: account,
-                        defaults: defaults)
+                        defaults: defaults, gate: gate)
     }
 
     func makeVaultBrowserViewModel() -> VaultBrowserViewModel {

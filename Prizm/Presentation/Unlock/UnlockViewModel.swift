@@ -39,6 +39,11 @@ final class UnlockViewModel: ObservableObject {
     private let embeddedBiometric: (any EmbeddedBiometricUnlock)?
     /// The Touch ID preferences; required so tests pass a private store (fix-biometric-test-isolation, D1).
     private let defaults:         UserDefaults
+    /// The app's lock fence (lock-state-machine, design D2).
+    private let gate:             any SessionGate
+    /// The running unlock's token, taken when it started (password entered, Touch ID requested or
+    /// armed). The enrollment prompt and the sync after it belong to the same unlock.
+    private var unlockFlow:       FlowToken?
     private let logger = Logger(subsystem: "com.prizm", category: "UnlockViewModel")
 
     /// Tracks whether the last biometric attempt failed with invalidation,
@@ -61,8 +66,10 @@ final class UnlockViewModel: ObservableObject {
         sync: any SyncUseCase,
         account: Account,
         embeddedBiometric: (any EmbeddedBiometricUnlock)? = nil,
-        defaults: UserDefaults
+        defaults: UserDefaults,
+        gate: any SessionGate
     ) {
+        self.gate              = gate
         self.auth              = auth
         self.sync              = sync
         self.account           = account
@@ -93,13 +100,17 @@ final class UnlockViewModel: ObservableObject {
             return
         }
 
+        let flow = beginUnlockFlow()
         Task {
             do {
-                _ = try await auth.unlockWithPassword(passwordData)
+                _ = try await auth.unlockWithPassword(passwordData, flow: flow)
+                guard gate.isCurrent(flow) else { return endOvertakenUnlock() }
                 // Clear the password field after a successful unlock so the plaintext
                 // does not linger in the published property.
                 password = ""
-                await checkEnrollmentOrSync()
+                await checkEnrollmentOrSync(flow: flow)
+            } catch where !gate.isCurrent(flow) {
+                endOvertakenUnlock()
             } catch let err as AuthError {
                 logger.error("Unlock failed: \(ErrorLog.describe(err), privacy: .public)")
                 errorMessage = err.errorDescription
@@ -116,11 +127,16 @@ final class UnlockViewModel: ObservableObject {
     /// On cancellation, re-arms the sensor immediately (always-armed behaviour —
     /// design Decision 2). On lockout or invalidation, shows an error and stops.
     func unlockWithBiometrics() {
+        let flow = beginUnlockFlow()
         Task {
             do {
-                _ = try await auth.unlockWithBiometrics()
+                _ = try await auth.unlockWithBiometrics(flow: flow)
+                guard gate.isCurrent(flow) else { return endOvertakenUnlock() }
                 lastBiometricInvalidated = false
-                await checkEnrollmentOrSync()
+                await checkEnrollmentOrSync(flow: flow)
+            } catch where !gate.isCurrent(flow) {
+                // Overtaken by a lock or sign-out: no error, and no re-arm (design D4).
+                endOvertakenUnlock()
             } catch let err as AuthError where err == .biometricInvalidated {
                 lastBiometricInvalidated = true
                 errorMessage = err.errorDescription
@@ -151,11 +167,18 @@ final class UnlockViewModel: ObservableObject {
     /// `evaluatePolicy` is called — no system modal appears.
     func triggerEmbeddedBiometricIfAvailable() {
         guard biometricUnlockAvailable, let provider = embeddedBiometric else { return }
+        // Taken when the sensor is armed, not when the finger touches it: a lock while the view
+        // waits makes this unlock stale (design D2).
+        let flow = beginUnlockFlow()
         Task {
             do {
-                _ = try await provider.unlockWithBiometrics(context: biometricContext)
+                _ = try await provider.unlockWithBiometrics(context: biometricContext, flow: flow)
+                guard gate.isCurrent(flow) else { return endOvertakenUnlock() }
                 lastBiometricInvalidated = false
-                await checkEnrollmentOrSync()
+                await checkEnrollmentOrSync(flow: flow)
+            } catch where !gate.isCurrent(flow) {
+                // Overtaken by a lock or sign-out: no error, and no re-arm (design D4).
+                endOvertakenUnlock()
             } catch let err as AuthError where err == .biometricInvalidated {
                 lastBiometricInvalidated = true
                 errorMessage = err.errorDescription
@@ -196,24 +219,30 @@ final class UnlockViewModel: ObservableObject {
     }
 
     /// Called when the user accepts the enrollment prompt.
+    ///
+    /// Uses the unlock's token, not a new one: an enrollment accepted after a lock stores nothing,
+    /// marks nothing, and is offered again after the next unlock (design D2).
     func confirmEnrollBiometric() {
+        guard let flow = unlockFlow else { return }
         Task {
             do {
-                try await auth.enableBiometricUnlock()
+                try await auth.enableBiometricUnlock(flow: flow)
             } catch {
                 logger.error("Enable biometric unlock failed: \(ErrorLog.describe(error), privacy: .public)")
             }
-            defaults.set(true, forKey: BiometricPreferenceKey.enrollmentPromptShown)
             showEnrollmentPrompt = false
-            await performSync()
+            guard gate.isCurrent(flow) else { return endOvertakenUnlock() }
+            defaults.set(true, forKey: BiometricPreferenceKey.enrollmentPromptShown)
+            await performSync(flow: flow)
         }
     }
 
     /// Called when the user dismisses the enrollment prompt without enabling.
     func dismissEnrollmentPrompt() {
-        defaults.set(true, forKey: BiometricPreferenceKey.enrollmentPromptShown)
         showEnrollmentPrompt = false
-        Task { await performSync() }
+        guard let flow = unlockFlow, gate.isCurrent(flow) else { return endOvertakenUnlock() }
+        defaults.set(true, forKey: BiometricPreferenceKey.enrollmentPromptShown)
+        Task { await performSync(flow: flow) }
     }
 
     /// Clears session and returns to the login screen (FR-039).
@@ -236,7 +265,21 @@ final class UnlockViewModel: ObservableObject {
     ///
     /// Uses `auth.deviceBiometricCapable` (not `biometricUnlockAvailable`) so the check
     /// is mockable in tests and independent of the UserDefaults enabled flag.
-    private func checkEnrollmentOrSync() async {
+    /// Takes the token of an unlock that starts now (design D2).
+    private func beginUnlockFlow() -> FlowToken {
+        let flow = gate.begin()
+        unlockFlow = flow
+        return flow
+    }
+
+    /// An unlock that a lock or sign-out overtook ends quietly: no error, no sync, no vault.
+    private func endOvertakenUnlock() {
+        logger.info("Unlock ended: a lock or sign-out came first")
+        errorMessage = nil
+        flowState    = .unlock
+    }
+
+    private func checkEnrollmentOrSync(flow: FlowToken) async {
         let capable        = auth.deviceBiometricCapable
         let alreadyEnabled = defaults.bool(forKey: BiometricPreferenceKey.unlockEnabled)
         let promptShown    = defaults.bool(forKey: BiometricPreferenceKey.enrollmentPromptShown)
@@ -247,19 +290,23 @@ final class UnlockViewModel: ObservableObject {
             // performSync() will be called by confirmEnrollBiometric() or dismissEnrollmentPrompt().
             return
         }
-        await performSync()
+        await performSync(flow: flow)
     }
 
-    private func performSync() async {
+    private func performSync(flow: FlowToken) async {
+        guard gate.isCurrent(flow) else { return endOvertakenUnlock() }
         flowState = .syncing(message: "Preparing…")
         do {
             _ = try await sync.execute(progress: { [weak self] message in
-                Task { @MainActor [weak self] in self?.flowState = .syncing(message: message) }
+                Task { @MainActor [weak self] in
+                    guard let self, self.gate.isCurrent(flow) else { return }
+                    self.flowState = .syncing(message: message)
+                }
             })
-            flowState = .vault
         } catch {
             logger.error("Post-unlock sync failed (non-fatal): \(ErrorLog.describe(error), privacy: .public)")
-            flowState = .vault
         }
+        guard gate.isCurrent(flow) else { return endOvertakenUnlock() }
+        flowState = .vault
     }
 }

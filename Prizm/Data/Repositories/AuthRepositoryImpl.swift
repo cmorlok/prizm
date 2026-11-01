@@ -103,8 +103,10 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         let account: Int
     }
 
-    private func startFlow() -> FlowStart {
-        FlowStart(token: gate.begin(), account: accountEpoch)
+    /// `flow` comes from the view model's action; the account epoch is read here, which is
+    /// enough: a sign-out between the action and this call also ends the gate.
+    private func startFlow(_ flow: FlowToken) -> FlowStart {
+        FlowStart(token: flow, account: accountEpoch)
     }
 
     /// No lock and no sign-out since `start`.
@@ -205,12 +207,12 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
 
     // MARK: - Login
 
-    func loginWithPassword(email typedEmail: String, masterPassword: Data) async throws -> LoginResult {
+    func loginWithPassword(email typedEmail: String, masterPassword: Data, flow: FlowToken) async throws -> LoginResult {
         // Normalized once, as the official clients do (`email.trim().toLowerCase()`), and used for
         // prelogin, the salt fallback and the token `username` (fix-kdf-derivation-and-validation, D3).
         let email = Self.normalized(typedEmail)
         logger.info("Login attempt for \(email, privacy: .private)")
-        let start = startFlow()
+        let start = startFlow(flow)
         guard let env = serverEnvironment else {
             throw AuthError.serverUnreachable
         }
@@ -404,9 +406,9 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         logger.info("Pending 2FA state cleared — stretched keys zeroed")
     }
 
-    func unlockWithPassword(_ masterPassword: Data) async throws -> Account {
+    func unlockWithPassword(_ masterPassword: Data, flow: FlowToken) async throws -> Account {
         logger.info("Unlock attempt")
-        let start = startFlow()
+        let start = startFlow(flow)
         let userId: String
         do {
             userId = try readString(key: KeychainKey.activeUserId)
@@ -610,7 +612,8 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         logger.error("Biometric availability check failed: \(ErrorLog.describe(error), privacy: .public)")
     }
 
-    func enableBiometricUnlock() async throws {
+    func enableBiometricUnlock(flow: FlowToken) async throws {
+        let start = startFlow(flow)
         // Guard: vault must be unlocked — keys must be in memory (spec requirement).
         guard await crypto.isUnlocked else {
             throw AuthError.biometricUnavailable
@@ -618,6 +621,9 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         let keys = try await crypto.currentKeys()
         var data = keys.toData()
         defer { data.resetBytes(in: data.indices) }
+        // No await from this check to the write: an enrollment accepted after a lock stores
+        // nothing (lock-state-machine, design D2).
+        guard isCurrent(start) else { throw AuthError.lockedWhileUnlocking }
         guard let userId = try? readString(key: KeychainKey.activeUserId) else {
             throw AuthError.biometricUnavailable
         }
@@ -637,9 +643,9 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         logger.info("Biometric unlock disabled")
     }
 
-    func unlockWithBiometrics() async throws -> Account {
+    func unlockWithBiometrics(flow: FlowToken) async throws -> Account {
         logger.info("Biometric unlock attempt")
-        let start = startFlow()
+        let start = startFlow(flow)
         guard let userId = try? readString(key: KeychainKey.activeUserId) else {
             throw AuthError.biometricUnavailable
         }
@@ -713,9 +719,9 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
     /// Evaluates biometric policy on `context` then reads the vault key and unlocks.
     /// If `LAAuthenticationView` was paired with `context` before this call (via
     /// `EmbeddedTouchIDView`), `evaluatePolicy` routes inline — no modal appears.
-    func unlockWithBiometrics(context: LAContext) async throws -> Account {
+    func unlockWithBiometrics(context: LAContext, flow: FlowToken) async throws -> Account {
         logger.info("Embedded biometric unlock attempt")
-        let start = startFlow()
+        let start = startFlow(flow)
         guard let userId = try? readString(key: KeychainKey.activeUserId) else {
             throw AuthError.biometricUnavailable
         }

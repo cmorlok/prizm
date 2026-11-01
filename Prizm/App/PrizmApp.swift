@@ -137,7 +137,8 @@ struct PrizmApp: App {
         // The Settings scene does not inherit the WindowGroup environment, so we pass
         // the container explicitly via .environmentObject().
         Settings {
-            SettingsView(authRepository: container.authRepository, preferences: container.preferences)
+            SettingsView(authRepository: container.authRepository, preferences: container.preferences,
+                         sessionGate: container.sessionGate)
         }
     }
 

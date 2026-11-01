@@ -29,8 +29,14 @@ final class MockLoginUseCase: LoginUseCase {
 
     // MARK: - LoginUseCase
 
-    func execute(serverURL: String, email: String, masterPassword: Data) async throws -> LoginResult {
+    /// The flow token of each `execute`, and a hook that runs inside it.
+    private(set) var receivedFlows: [FlowToken] = []
+    var whileExecuting: (() async -> Void)?
+
+    func execute(serverURL: String, email: String, masterPassword: Data, flow: FlowToken) async throws -> LoginResult {
+        receivedFlows.append(flow)
         executeCallCount += 1
+        await whileExecuting?()
         if let err = executeError { throw err }
         return stubbedResult
     }

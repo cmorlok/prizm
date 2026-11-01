@@ -10,6 +10,8 @@ import XCTest
 @MainActor
 final class BiometricDefaultsIsolationTests: XCTestCase {
 
+    private let gate = SessionGateImpl()
+
     private static let keys = ["biometricUnlockEnabled", "biometricEnrollmentPromptShown"]
 
     private var snapshot: [String: Any] = [:]
@@ -31,7 +33,7 @@ final class BiometricDefaultsIsolationTests: XCTestCase {
             biometricKeychain: MockBiometricKeychainService(),
             vaultKeyCache: VaultKeyCache(),
             orgKeyCache: OrgKeyCache(),
-            defaults: store, gate: SessionGateImpl())
+            defaults: store, gate: gate)
         seedStoredSession()
     }
 
@@ -65,7 +67,7 @@ final class BiometricDefaultsIsolationTests: XCTestCase {
 
     func testEnableDisableAndSignOut_leaveTheRealPreferencesUnchanged() async throws {
         mockCrypto._isUnlocked = true
-        try await sut.enableBiometricUnlock()
+        try await sut.enableBiometricUnlock(flow: gate.begin())
         assertStandardUnchanged("enableBiometricUnlock")
         XCTAssertTrue(store.bool(forKey: "biometricUnlockEnabled"), "written to the injected store")
 
@@ -73,7 +75,7 @@ final class BiometricDefaultsIsolationTests: XCTestCase {
         assertStandardUnchanged("disableBiometricUnlock")
         XCTAssertEqual(store.object(forKey: "biometricUnlockEnabled") as? Bool, false)
 
-        try await sut.enableBiometricUnlock()
+        try await sut.enableBiometricUnlock(flow: gate.begin())
         try await sut.signOut()
         assertStandardUnchanged("signOut")
         XCTAssertEqual(store.object(forKey: "biometricUnlockEnabled") as? Bool, false)
@@ -85,7 +87,7 @@ final class BiometricDefaultsIsolationTests: XCTestCase {
     func testToggleViewModel_readsTheInjectedStore() {
         for enabled in [true, false] {
             store.set(enabled, forKey: "biometricUnlockEnabled")
-            let viewModel = BiometricUnlockToggleViewModel(authRepository: MockAuthRepository(), defaults: store)
+            let viewModel = BiometricUnlockToggleViewModel(authRepository: MockAuthRepository(), defaults: store, gate: SessionGateImpl())
             XCTAssertEqual(viewModel.isEnabled, enabled)
         }
         assertStandardUnchanged("BiometricUnlockToggleViewModel")
@@ -97,7 +99,7 @@ final class BiometricDefaultsIsolationTests: XCTestCase {
             store.set(promptShown, forKey: "biometricEnrollmentPromptShown")
             let auth = MockAuthRepository()
             auth.stubbedDeviceBiometricCapable = true
-            let viewModel = UnlockViewModel(auth: auth, sync: MockSyncUseCase(), account: Self.account, defaults: store)
+            let viewModel = UnlockViewModel(auth: auth, sync: MockSyncUseCase(), account: Self.account, defaults: store, gate: gate)
 
             viewModel.password = "TestPassword1!"
             viewModel.unlock()

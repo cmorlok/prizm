@@ -11,6 +11,8 @@ struct SettingsView: View {
     let authRepository: any AuthRepository
     /// The Touch ID preferences store (`AppContainer.preferences`).
     let preferences: UserDefaults
+    /// The app's lock fence; enabling Touch ID takes a token from it (lock-state-machine, D2).
+    let sessionGate: any SessionGate
 
     private let logger = Logger(subsystem: "com.prizm", category: "SettingsView")
 
@@ -44,7 +46,7 @@ struct SettingsView: View {
         Form {
             Section("Security") {
                 if deviceHasBiometrics {
-                    BiometricUnlockToggle(authRepository: authRepository, preferences: preferences)
+                    BiometricUnlockToggle(authRepository: authRepository, preferences: preferences, gate: sessionGate)
                 }
                 // Read by ClipboardServiceImpl at each copy (clipboard-hardening, D2, D4).
                 Picker("Clear clipboard", selection: $clipboardClearDelay) {

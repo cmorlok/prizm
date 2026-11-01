@@ -8,6 +8,7 @@ final class UnlockViewModelTests: XCTestCase {
     private var sut:          UnlockViewModel!
     private var mockAuth:     MockAuthRepository!
     private var mockSync:     MockSyncUseCase!
+    private var gate:         SessionGateImpl!
     private var cancellables: Set<AnyCancellable> = []
 
     private let stubAccount = Account(
@@ -24,13 +25,46 @@ final class UnlockViewModelTests: XCTestCase {
         try await super.setUp()
         mockAuth = MockAuthRepository()
         mockSync = MockSyncUseCase()
+        gate     = SessionGateImpl()
         sut      = UnlockViewModel(auth: mockAuth, sync: mockSync, account: stubAccount,
-                                   defaults: makePrivateDefaults())
+                                   defaults: makePrivateDefaults(), gate: gate)
     }
 
     override func tearDown() async throws {
         cancellables.removeAll()
         try await super.tearDown()
+    }
+
+    // MARK: - Flow token (lock-state-machine, design D2)
+
+    func testUnlock_passesTheTokenOfTheAction() async throws {
+        mockAuth.stubbedLoginResult = .success(stubAccount)
+        let before = gate.begin()
+        sut.password = "pw"
+
+        sut.unlock()
+        while mockAuth.receivedFlows.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
+
+        XCTAssertEqual(mockAuth.receivedFlows.first, before)
+    }
+
+    /// An unlock that a lock overtook after the keys loaded neither syncs nor reports the vault.
+    func testUnlock_overtakenByALock_doesNotSyncOrReportTheVault() async throws {
+        mockAuth.stubbedLoginResult = .success(stubAccount)
+        mockAuth.whileUnlockingWithPassword = { [gate] in
+            gate?.end()
+            gate?.open()
+        }
+        var states: [UnlockFlowState] = []
+        sut.$flowState.sink { states.append($0) }.store(in: &cancellables)
+        sut.password = "pw"
+
+        sut.unlock()
+        try await Task.sleep(for: .milliseconds(300))
+
+        XCTAssertFalse(states.contains(.vault))
+        XCTAssertFalse(states.contains { if case .syncing = $0 { return true }; return false })
+        XCTAssertEqual(mockSync.executeCount, 0)
     }
 
     // MARK: - unlock: password cleared on success

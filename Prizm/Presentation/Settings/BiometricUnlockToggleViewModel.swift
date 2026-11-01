@@ -13,6 +13,9 @@ import Observation
 final class BiometricUnlockToggleViewModel {
 
     private let authRepository: any AuthRepository
+    /// Enabling takes its token here, at the toggle; a lock before the key is stored refuses it
+    /// (lock-state-machine, design D2).
+    private let gate: any SessionGate
     private nonisolated(unsafe) var unlockObserver: NSObjectProtocol?
 
     var isEnabled: Bool
@@ -36,7 +39,8 @@ final class BiometricUnlockToggleViewModel {
 
     /// - Parameter defaults: the store holding `biometricUnlockEnabled`; required so tests pass a
     ///   private store (fix-biometric-test-isolation, D1).
-    init(authRepository: any AuthRepository, defaults: UserDefaults) {
+    init(authRepository: any AuthRepository, defaults: UserDefaults, gate: any SessionGate) {
+        self.gate = gate
         self.authRepository = authRepository
         self.isEnabled = defaults.bool(forKey: BiometricPreferenceKey.unlockEnabled)
         // Deliberately no side effects here beyond this. `BiometricUnlockToggle` constructs
@@ -74,11 +78,12 @@ final class BiometricUnlockToggleViewModel {
     }
 
     func toggleBiometric(enabled: Bool) async {
+        let flow = gate.begin()
         isProcessing = true
         defer { isProcessing = false }
         do {
             if enabled {
-                try await authRepository.enableBiometricUnlock()
+                try await authRepository.enableBiometricUnlock(flow: flow)
             } else {
                 try await authRepository.disableBiometricUnlock()
             }

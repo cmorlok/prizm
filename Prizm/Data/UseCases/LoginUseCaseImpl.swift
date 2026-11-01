@@ -23,7 +23,7 @@ final class LoginUseCaseImpl: LoginUseCase {
         self.sync = sync
     }
 
-    func execute(serverURL: String, email: String, masterPassword: Data) async throws -> LoginResult {
+    func execute(serverURL: String, email: String, masterPassword: Data, flow: FlowToken) async throws -> LoginResult {
         // Step 1: Validate URL (throws AuthError.invalidURL on failure).
         try auth.validateServerURL(serverURL)
 
@@ -35,7 +35,9 @@ final class LoginUseCaseImpl: LoginUseCase {
 
         // Step 3: Attempt password login.
         logger.info("Attempting login for \(email, privacy: .private)")
-        let result = try await auth.loginWithPassword(email: email, masterPassword: masterPassword)
+        // The sign-in's token, not one taken here: the server setup above is awaited, and a lock
+        // during it must still refuse this login (lock-state-machine, gap 4).
+        let result = try await auth.loginWithPassword(email: email, masterPassword: masterPassword, flow: flow)
 
         switch result {
         case .success:

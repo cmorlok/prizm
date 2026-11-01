@@ -6,7 +6,8 @@ protocol LoginUseCase {
     func execute(
         serverURL: String,
         email: String,
-        masterPassword: Data
+        masterPassword: Data,
+        flow: FlowToken
     ) async throws -> LoginResult
 
     func completeTOTP(code: String, rememberDevice: Bool) async throws -> Account

@@ -19,5 +19,5 @@ protocol EmbeddedBiometricUnlock: AnyObject {
     ///   `EmbeddedTouchIDView`. Must not have been previously evaluated.
     /// - Returns: The unlocked `Account`.
     /// - Throws: `AuthError.biometricInvalidated` if the Keychain item is gone.
-    func unlockWithBiometrics(context: LAContext) async throws -> Account
+    func unlockWithBiometrics(context: LAContext, flow: FlowToken) async throws -> Account
 }

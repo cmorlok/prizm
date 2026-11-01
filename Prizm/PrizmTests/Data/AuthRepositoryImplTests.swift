@@ -85,7 +85,8 @@ final class AuthRepositoryImplTests: XCTestCase {
 
         let result = try await sut.loginWithPassword(
             email: "alice@example.com",
-            masterPassword: Data("masterPassword1!".utf8)
+            masterPassword: Data("masterPassword1!".utf8),
+            flow: gate.begin()
         )
 
         guard case .success(let account) = result else {
@@ -112,7 +113,8 @@ final class AuthRepositoryImplTests: XCTestCase {
 
         let result = try await sut.loginWithPassword(
             email: "alice@example.com",
-            masterPassword: Data("masterPassword1!".utf8)
+            masterPassword: Data("masterPassword1!".utf8),
+            flow: gate.begin()
         )
 
         guard case .requiresTwoFactor(let method) = result else {
@@ -139,7 +141,8 @@ final class AuthRepositoryImplTests: XCTestCase {
 
         let result = try await sut.loginWithPassword(
             email: "alice@example.com",
-            masterPassword: Data("masterPassword1!".utf8)
+            masterPassword: Data("masterPassword1!".utf8),
+            flow: gate.begin()
         )
 
         guard case .requiresTwoFactor(let method) = result else {
@@ -166,7 +169,7 @@ final class AuthRepositoryImplTests: XCTestCase {
         )
         mockAPI.tokenTwoFactorProviders = [0]
         mockCrypto.stubbedServerHash = "hash=="
-        _ = try await sut.loginWithPassword(email: "alice@example.com", masterPassword: Data("pw!".utf8))
+        _ = try await sut.loginWithPassword(email: "alice@example.com", masterPassword: Data("pw!".utf8), flow: gate.begin())
 
         // Now provide the TOTP code
         mockAPI.tokenResponse = TokenResponse(
@@ -191,7 +194,7 @@ final class AuthRepositoryImplTests: XCTestCase {
         mockAPI.preLoginResponse = PreLoginResponse(kdf: 0, kdfIterations: 600_000, kdfMemory: nil, kdfParallelism: nil)
         mockAPI.tokenTwoFactorProviders = [0]
         mockCrypto.stubbedServerHash = "hash=="
-        _ = try await sut.loginWithPassword(email: "alice@example.com", masterPassword: Data("pw!".utf8))
+        _ = try await sut.loginWithPassword(email: "alice@example.com", masterPassword: Data("pw!".utf8), flow: gate.begin())
 
         mockAPI.tokenShouldThrow = AuthError.invalidTwoFactorCode
 
@@ -215,7 +218,7 @@ final class AuthRepositoryImplTests: XCTestCase {
         mockAPI.preLoginResponse       = PreLoginResponse(kdf: 0, kdfIterations: 600_000, kdfMemory: nil, kdfParallelism: nil)
         mockAPI.tokenTwoFactorProviders = [0]
         mockCrypto.stubbedServerHash   = "hash=="
-        _ = try await sut.loginWithPassword(email: "alice@example.com", masterPassword: Data("pw!".utf8))
+        _ = try await sut.loginWithPassword(email: "alice@example.com", masterPassword: Data("pw!".utf8), flow: gate.begin())
 
         // Cancel before entering the TOTP code.
         sut.cancelTwoFactor()
@@ -243,7 +246,7 @@ final class AuthRepositoryImplTests: XCTestCase {
         mockCrypto.stubbedServerHash    = "hash=="
         let bytes = Data((0..<96).map { UInt8($0) })
         mockCrypto.stubbedStretchedKeys = CryptoKeys(encryptionKey: bytes[16..<48], macKey: bytes[48..<80])
-        _ = try await sut.loginWithPassword(email: "alice@example.com", masterPassword: Data("pw!".utf8))
+        _ = try await sut.loginWithPassword(email: "alice@example.com", masterPassword: Data("pw!".utf8), flow: gate.begin())
 
         sut.cancelTwoFactor()
         sut.cancelTwoFactor()
@@ -288,7 +291,7 @@ final class AuthRepositoryImplTests: XCTestCase {
         mockKeychain.seed(key: "bw.macos:\(userId):serverEnvironment",
                           value: String(data: try JSONEncoder().encode(env), encoding: .utf8)!)
 
-        let account = try await sut.unlockWithPassword(Data("masterPassword1!".utf8))
+        let account = try await sut.unlockWithPassword(Data("masterPassword1!".utf8), flow: gate.begin())
 
         XCTAssertEqual(account.email, "alice@example.com")
         XCTAssertEqual(account.userId, userId)
@@ -317,7 +320,7 @@ final class AuthRepositoryImplTests: XCTestCase {
         }
         defer { NotificationCenter.default.removeObserver(observer) }
 
-        _ = try await sut.unlockWithPassword(Data("masterPassword1!".utf8))
+        _ = try await sut.unlockWithPassword(Data("masterPassword1!".utf8), flow: gate.begin())
 
         XCTAssertEqual(postCount, 1, "unlockWithPassword should post .vaultDidUnlock exactly once")
     }
@@ -337,7 +340,7 @@ final class AuthRepositoryImplTests: XCTestCase {
         mockKeychain.seed(key: "bw.macos:\(userId):serverEnvironment",
                           value: String(data: try JSONEncoder().encode(env), encoding: .utf8)!)
 
-        _ = try await sut.unlockWithPassword(Data("masterPassword1!".utf8))
+        _ = try await sut.unlockWithPassword(Data("masterPassword1!".utf8), flow: gate.begin())
 
         let emailKey   = "bw.macos:\(userId):email"
         let emailReads = mockKeychain.readKeys.filter { $0 == emailKey }.count
@@ -348,7 +351,7 @@ final class AuthRepositoryImplTests: XCTestCase {
     func testUnlockWithPassword_noSession_throws() async throws {
         let sut = self.sut!
         await XCTAssertThrowsErrorAsync(
-            try await sut.unlockWithPassword(Data("any".utf8))
+            try await sut.unlockWithPassword(Data("any".utf8), flow: gate.begin())
         ) { error in
             XCTAssertEqual(error as? AuthError, .invalidCredentials)
         }

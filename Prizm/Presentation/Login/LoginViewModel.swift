@@ -33,11 +33,17 @@ final class LoginViewModel: ObservableObject {
     // MARK: - Dependencies
 
     private let loginUseCase: any LoginUseCase
+    /// The app's lock fence (lock-state-machine, design D2).
+    private let gate: any SessionGate
+    /// The running sign-in's token, taken when the user signed in; the two-factor step that
+    /// follows belongs to the same sign-in.
+    private var signInFlow: FlowToken?
     private let logger = Logger(subsystem: "com.prizm", category: "LoginViewModel")
 
     // MARK: - Init
 
-    init(loginUseCase: any LoginUseCase) {
+    init(loginUseCase: any LoginUseCase, gate: any SessionGate) {
+        self.gate = gate
         self.loginUseCase = loginUseCase
     }
 
@@ -60,13 +66,19 @@ final class LoginViewModel: ObservableObject {
             return
         }
 
+        // Taken here, before the first await: a lock during the server setup must refuse this
+        // sign-in too (gap 4).
+        let flow = gate.begin()
+        signInFlow = flow
         Task {
             do {
                 let result = try await loginUseCase.execute(
                     serverURL:      serverURL,
                     email:          email,
-                    masterPassword: passwordData
+                    masterPassword: passwordData,
+                    flow:           flow
                 )
+                guard gate.isCurrent(flow) else { return endOvertakenSignIn() }
 
                 switch result {
                 case .success:
@@ -87,10 +99,12 @@ final class LoginViewModel: ObservableObject {
                 }
 
             } catch let err as AuthError {
+                guard gate.isCurrent(flow) else { return endOvertakenSignIn() }
                 logger.error("Sign-in failed: \(ErrorLog.describe(err), privacy: .public)")
                 errorMessage = err.errorDescription
                 flowState    = .login
             } catch {
+                guard gate.isCurrent(flow) else { return endOvertakenSignIn() }
                 logger.error("Sign-in failed: \(ErrorLog.describe(error), privacy: .public)")
                 errorMessage = error.localizedDescription
                 flowState    = .login
@@ -110,11 +124,14 @@ final class LoginViewModel: ObservableObject {
         errorMessage = nil
         flowState    = .loading
 
+        let flow = signInFlow
         Task {
             do {
                 let _ = try await loginUseCase.completeTOTP(code: code, rememberDevice: rememberDevice)
+                guard let flow, gate.isCurrent(flow) else { return endOvertakenSignIn() }
                 flowState = .vault
             } catch let err as AuthError {
+                if let flow, !gate.isCurrent(flow) { return endOvertakenSignIn() }
                 logger.error("TOTP submission failed: \(ErrorLog.describe(err), privacy: .public)")
                 errorMessage = err.errorDescription
                 flowState    = .totpPrompt
@@ -124,5 +141,15 @@ final class LoginViewModel: ObservableObject {
                 flowState    = .totpPrompt
             }
         }
+    }
+
+    /// A sign-in that a lock or sign-out overtook ends quietly on the login screen: no error, no
+    /// vault (lock-state-machine, design D6). `RootViewModel` shows the login screen only while the
+    /// screen still belongs to the login flow.
+    private func endOvertakenSignIn() {
+        logger.info("Sign-in ended: a lock or sign-out came first")
+        password     = ""
+        errorMessage = nil
+        flowState    = .login
     }
 }

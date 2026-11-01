@@ -21,14 +21,14 @@ final class AuthRepositoryBiometricTests: XCTestCase {
     }
 
     func testEnableBiometricUnlockRecordsCall() async throws {
-        try await sut.enableBiometricUnlock()
+        try await sut.enableBiometricUnlock(flow: FlowToken())
         XCTAssertTrue(sut.enableBiometricUnlockCalled)
     }
 
     func testEnableBiometricUnlockThrowsWhenStubbed() async {
         sut.enableBiometricUnlockError = AuthError.biometricUnavailable
         do {
-            try await sut.enableBiometricUnlock()
+            try await sut.enableBiometricUnlock(flow: FlowToken())
             XCTFail("Expected error")
         } catch {
             XCTAssertEqual(error as? AuthError, .biometricUnavailable)
@@ -41,7 +41,7 @@ final class AuthRepositoryBiometricTests: XCTestCase {
     }
 
     func testUnlockWithBiometricsReturnsAccount() async throws {
-        let account = try await sut.unlockWithBiometrics()
+        let account = try await sut.unlockWithBiometrics(flow: FlowToken())
         XCTAssertTrue(sut.unlockWithBiometricsCalled)
         XCTAssertEqual(account.email, "stub@example.com")
     }
@@ -49,7 +49,7 @@ final class AuthRepositoryBiometricTests: XCTestCase {
     func testUnlockWithBiometricsThrowsInvalidated() async {
         sut.unlockWithBiometricsError = AuthError.biometricInvalidated
         do {
-            _ = try await sut.unlockWithBiometrics()
+            _ = try await sut.unlockWithBiometrics(flow: FlowToken())
             XCTFail("Expected error")
         } catch {
             XCTAssertEqual(error as? AuthError, .biometricInvalidated)

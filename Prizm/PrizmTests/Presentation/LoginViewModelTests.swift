@@ -7,6 +7,7 @@ final class LoginViewModelTests: XCTestCase {
 
     private var sut:          LoginViewModel!
     private var mockUseCase:  MockLoginUseCase!
+    private var gate:         SessionGateImpl!
     private var cancellables: Set<AnyCancellable> = []
 
     private func makeAccount() -> Account {
@@ -24,12 +25,52 @@ final class LoginViewModelTests: XCTestCase {
     override func setUp() async throws {
         try await super.setUp()
         mockUseCase = MockLoginUseCase()
-        sut         = LoginViewModel(loginUseCase: mockUseCase)
+        gate        = SessionGateImpl()
+        sut         = LoginViewModel(loginUseCase: mockUseCase, gate: gate)
     }
 
     override func tearDown() async throws {
         cancellables.removeAll()
         try await super.tearDown()
+    }
+
+    // MARK: - Flow token (lock-state-machine, design D2, gap 4)
+
+    /// The token is taken when the user signs in, before the first await: a lock during the
+    /// server setup leaves the sign-in with a stale token.
+    func testSignIn_takesItsTokenAtTheAction() async throws {
+        mockUseCase.stubbedResult = .success(makeAccount())
+        sut.serverURL = "https://vault.example.com"
+        sut.email     = "alice@example.com"
+        sut.password  = "pw"
+        let before = gate.begin()
+
+        sut.signIn()
+        gate.end()
+        gate.open()
+        while mockUseCase.receivedFlows.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
+
+        XCTAssertEqual(mockUseCase.receivedFlows.first, before, "the token of the moment the user signed in")
+        XCTAssertFalse(gate.isCurrent(mockUseCase.receivedFlows[0]))
+    }
+
+    /// A sign-in that a lock overtook shows neither the vault nor an error.
+    func testSignIn_overtakenByALock_endsOnTheLoginScreenWithoutAMessage() async throws {
+        mockUseCase.stubbedResult = .success(makeAccount())
+        mockUseCase.whileExecuting = { [gate] in
+            gate?.end()
+            gate?.open()
+        }
+        sut.serverURL = "https://vault.example.com"
+        sut.email     = "alice@example.com"
+        sut.password  = "pw"
+
+        sut.signIn()
+        let deadline = ContinuousClock.now + .seconds(2)
+        while sut.flowState != .login, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(5)) }
+
+        XCTAssertEqual(sut.flowState, .login)
+        XCTAssertNil(sut.errorMessage)
     }
 
     // MARK: - signIn: password cleared on success

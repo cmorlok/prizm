@@ -50,7 +50,6 @@ final class AppContainer: ObservableObject {
 
     let syncUseCase:                     SyncUseCaseImpl
     let loginUseCase:                    LoginUseCaseImpl
-    let unlockUseCase:                   UnlockUseCaseImpl
     let searchVaultUseCase:              SearchVaultUseCaseImpl
     let generateTOTPCodeUseCase:         GenerateTOTPCodeUseCaseImpl
     let editVaultItemUseCase:            EditVaultItemUseCaseImpl
@@ -189,7 +188,6 @@ final class AppContainer: ObservableObject {
         self.syncUseCase                     = syncUseCase
         self.emptyTrashUseCase               = EmptyTrashUseCaseImpl(repository: vault, sync: syncUseCase)
         self.loginUseCase                    = LoginUseCaseImpl(auth: auth, sync: sync)
-        self.unlockUseCase                   = UnlockUseCaseImpl(auth: auth, sync: sync)
         self.searchVaultUseCase              = SearchVaultUseCaseImpl(vault: vault)
         self.generateTOTPCodeUseCase         = GenerateTOTPCodeUseCaseImpl(crypto: crypto)
         self.editVaultItemUseCase            = EditVaultItemUseCaseImpl(repository: vault)
@@ -246,13 +244,13 @@ final class AppContainer: ObservableObject {
 
     /// Creates a `LoginViewModel` pre-wired with the container's login use case.
     func makeLoginViewModel() -> LoginViewModel {
-        LoginViewModel(loginUseCase: loginUseCase)
+        LoginViewModel(loginUseCase: loginUseCase, gate: sessionGate)
     }
 
     /// Creates an `UnlockViewModel` for a returning user with a stored session.
     func makeUnlockViewModel(account: Account) -> UnlockViewModel {
         UnlockViewModel(auth: authRepository, sync: syncUseCase, account: account, embeddedBiometric: authRepository,
-                        defaults: preferences)
+                        defaults: preferences, gate: sessionGate)
     }
 
     /// Creates the once-per-second tracker that keeps displayed TOTP codes current.

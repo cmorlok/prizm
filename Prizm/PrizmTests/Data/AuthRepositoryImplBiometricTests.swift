@@ -5,6 +5,8 @@ import XCTest
 @MainActor
 final class AuthRepositoryImplBiometricTests: XCTestCase {
 
+    private let gate = SessionGateImpl()
+
     private var sut: AuthRepositoryImpl!
     private var mockAPI: MockPrizmAPIClient!
     private var mockCrypto: MockPrizmCryptoService!
@@ -33,7 +35,7 @@ final class AuthRepositoryImplBiometricTests: XCTestCase {
             biometricKeychain: mockBiometricKeychain,
             vaultKeyCache: VaultKeyCache(),
             orgKeyCache:   OrgKeyCache(),
-            defaults:      defaults, gate: SessionGateImpl())
+            defaults:      defaults, gate: gate)
         // Seed Keychain with a stored session so account(for:) works.
         seedStoredSession()
     }
@@ -43,7 +45,7 @@ final class AuthRepositoryImplBiometricTests: XCTestCase {
     func testEnableBiometricUnlock_vaultLocked_throws() async {
         mockCrypto._isUnlocked = false
         do {
-            try await sut.enableBiometricUnlock()
+            try await sut.enableBiometricUnlock(flow: gate.begin())
             XCTFail("Expected biometricUnavailable")
         } catch {
             XCTAssertEqual(error as? AuthError, .biometricUnavailable)
@@ -52,7 +54,7 @@ final class AuthRepositoryImplBiometricTests: XCTestCase {
 
     func testEnableBiometricUnlock_vaultUnlocked_writesKeychain() async throws {
         mockCrypto._isUnlocked = true
-        try await sut.enableBiometricUnlock()
+        try await sut.enableBiometricUnlock(flow: gate.begin())
         XCTAssertTrue(defaults.bool(forKey: "biometricUnlockEnabled"))
         // Verify the biometric keychain has a 64-byte item.
         let key = KeychainKey.biometricVaultKey(testUserId)
@@ -65,7 +67,7 @@ final class AuthRepositoryImplBiometricTests: XCTestCase {
     func testDisableBiometricUnlock_clearsPreferenceAndKeychain() async throws {
         // Enable first.
         mockCrypto._isUnlocked = true
-        try await sut.enableBiometricUnlock()
+        try await sut.enableBiometricUnlock(flow: gate.begin())
         XCTAssertTrue(defaults.bool(forKey: "biometricUnlockEnabled"))
 
         try await sut.disableBiometricUnlock()
@@ -90,7 +92,7 @@ final class AuthRepositoryImplBiometricTests: XCTestCase {
             key: KeychainKey.biometricVaultKey(testUserId)
         )
 
-        let account = try await sut.unlockWithBiometrics()
+        let account = try await sut.unlockWithBiometrics(flow: gate.begin())
         XCTAssertEqual(account.email, testEmail)
     }
 
@@ -109,7 +111,7 @@ final class AuthRepositoryImplBiometricTests: XCTestCase {
         }
         defer { NotificationCenter.default.removeObserver(observer) }
 
-        _ = try await sut.unlockWithBiometrics()
+        _ = try await sut.unlockWithBiometrics(flow: gate.begin())
 
         XCTAssertEqual(postCount, 1, "unlockWithBiometrics should post .vaultDidUnlock exactly once")
     }
@@ -118,7 +120,7 @@ final class AuthRepositoryImplBiometricTests: XCTestCase {
         // No biometric key in keychain — externally deleted or never written.
         // Must throw .biometricItemNotFound (silent degradation), not .biometricInvalidated.
         do {
-            _ = try await sut.unlockWithBiometrics()
+            _ = try await sut.unlockWithBiometrics(flow: gate.begin())
             XCTFail("Expected biometricItemNotFound")
         } catch {
             XCTAssertEqual(error as? AuthError, .biometricItemNotFound)
@@ -131,7 +133,7 @@ final class AuthRepositoryImplBiometricTests: XCTestCase {
 
     func testSignOut_deletesBiometricKeychainItem() async throws {
         mockCrypto._isUnlocked = true
-        try await sut.enableBiometricUnlock()
+        try await sut.enableBiometricUnlock(flow: gate.begin())
         try await sut.signOut()
         XCTAssertFalse(defaults.bool(forKey: "biometricUnlockEnabled"))
     }
