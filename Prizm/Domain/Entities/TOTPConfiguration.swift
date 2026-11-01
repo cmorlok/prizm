@@ -22,12 +22,23 @@ nonisolated enum TOTPHashAlgorithm: Equatable, Hashable {
 nonisolated enum TOTPError: Error, Equatable {
     /// The seed is empty or only whitespace.
     case emptySeed
-    /// The secret is not valid base32, is missing, or decodes to zero bytes.
+    /// The secret is missing or decodes to zero bytes (fewer than 8 bits of base32).
     case invalidSecret
-    /// A seed form we do not support, e.g. `steam://` or `otpauth://hotp`.
+    /// A seed that never gives a valid time-based code: `otpauth://hotp` (totp-parity, design D2).
     case unsupportedScheme
-    /// An unknown algorithm, digits outside 6...8, or a non-positive period.
+    /// `digits=0`, which can never give a valid code (totp-parity, design D2).
     case unsupportedParameter
+}
+
+// MARK: - TOTPAlphabet
+
+/// How the truncated value becomes the shown code.
+nonisolated enum TOTPAlphabet: Equatable, Hashable {
+    /// `value % 10^digits`, zero-padded (RFC 4226 §5.3).
+    case decimal
+    /// Steam Guard: five characters of `23456789BCDFGHJKMNPQRTVWXY`, least significant first, as
+    /// the Bitwarden SDK's `derive_steam_otp` (sdk-internal `c1c9b9a5`, `totp.rs:322-336`).
+    case steam
 }
 
 // MARK: - TOTPConfiguration
@@ -40,8 +51,10 @@ nonisolated struct TOTPConfiguration: Equatable {
     /// Decoded base32 bytes. Must be non-empty.
     let secret: Data
     let algorithm: TOTPHashAlgorithm
-    /// 6 to 8 (RFC 4226 §5.3 requires at least 6). Default 6.
+    /// 1 to 10, as the Bitwarden SDK clamps it (RFC 4226 §5.3 asks for at least 6; official apps
+    /// accept fewer, and so does Prizm, totp-parity D1). Default 6; 5 characters for Steam.
     let digits: Int
-    /// Validity period in seconds, greater than 0. Default 30 (RFC 6238 §4.1).
+    /// Validity period in seconds, at least 1. Default 30 (RFC 6238 §4.1).
     let period: Int
+    var alphabet: TOTPAlphabet = .decimal
 }

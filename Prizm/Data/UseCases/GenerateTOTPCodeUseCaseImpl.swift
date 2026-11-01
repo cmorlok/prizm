@@ -34,21 +34,29 @@ nonisolated final class GenerateTOTPCodeUseCaseImpl: GenerateTOTPCodeUseCase, Se
         let message = Data(bytes: &counter, count: MemoryLayout<UInt64>.size)
 
         let mac = crypto.hmac(config.algorithm, key: key, message: message)
-        let value = try Self.truncate(mac, digits: config.digits)
-
-        let digits = String(value)
-        let padded = String(repeating: "0", count: max(0, config.digits - digits.count)) + digits
+        let binary = try Self.truncate(mac)
+        let shown: String
+        switch config.alphabet {
+        case .decimal:
+            // A 64-bit modulus: 10^10 does not fit in 32 bits. The SDK computes it in u32 and, in a
+            // release build, wraps for ten digits; Prizm keeps RFC 4226 arithmetic (totp-parity D3).
+            var modulus: UInt64 = 1
+            for _ in 0..<config.digits { modulus *= 10 }
+            let digits = String(UInt64(binary) % modulus)
+            shown = String(repeating: "0", count: max(0, config.digits - digits.count)) + digits
+        case .steam:
+            shown = Self.steamCode(binary, length: config.digits)
+        }
         return TOTPCode(
-            digits: padded,
+            digits: shown,
             period: config.period,
             secondsRemaining: Int(period - (unixSeconds % period))
         )
     }
 
     /// RFC 4226 §5.3 dynamic truncation: the low 4 bits of the last byte pick an offset; the
-    /// 31 bits starting there (top bit masked so the result is never negative) are reduced
-    /// modulo 10^digits.
-    private static func truncate(_ mac: Data, digits: Int) throws -> UInt64 {
+    /// 31 bits starting there (top bit masked so the result is never negative).
+    private static func truncate(_ mac: Data) throws -> UInt32 {
         let bytes = [UInt8](mac)
         guard let last = bytes.last else { throw TOTPError.invalidSecret }
         let offset = Int(last & 0x0F)
@@ -57,9 +65,21 @@ nonisolated final class GenerateTOTPCodeUseCaseImpl: GenerateTOTPCodeUseCase, Se
             | (UInt32(bytes[offset + 1]) << 16)
             | (UInt32(bytes[offset + 2]) << 8)
             |  UInt32(bytes[offset + 3])
-        var modulus: UInt64 = 1
-        for _ in 0..<digits { modulus *= 10 }
-        return UInt64(binary) % modulus
+        return binary
+    }
+
+    /// Steam Guard characters, least significant first, as the Bitwarden SDK's `derive_steam_otp`
+    /// (sdk-internal `c1c9b9a5`, `totp.rs:322-336`). Not a cryptographic step: a display mapping of
+    /// the RFC 4226 truncated value.
+    private static func steamCode(_ binary: UInt32, length: Int) -> String {
+        let alphabet = Array("23456789BCDFGHJKMNPQRTVWXY")
+        var full = binary & 0x7fff_ffff
+        var code = ""
+        for _ in 0..<length {
+            code.append(alphabet[Int(full % UInt32(alphabet.count))])
+            full /= UInt32(alphabet.count)
+        }
+        return code
     }
 
     /// Overwrites `buffer` with zeros. Exposed to tests; see the best-effort note above.

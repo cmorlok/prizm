@@ -14,8 +14,8 @@ Parsed form of a stored seed.
 |---|---|---|
 | `secret` | `Data` | Decoded base32 bytes. Must be non-empty. |
 | `algorithm` | `TOTPHashAlgorithm` | Default `sha1`. |
-| `digits` | `Int` | 6 to 8. Default 6. |
-| `period` | `Int` (seconds) | Greater than 0. Default 30. |
+| `digits` | `Int` | 6 to 8. Default 6. (`totp-parity`: 1 to 10, clamped as the SDK; 5 characters for Steam.) |
+| `period` | `Int` (seconds) | Greater than 0. Default 30. (`totp-parity`: unparsable → 30, 0 → 1.) |
 
 Built only by `TOTPSeedParser.parse(_:)`, which throws `TOTPError` for anything else. Not cached: parsed per refresh pass and dropped, so no extra copy of the secret outlives the pass.
 
@@ -31,7 +31,7 @@ What the UI shows. Never stored.
 
 Derived values:
 
-- `grouped`: six digits as "123 456". Other lengths split in the middle (8 digits as "1234 5678", 7 as "123 4567").
+- `grouped`: six digits as "123 456". Other lengths split in the middle (8 digits as "1234 5678", 7 as "123 4567"). (`totp-parity`: up to four characters stay whole; Steam shows as "7W 6CJ".)
 - `copyValue`: `digits` with no spaces.
 - `isExpiringSoon`: `secondsRemaining <= 5`.
 
@@ -42,9 +42,9 @@ Derived values:
 | Case | Meaning |
 |---|---|
 | `emptySeed` | Seed is empty or whitespace. |
-| `invalidSecret` | Not valid base32, or decodes to zero bytes. |
-| `unsupportedScheme` | `steam://`, `otpauth://hotp`, or another scheme. |
-| `unsupportedParameter` | Unknown algorithm, digits outside 6 to 8, or non-positive period. |
+| `invalidSecret` | Not valid base32, or decodes to zero bytes. (`totp-parity`: secret missing or fewer than 8 bits after dropping non-base32 letters.) |
+| `unsupportedScheme` | `steam://`, `otpauth://hotp`, or another scheme. (`totp-parity`: `otpauth://hotp` only.) |
+| `unsupportedParameter` | Unknown algorithm, digits outside 6 to 8, or non-positive period. (`totp-parity`: `digits=0` only.) |
 
 The UI maps every case to the same user-facing "unavailable" message, and never includes the seed in any message or log.
 

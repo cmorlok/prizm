@@ -23,6 +23,14 @@ final class RootViewModelCopyCodeTests: XCTestCase {
         }
     }
 
+    /// The real generator at the SDK vectors' time (2023-01-01T00:00:00Z), whatever the clock says.
+    private struct GeneratorAtSDKTime: GenerateTOTPCodeUseCase {
+        func execute(seed: String, at date: Date) async throws -> TOTPCode {
+            try await GenerateTOTPCodeUseCaseImpl(crypto: PrizmCryptoServiceImpl())
+                .execute(seed: seed, at: Date(timeIntervalSince1970: 1_672_531_200))
+        }
+    }
+
     private let validSeed = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
     private var sut: RootViewModel!
     /// The fake pasteboard behind the vault browser's clipboard service.
@@ -71,15 +79,31 @@ final class RootViewModelCopyCodeTests: XCTestCase {
         XCTAssertNotEqual(pasteboard.string, validSeed)
     }
 
+    /// A Steam seed copies its five characters, without the display space (totp-parity, D4;
+    /// verify 2026-10-31).
+    func test_copyCode_steam_copiesTheFiveCharacters() async throws {
+        let deps = MockRootDependencies(auth: MockAuthRepository(), vault: MockVaultRepository(), defaults: makePrivateDefaults())
+        deps.generateTOTPCode = GeneratorAtSDKTime()
+        sut = RootViewModel(container: deps)
+        pasteboard = deps.fakePasteboard
+        try await select(totp: "steam://HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ")
+        sut.copySelectedField(.totp)
+        try await waitForPasteboard("7W6CJ")
+        XCTAssertEqual(pasteboard.string, "7W6CJ")
+    }
+
     func test_codeAvailable_onlyWhenSeedParses() async throws {
         try await select(totp: validSeed)
         XCTAssertTrue(sut.selectedFieldAvailable(.totp))
 
-        try await select(totp: "not-a-seed!")
-        XCTAssertFalse(sut.selectedFieldAvailable(.totp))
+        try await select(totp: "otpauth://hotp/x?secret=\(validSeed)&counter=1")
+        XCTAssertFalse(sut.selectedFieldAvailable(.totp), "HOTP never gives a valid code")
+
+        try await select(totp: "!!!")
+        XCTAssertFalse(sut.selectedFieldAvailable(.totp), "no base32 characters")
 
         try await select(totp: "steam://\(validSeed)")
-        XCTAssertFalse(sut.selectedFieldAvailable(.totp))
+        XCTAssertTrue(sut.selectedFieldAvailable(.totp), "Steam codes are supported (totp-parity)")
     }
 
     func test_codeUnavailable_withNoSeedOrNoSelection() async throws {
@@ -91,7 +115,7 @@ final class RootViewModelCopyCodeTests: XCTestCase {
     }
 
     func test_unusableSeed_copiesNothing() async throws {
-        try await select(totp: "not-a-seed!")
+        try await select(totp: "!!!")
         sut.copySelectedField(.totp)
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertNil(pasteboard.string)

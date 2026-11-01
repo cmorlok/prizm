@@ -81,7 +81,7 @@ final class GenerateTOTPCodeUseCaseTests: XCTestCase {
             XCTAssertEqual(error as? TOTPError, .emptySeed)
         }
         do {
-            _ = try await sut.execute(seed: "steam://\(seed)", at: Date())
+            _ = try await sut.execute(seed: "otpauth://hotp/x?secret=\(seed)&counter=1", at: Date())
             XCTFail("expected throw")
         } catch {
             XCTAssertEqual(error as? TOTPError, .unsupportedScheme)
@@ -90,7 +90,7 @@ final class GenerateTOTPCodeUseCaseTests: XCTestCase {
 
     func test_errorDescription_neverContainsSeed() async {
         do {
-            _ = try await sut.execute(seed: "otpauth://totp/x?secret=\(seed)&digits=3", at: Date())
+            _ = try await sut.execute(seed: "otpauth://totp/x?secret=\(seed)&digits=0", at: Date())
             XCTFail("expected throw")
         } catch {
             XCTAssertFalse("\(error)".contains(seed))

@@ -92,10 +92,10 @@ A user locks the vault, by hand or by the app's existing lock behavior, while co
 - **FR-004**: The system MUST provide a "Codes" entry in the sidebar that lists every non-trashed item with a TOTP seed, one row per item.
 - **FR-004a**: Rows MUST be sorted alphabetically by item name.
 - **FR-004b**: The existing search MUST filter the Verification Codes list using its current matching rules (item name, username, website).
-- **FR-005**: Each list row MUST show the item name and the current code; the time remaining is shown in the item view, not in the list. Codes MUST be displayed grouped in the middle: six digits as "123 456", seven as "123 4567", eight as "1234 5678". The copied value MUST contain no space.
+- **FR-005**: Each list row MUST show the item name and the current code; the time remaining is shown in the item view, not in the list. Codes MUST be displayed grouped in the middle: six digits as "123 456", seven as "123 4567", eight as "1234 5678" (corrected by openspec change `totp-parity`: codes of up to four characters stay whole, ten digits show as "12345 67890", Steam as "7W 6CJ"). The copied value MUST contain no space.
 - **FR-006**: The user MUST be able to copy an item's current code from the item view and from a list row. A copied code MUST be cleared from the clipboard automatically within 30 seconds.
 - **FR-007**: Clicking a row MUST open that item in the detail pane. The row's COPY label MUST copy the current code without opening the item.
-- **FR-008**: When an item's seed cannot be used, the system MUST show a clear "unavailable" message for it and MUST NOT show a code. Supported seeds are the standard six-digit, 30-second form given either as a plain secret or as a standard `otpauth` link, including links that set a different digit count (6 to 8), period (any positive number of seconds), or hash algorithm (SHA-1, SHA-256, or SHA-512). Anything else is unavailable.
+- **FR-008**: When an item's seed cannot be used, the system MUST show a clear "unavailable" message for it and MUST NOT show a code. Supported seeds are the standard six-digit, 30-second form given either as a plain secret or as a standard `otpauth` link, including links that set a different digit count (6 to 8), period (any positive number of seconds), or hash algorithm (SHA-1, SHA-256, or SHA-512). Anything else is unavailable. (Superseded by openspec change `totp-parity`: seeds are read as the Bitwarden SDK reads them, including Steam Guard and up to 10 digits; only `otpauth://hotp`, a secret of fewer than 8 bits and `digits=0` are unavailable.)
 - **FR-009**: Items in the trash MUST NOT appear in the list.
 - **FR-010**: The system MUST remove all visible codes when the vault locks, and MUST NOT retain generated codes after lock.
 - **FR-011**: The system MUST NOT generate or refresh codes while the vault is locked, while the app is hidden or all its windows are minimized, or while no code view is on screen.
@@ -128,7 +128,7 @@ A user locks the vault, by hand or by the app's existing lock behavior, while co
 
 - Users already have items with TOTP seeds in a synced vault; this feature does not create, edit, or import seeds.
 - The earlier decision that a stored seed is "never displayed in v1" (referenced as FR-038 in the code, definition not found) is superseded for generated codes only. Displaying the raw seed stays out of scope.
-- The Steam-style seed form is not supported in this feature; such items show the "unavailable" message.
+- The Steam-style seed form is not supported in this feature; such items show the "unavailable" message. (Superseded by openspec change `totp-parity`, which adds Steam Guard codes.)
 - The device clock is the time source; the app does not compensate for clock error.
 - Code generation uses only the platform's vetted cryptography (Constitution §III); no new third-party cryptography is added.
 - Items the user cannot currently see (for example, trashed items) are excluded from the list.

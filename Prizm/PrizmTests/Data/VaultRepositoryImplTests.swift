@@ -418,7 +418,7 @@ final class VaultRepositoryImplTests: XCTestCase {
             makeLogin(id: "c", name: "NoSeed", totp: nil),
             makeLogin(id: "d", name: "Blank", totp: "   "),
             makeLogin(id: "e", name: "Trashed", totp: "JBSWY3DPEHPK3PXP", isDeleted: true),
-            makeLogin(id: "f", name: "Unusable", totp: "not-a-seed!"),
+            makeLogin(id: "f", name: "Unusable", totp: "!!!"),
             card,
         ], folders: [], organizations: [], collections: [], syncedAt: Date())
 

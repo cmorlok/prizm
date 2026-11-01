@@ -307,8 +307,10 @@ item's detail pane and in a "Codes" list.
   each code is computed. This is best effort: Swift `Data` is copy-on-write and CryptoKit
   makes its own copy of the key, so some copies cannot be zeroed, and the seed `String`
   already lives in the unlocked vault.
-- **Not supported** — Steam-style seeds and HOTP links show "Code unavailable" rather than a
-  wrong code.
+- **Steam Guard** — `steam://` seeds give 5-character Steam codes, derived as the Bitwarden
+  SDK does (`derive_steam_otp`, sdk-internal `c1c9b9a5`) and checked against its vectors.
+- **Not supported** — HOTP links (`otpauth://hotp`), secrets shorter than 8 bits and
+  `digits=0` show "Code unavailable" rather than a code that can never be right.
 
 ---
 

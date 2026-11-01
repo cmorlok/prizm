@@ -20,6 +20,8 @@ enum TOTPSeedParser {
 | `steam://...`, `otpauth://hotp/...` | throws `unsupportedScheme` |
 | `algorithm=MD5`, `digits=5`, `digits=9`, `period=0` | throws `unsupportedParameter` |
 
+Corrected by openspec change `totp-parity`: `steam://<secret>` gives a Steam Guard configuration (5 characters, 30 s); `algorithm=MD5` → SHA-1; `digits=5`/`9` are kept, `digits` above 10 → 10, unparsable → 6; `period=0` → 1, unparsable → 30; letters outside base32 are dropped. Only `otpauth://hotp` (`unsupportedScheme`), `digits=0` (`unsupportedParameter`) and a secret of fewer than 8 bits (`invalidSecret`) still throw.
+
 The parser never logs or includes the seed in an error.
 
 ## GenerateTOTPCodeUseCase (Domain protocol, impl in Data)

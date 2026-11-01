@@ -13,8 +13,9 @@ Resolves the open technical questions for [plan.md](plan.md). No `NEEDS CLARIFIC
 ## 2. Which algorithm and seed forms are supported?
 
 - **Decision**: RFC 6238 TOTP over RFC 4226 truncation. Supported hash algorithms: SHA-1 (default), SHA-256, SHA-512. Digits 6 to 8 (default 6). Period in seconds (default 30), must be positive. Seed forms: a plain base32 secret (case-insensitive, spaces and `=` padding ignored) and an `otpauth://totp/...` link with `secret`, `algorithm`, `digits`, and `period` query parameters.
-- **Rationale**: Matches FR-003 and FR-008. Covers what authenticator apps and Bitwarden accept.
+- **Rationale**: Matches FR-003 and FR-008. Covers what common authenticator apps issue, but not everything Bitwarden accepts (see the correction below).
 - **Rejected inputs (shown as "unavailable")**: Steam-style `steam://` seeds, `otpauth://hotp`, unknown algorithms, digits outside 6 to 8, non-positive period, an empty or invalid base32 secret.
+- **Correction (openspec change `totp-parity`)**: The Bitwarden SDK is lenient, so seeds rejected here showed codes in the official apps. Prizm now parses seeds as the SDK does: Steam Guard (`steam://`, 5 characters), unknown algorithms → SHA-1, digits clamped to 0–10, unparsable values → defaults, non-base32 letters dropped. Only `otpauth://hotp`, a secret of fewer than 8 bits and `digits=0` stay "unavailable".
 - **Alternatives**: Supporting Steam (out of scope per spec assumptions); silently coercing bad parameters to defaults (rejected: would show wrong codes and break trust).
 
 ## 3. How are codes refreshed?
