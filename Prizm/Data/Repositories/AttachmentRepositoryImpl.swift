@@ -136,7 +136,8 @@ final class AttachmentRepositoryImpl: AttachmentRepository {
         // Step 8: the item from the answer, else the local patch.
         if !(await apply(metaResponse.cipherResponse, for: cipherId)) {
             logger.info("upload: answer has no usable item, patching the list locally for \(cipherId, privacy: .public)")
-            let currentList = (try? await vaultRepository.allItems().first { $0.id == cipherId })?.attachments ?? []
+            // By id over every cached item: `allItems()` leaves out archived ones (archived-items).
+            let currentList = (try? await vaultRepository.itemDetail(id: cipherId))?.attachments ?? []
             await vaultRepository.updateAttachments(LegacyAttachmentListPatch.adding(newAttachment, to: currentList),
                                                     for: cipherId)
         }
@@ -321,7 +322,7 @@ final class AttachmentRepositoryImpl: AttachmentRepository {
         let answer = try await apiClient.deleteAttachment(cipherId: cipherId, attachmentId: attachmentId)
         if !(await apply(answer, for: cipherId)) {
             logger.info("delete: answer has no usable item, patching the list locally for \(cipherId, privacy: .public)")
-            let currentList = (try? await vaultRepository.allItems().first { $0.id == cipherId })?.attachments ?? []
+            let currentList = (try? await vaultRepository.itemDetail(id: cipherId))?.attachments ?? []
             await vaultRepository.updateAttachments(LegacyAttachmentListPatch.removing(attachmentId, from: currentList),
                                                     for: cipherId)
         }

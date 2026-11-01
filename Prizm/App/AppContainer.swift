@@ -55,6 +55,7 @@ final class AppContainer: ObservableObject {
     let permanentDeleteVaultItemUseCase: PermanentDeleteVaultItemUseCaseImpl
     let restoreVaultItemUseCase:         RestoreVaultItemUseCaseImpl
     let getPasswordHistoryUseCase:       GetPasswordHistoryUseCaseImpl
+    let setItemArchivedUseCase:          SetItemArchivedUseCaseImpl
     let createFolderUseCase:             CreateFolderUseCaseImpl
     let renameFolderUseCase:             RenameFolderUseCaseImpl
     let deleteFolderUseCase:             DeleteFolderUseCaseImpl
@@ -190,6 +191,7 @@ final class AppContainer: ObservableObject {
         self.permanentDeleteVaultItemUseCase = PermanentDeleteVaultItemUseCaseImpl(repository: vault)
         self.restoreVaultItemUseCase         = RestoreVaultItemUseCaseImpl(repository: vault)
         self.getPasswordHistoryUseCase       = GetPasswordHistoryUseCaseImpl(repository: vault)
+        self.setItemArchivedUseCase          = SetItemArchivedUseCaseImpl(repository: vault)
         self.createFolderUseCase             = CreateFolderUseCaseImpl(repository: vault)
         self.renameFolderUseCase             = RenameFolderUseCaseImpl(repository: vault)
         self.deleteFolderUseCase             = DeleteFolderUseCaseImpl(repository: vault)
@@ -281,7 +283,8 @@ final class AppContainer: ObservableObject {
             deleteCollection: deleteCollectionUseCase,
             syncTimestamp:    syncTimestampRepository,
             getLastSyncDate:  getLastSyncDateUseCase,
-            sync:             sync
+            sync:             sync,
+            setArchived:      setItemArchivedUseCase
         )
         #if DEBUG
         // The seeded UI-test vault holds an old-format attachment; a notice sheet after its

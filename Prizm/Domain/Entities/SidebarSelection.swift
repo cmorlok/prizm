@@ -60,6 +60,8 @@ nonisolated enum SidebarSelection {
     case collection(String)
     /// Transient state while the user is typing a new collection name inline.
     case newCollection(organizationId: String)
+    /// Archived items that are not in Trash (archived-items). Shown only while it lists any.
+    case archive
 }
 
 extension SidebarSelection {
@@ -75,6 +77,7 @@ extension SidebarSelection {
         case .organization:                  return "Organization"
         case .collection:                    return "Collection"
         case .newCollection:                 return "New Collection"
+        case .archive:                       return "Archive"
         }
     }
 }
@@ -92,6 +95,8 @@ nonisolated extension SidebarSelection: Hashable {
         case (.organization(let a), .organization(let b)):               return a == b
         case (.collection(let a), .collection(let b)):                   return a == b
         case (.newCollection(let a), .newCollection(let b)):             return a == b
+        // Listed here by hand: the `default` below would otherwise make `.archive != .archive`.
+        case (.archive, .archive):                                       return true
         default:                                                         return false
         }
     }
@@ -108,6 +113,7 @@ nonisolated extension SidebarSelection: Hashable {
         case .collection(let id):                hasher.combine(7); hasher.combine(id)
         case .newCollection(let orgId):          hasher.combine(8); hasher.combine(orgId)
         case .verificationCodes:                 hasher.combine(9)
+        case .archive:                           hasher.combine(10)
         }
     }
 }

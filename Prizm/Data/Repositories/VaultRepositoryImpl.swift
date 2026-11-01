@@ -163,7 +163,8 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
 
     private func buildIndexes() {
         // Local staging variable — not stored; _bySelection[.allItems] serves the same role.
-        let active = items.filter { !$0.isDeleted }
+        // Archived items leave every everyday list, as in the official clients (archived-items, D2).
+        let active = items.filter(\.isActive)
 
         // Build org-collection map first: used by both _bySelection and _counts.
         var orgColIds: [String: Set<String>] = [:]
@@ -177,6 +178,7 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
         bySelection[.allItems]  = sorted(active)
         bySelection[.favorites] = sorted(active.filter(\.isFavorite))
         bySelection[.trash]     = sorted(items.filter(\.isDeleted))
+        bySelection[.archive]   = sorted(items.filter { !$0.isDeleted && $0.isArchived })
         // Verification Codes: every non-trashed Login with a non-blank seed. Whether the seed is
         // *usable* is decided at display time, so items with bad seeds still appear (as
         // "unavailable") and the user can see they exist.
@@ -219,6 +221,7 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
         counts[.allItems]  = bySelection[.allItems]?.count  ?? 0
         counts[.favorites] = bySelection[.favorites]?.count ?? 0
         counts[.trash]     = bySelection[.trash]?.count     ?? 0
+        counts[.archive]   = bySelection[.archive]?.count   ?? 0
         counts[.verificationCodes] = bySelection[.verificationCodes]?.count ?? 0
         for type in ItemType.allCases {
             counts[.type(type)] = bySelection[.type(type)]?.count ?? 0
@@ -953,6 +956,55 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
         await refreshRecord(id: id, from: restored, token: storeGeneration)
     }
 
+    // MARK: - Archive (archived-items)
+
+    func isArchiveSupported() async -> Bool {
+        await recordStore.keepsArchiveState
+    }
+
+    /// Archives or unarchives one item (archived-items, design D3).
+    ///
+    /// - Queued with the item's other writes, with the store generation read before the queue, like
+    ///   `restoreItem`: a lock during the wait or the request drops the result.
+    /// - The answer is not applied: the cached item moves as requested, then the record is fetched
+    ///   (`refreshRecord`), so the next edit sends the server's archive state and revision back and
+    ///   another client's edit still meets the conflict check (code review 2026-10-31).
+    /// - Item fields are never sent, so the action cannot lose data.
+    func setArchived(id: String, archived: Bool) async throws {
+        let storeGeneration = recordStore.currentGeneration()
+        try await serialised([id]) { [self] in
+            try await performSetArchived(id: id, archived: archived, storeGeneration: storeGeneration)
+        }
+    }
+
+    private func performSetArchived(id: String, archived: Bool,
+                                    storeGeneration: RawCipherStore.Generation) async throws {
+        guard recordStore.isCurrent(storeGeneration) else { throw VaultError.vaultLocked }
+        do {
+            // The answer (`ArchiveStateAnswer`) is not applied; see below.
+            _ = try await apiClient.setCipherArchived(id: id, archived: archived)
+        } catch {
+            logger.error("\(archived ? "Archive" : "Unarchive", privacy: .public) of \(id, privacy: .public) failed: \(ErrorLog.describe(error), privacy: .public)")
+            throw LegacyArchiveSupport.error(for: error)
+        }
+        guard recordStore.isCurrent(storeGeneration) else {
+            logger.info("Archive answer dropped, the vault was cleared while it ran: \(id, privacy: .public)")
+            throw VaultError.vaultLocked
+        }
+        logger.info("Vault item \(archived ? "archived" : "unarchived", privacy: .public): \(id, privacy: .public)")
+
+        // Moved now from what was asked, then the record is fetched. The answer's revision is not
+        // applied to the stored record: if another client changed the item meanwhile, a record
+        // with the old content and the new revision would let the next save overwrite that change
+        // without a conflict. `refreshRecord` keeps the cached revision behind in that case
+        // (review of archived-items). No await between the check above and this change.
+        if let idx = items.firstIndex(where: { $0.id == id }) {
+            items[idx] = items[idx].with(archivedDate: archived ? (items[idx].archivedDate ?? Date()) : nil)
+            buildIndexes()
+        }
+        await refreshRecord(id: id, from: nil, token: storeGeneration)
+    }
+
     // MARK: - Attachment cache patch
 
     /// Replaces the `attachments` array for the item identified by `cipherId` in the
@@ -1375,9 +1427,15 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
               CipherMapper.sameRevision(items[idx].revisionDate, beforeRevision),
               RecordContent.isSame(before, fresh) else {
             logger.info("Revision refresh found the item changed elsewhere, cached revision kept: \(id, privacy: .public)")
+            // The archive state is per user and not part of the conflict check, so it follows the
+            // server even here (verify 2026-10-31).
+            items[idx] = items[idx].with(archivedDate: CipherMapper.archivedDate(of: fresh))
+            buildIndexes()
             return
         }
-        items[idx] = items[idx].with(revisionDate: revision)
+        // The archive state is per user and not part of the compared content: an archive change
+        // made elsewhere reaches the lists here (archived-items, D3).
+        items[idx] = items[idx].with(revisionDate: revision).with(archivedDate: CipherMapper.archivedDate(of: fresh))
         buildIndexes()
     }
 
@@ -1622,13 +1680,15 @@ private actor FetchSlots {
 nonisolated private enum RecordContent {
 
     /// Members that change without the item's content changing, or that Prizm's own operations
-    /// change: the revision, the trash state, the folder, the favorite flag, the collections, and
-    /// the request-only members. A refresh runs after exactly these operations (soft delete,
-    /// restore, favorite, move, collection update), so a difference here is expected and says
+    /// change: the revision, the trash state, the folder, the favorite flag, the collections, the
+    /// archive state, and the request-only members. A refresh runs after exactly these operations (soft delete,
+    /// restore, favorite, move, collection update, archive), so a difference here is expected and says
     /// nothing about another client. Attachments are never encoded, so they are not listed.
     static let ignoredMembers: Set<String> = [
         "revisionDate", "deletedDate", "folderId", "favorite", "collectionIds",
         "encryptedFor", "lastKnownRevisionDate",
+        // Per user, and changed by Prizm's own archive actions (archived-items, D3).
+        "archivedDate",
     ]
 
     static func isSame(_ lhs: RawCipher, _ rhs: RawCipher) -> Bool {

@@ -94,6 +94,8 @@ final class MockVaultRepository: VaultRepository {
             }
         case .newFolder:
             return []
+        case .archive:
+            return populatedItems.filter { !$0.isDeleted && $0.isArchived }
         case .organization(let orgId):
             let orgColIds = Set(populatedCollections.filter { $0.organizationId == orgId }.map(\.id))
             return populatedItems.filter { $0.collectionIds.contains(where: { orgColIds.contains($0) }) }
@@ -113,7 +115,10 @@ final class MockVaultRepository: VaultRepository {
     var stubbedItemCounts: [SidebarSelection: Int] = [:]
     func itemCounts() async throws -> [SidebarSelection: Int] { stubbedItemCounts }
 
+    private(set) var itemDetailCallCount = 0
+
     func itemDetail(id: String) async throws -> VaultItem {
+        itemDetailCallCount += 1
         guard let item = populatedItems.first(where: { $0.id == id }) else {
             throw VaultError.itemNotFound(id)
         }
@@ -196,6 +201,19 @@ final class MockVaultRepository: VaultRepository {
         if let error = stubbedPasswordHistoryError { throw error }
         return stubbedPasswordHistory
     }
+
+    // MARK: - archive stubbing
+
+    var stubbedArchiveSupported = true
+    var stubbedSetArchivedError: Error?
+    private(set) var setArchivedCalls: [(id: String, archived: Bool)] = []
+
+    func setArchived(id: String, archived: Bool) async throws {
+        setArchivedCalls.append((id, archived))
+        if let error = stubbedSetArchivedError { throw error }
+    }
+
+    func isArchiveSupported() async -> Bool { stubbedArchiveSupported }
 
     // MARK: - restoreItem stubbing
 

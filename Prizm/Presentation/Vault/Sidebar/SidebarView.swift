@@ -202,6 +202,12 @@ struct SidebarView: View {
                 )
             }
         case .trash:
+            // Shown only while it lists items: on a server without archive it never does
+            // (archived-items, D5–D6).
+            if let archived = itemCounts[.archive], archived > 0 {
+                SidebarRowView(title: "Archive", systemImage: "archivebox", selection: .archive, count: archived)
+                    .accessibilityIdentifier(AccessibilityID.Archive.sidebarRow)
+            }
             SidebarRowView(title: "Trash", systemImage: "trash", selection: .trash, count: itemCounts[.trash] ?? 0)
         }
     }

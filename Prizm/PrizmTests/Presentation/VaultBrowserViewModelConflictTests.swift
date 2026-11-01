@@ -167,12 +167,12 @@ final class VaultBrowserViewModelConflictTests: XCTestCase {
         let outcome = await sut.resyncAfterConflict()
         // Wait until the list shows the synced vault and the selection refresh has read it: that
         // refresh is where a wrong selection would come from.
-        try await waitUntil { vault.allItemsCallCount > 0 && sut.displayedItems.map(\.id) == ["other"] }
+        try await waitUntil { vault.itemDetailCallCount > 0 && sut.displayedItems.map(\.id) == ["other"] }
         // The refresh assigns right after its read; let that step run before looking.
         for _ in 0..<3 { await Task.yield() }
 
         XCTAssertEqual(outcome, .synced)
-        XCTAssertGreaterThan(vault.allItemsCallCount, 0, "The selection refresh ran")
+        XCTAssertGreaterThan(vault.itemDetailCallCount, 0, "The selection refresh ran")
         XCTAssertEqual(sut.displayedItems.map(\.id), ["other"])
         XCTAssertEqual(sut.itemSelection?.id, "item-1",
                        "The selection stays on the edited item, whose sheet explains that it is gone; it never moves to another item")

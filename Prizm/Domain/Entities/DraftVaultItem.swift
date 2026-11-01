@@ -269,6 +269,9 @@ nonisolated struct DraftVaultItem: Equatable {
     /// the user's collection change to what the server holds now, not this list as a whole
     /// (`CollectionAssignment.rebased`, fix-collection-assignment D2a).
     private(set) var originalCollectionIds: [String]? = nil
+    /// The item's archive state, carried unchanged so an item built from the draft stays where it
+    /// was listed (archived-items). Not editable.
+    private(set) var archivedDate: Date? = nil
 
     /// Creates a blank draft for a new item of the given type.
     static func blank(type: ItemType) -> DraftVaultItem {
@@ -323,6 +326,7 @@ nonisolated struct DraftVaultItem: Equatable {
         self.organizationId = item.organizationId
         self.collectionIds = item.collectionIds
         self.originalCollectionIds = item.collectionIds
+        self.archivedDate = item.archivedDate
         self.content = {
             switch item.content {
             case .login(let c):      return .login(DraftLoginContent(c))
@@ -422,7 +426,8 @@ extension VaultItem {
             id: draft.id, name: draft.name, isFavorite: draft.isFavorite, isDeleted: draft.isDeleted,
             creationDate: draft.creationDate, revisionDate: draft.revisionDate, content: content,
             reprompt: draft.reprompt, attachments: [], folderId: draft.folderId,
-            organizationId: draft.organizationId, collectionIds: draft.collectionIds
+            organizationId: draft.organizationId, collectionIds: draft.collectionIds,
+            archivedDate: draft.archivedDate
         )
     }
 }
