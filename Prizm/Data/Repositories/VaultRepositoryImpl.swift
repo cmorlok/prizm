@@ -711,7 +711,6 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
         // lands while the request runs makes the store write and the cache write below refuse. A
         // token read at the write would always be current.
         let storeGeneration = recordStore.currentGeneration()
-        let keyCacheGeneration = await vaultKeyCache.generation
 
         let vaultKeys: CryptoKeys
         do {
@@ -807,10 +806,10 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
         await storeRecord(createdRaw, ifCurrent: storeGeneration)
         // An attachment added before the next sync needs the new item's key source; without it the
         // key service refuses (fix-org-attachment-key, D2). The cache ignores it when a lock
-        // cleared the cache since the request began, so it never reaches the next session; a lock
-        // in this await is caught by the check below for the item cache.
+        // started since the request began, so it never reaches the next session; a lock in this
+        // await is caught by the check below for the item cache.
         await vaultKeyCache.record(.of(createdRaw, effectiveKey: cipherKey), for: createdRaw.id,
-                                   ifGeneration: keyCacheGeneration)
+                                   ifStillCurrent: { [recordStore] in recordStore.isCurrent(storeGeneration) })
         // Last check before the cache write: everything below is synchronous.
         guard recordStore.isCurrent(storeGeneration) else {
             logger.info("Save finished after lock, dropped: \(createdRaw.id, privacy: .public)")

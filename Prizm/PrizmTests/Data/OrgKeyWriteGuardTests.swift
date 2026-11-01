@@ -141,6 +141,33 @@ final class OrgKeyCacheReplaceAllTests: XCTestCase {
         let after = await cache.snapshot()
         XCTAssertTrue(after.isEmpty)
     }
+
+    // MARK: - Lock fence (lock-state-machine, design D8, gap 6)
+
+    /// A sync whose session ended after its last lock check leaves the cache as the lock left it
+    /// (empty) and zeroes the keys it brought.
+    func testReplaceAllIfStillCurrent_staleSession_keepsTheCacheAndZeroesTheNewKeys() async {
+        let cache = OrgKeyCache()
+        let zeroed = Mutex<[OrgKeyCache.ZeroedOrgKey]>([])
+        await cache.setZeroedObserver { key in zeroed.withLock { $0.append(key) } }
+
+        let written = await cache.replaceAll(with: ["org-1": key(9)], ifStillCurrent: { false })
+
+        XCTAssertFalse(written)
+        let snapshot = await cache.snapshot()
+        XCTAssertTrue(snapshot.isEmpty)
+        let seen = zeroed.withLock { $0 }
+        XCTAssertEqual(seen.count, 1)
+        XCTAssertTrue(seen.allSatisfy { $0.encryptionKey.allSatisfy { $0 == 0 } && $0.macKey.allSatisfy { $0 == 0 } })
+    }
+
+    func testReplaceAllIfStillCurrent_currentSession_replaces() async {
+        let cache = OrgKeyCache()
+        let written = await cache.replaceAll(with: ["org-1": key(3)], ifStillCurrent: { true })
+        XCTAssertTrue(written)
+        let snapshot = await cache.snapshot()
+        XCTAssertEqual(Set(snapshot.keys), ["org-1"])
+    }
 }
 
 /// The sync swaps the org keys in one step (design D2).

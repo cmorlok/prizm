@@ -53,11 +53,6 @@ actor VaultKeyCache {
     /// Maps cipher ID → key source.
     private var cache: [String: CipherKeySource] = [:]
 
-    /// Counts `clear()` calls. A create reads it before its request and records the new item only
-    /// if no lock cleared the cache in between, so a source (and an item key) never outlives the
-    /// session it was made in.
-    private(set) var generation = 0
-
     // MARK: - Public API
 
     #if DEBUG
@@ -68,23 +63,52 @@ actor VaultKeyCache {
     }
     #endif
 
-    /// Replaces the entire cache with the provided mapping.
+    /// Replaces the entire cache with the provided mapping, if the sync's session is still current.
     ///
     /// Called by `SyncRepositoryImpl` after sync completes. This is a wholesale
     /// replace (not a merge) so stale entries from a previous sync are evicted.
-    /// Intentionally NOT done: zeroing the replaced keys. The sync passes overlapping maps (the
-    /// personal pass, then the org pass with the same buffers), so zeroing here could wipe keys
-    /// still in use; they are dropped and stay until the memory is reused (SECURITY.md).
-    func populate(sources: [String: CipherKeySource]) {
+    ///
+    /// - Security goal: a lock between the sync's last lock check and this write must not leave the
+    ///   new sources, item keys included, in the cache the lock just cleared (openspec change
+    ///   `lock-state-machine`, gap 6). `isStillCurrent` is evaluated here, inside the actor and in
+    ///   the same turn as the write, so no lock can land between check and write.
+    /// - A refused write zeroes the item keys it was given (best effort: a buffer shared with the
+    ///   caller is copied on write and only the copy is zeroed; see SECURITY.md).
+    /// - Intentionally NOT done: zeroing the replaced keys. The sync passes overlapping maps (the
+    ///   personal pass, then the org pass with the same buffers), so zeroing here could wipe keys
+    ///   still in use; they are dropped and stay until the memory is reused (SECURITY.md).
+    /// - Returns: false when the session ended; the cache is unchanged then.
+    @discardableResult
+    func populate(sources: [String: CipherKeySource], ifStillCurrent isStillCurrent: @Sendable () -> Bool) -> Bool {
+        guard isStillCurrent() else {
+            var refused = sources
+            zeroItemKeys(in: &refused)
+            logger.info("VaultKeyCache: \(sources.count, privacy: .public) source(s) not written: the session ended")
+            return false
+        }
         cache = sources
         logger.info("VaultKeyCache populated: \(sources.count, privacy: .public) entry/entries")
+        return true
     }
 
+    #if DEBUG
+    /// Test seam: replaces the cache without a session check, for tests that set up a cache.
+    func populate(sources: [String: CipherKeySource]) {
+        populate(sources: sources, ifStillCurrent: { true })
+    }
+    #endif
+
     /// Adds or replaces the entry of one item, keeping the others (a new item after a create).
-    /// Ignored when the cache was cleared since `generation` was read.
-    func record(_ source: CipherKeySource, for cipherId: String, ifGeneration expected: Int) {
-        guard expected == generation else {
-            logger.info("Key source of \(cipherId, privacy: .public) not recorded: the cache was cleared since the request began")
+    ///
+    /// - Security goal: a create that a lock overtook must not leave its key source (and item key)
+    ///   in the next session. `isStillCurrent` is the session gate's check of the create's token,
+    ///   evaluated inside the actor in the write's turn (lock-state-machine, task 1.2); a refused
+    ///   item key is zeroed.
+    func record(_ source: CipherKeySource, for cipherId: String, ifStillCurrent isStillCurrent: @Sendable () -> Bool) {
+        guard isStillCurrent() else {
+            var refused = [cipherId: source]
+            zeroItemKeys(in: &refused)
+            logger.info("Key source of \(cipherId, privacy: .public) not recorded: the session ended since the request began")
             return
         }
         cache[cipherId] = source
@@ -108,14 +132,20 @@ actor VaultKeyCache {
     /// Zeroing before clearing reduces the window during which key bytes remain on the
     /// heap after the cache is discarded (Constitution §III).
     func clear() {
-        generation &+= 1
-        // Iterate over a copy of the ids: a live `cache.keys` view holds the dictionary's storage,
+        zeroItemKeys(in: &cache)
+        cache.removeAll()
+        logger.info("VaultKeyCache cleared — key material zeroed")
+    }
+
+    /// Zeroes every item key in `map` and replaces it with `.personal`.
+    private func zeroItemKeys(in map: inout [String: CipherKeySource]) {
+        // Iterate over a copy of the ids: a live `map.keys` view holds the dictionary's storage,
         // so the first write would copy the dictionary and its key buffers and zero only the copy.
-        for id in Array(cache.keys) {
-            guard case .itemKey(var key)? = cache[id] else { continue }
+        for id in Array(map.keys) {
+            guard case .itemKey(var key)? = map[id] else { continue }
             // Take the buffer out of the dictionary first, so it has one owner and is zeroed in
             // place, not in a copy made by copy-on-write. Slices need their actual indices.
-            cache[id] = .personal
+            map[id] = .personal
             #if DEBUG
             let before = key.withUnsafeBytes { UInt(bitPattern: $0.baseAddress) }
             #endif
@@ -125,7 +155,5 @@ actor VaultKeyCache {
             zeroedObserver?(key, before == after)
             #endif
         }
-        cache.removeAll()
-        logger.info("VaultKeyCache cleared — key material zeroed")
     }
 }

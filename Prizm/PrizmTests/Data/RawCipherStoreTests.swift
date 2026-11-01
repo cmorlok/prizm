@@ -187,6 +187,46 @@ final class RawCipherStoreTests: XCTestCase {
         XCTAssertNotNil(itemKeyAfter, "The discarded sync must not replace the per-item keys")
     }
 
+    /// A lock that lands after the sync's last lock check, on the hop to the org key cache, leaves
+    /// no org keys behind (lock-state-machine, gap 6).
+    func testLockAfterTheLastCheck_beforeTheOrgKeyWrite_leavesNoOrgKeys() async throws {
+        let rig = await makeRig()
+        rig.api.syncResponse = try goldenSyncResponse()
+        rig.crypto.stubbedDecryptList = [vaultItem("a")]
+        let store = rig.store
+        // The first lock check of a sync with organizations sits right before the org key write.
+        rig.crypto.whileCheckingUnlocked = { store.invalidate() }
+
+        _ = try? await rig.sync.sync(progress: { _ in })
+
+        let orgKeysAfter = await rig.orgKeyCache.snapshot()
+        XCTAssertTrue(orgKeysAfter.isEmpty, "A sync locked after its check must not write org keys")
+        let anySource = await rig.vaultKeyCache.source(for: "a")
+        XCTAssertNil(anySource)
+    }
+
+    /// The same for the item key cache: without organizations, the first lock check sits right
+    /// before `populate` (phase 2d).
+    func testLockAfterTheLastCheck_beforeTheItemKeyWrite_leavesNoKeySources() async throws {
+        let rig = await makeRig()
+        let golden = try goldenSyncResponse()
+        rig.api.syncResponse = SyncResponse(profile: golden.profile, ciphers: golden.ciphers, folders: golden.folders)
+        rig.crypto.stubbedDecryptList = [vaultItem("a")]
+        rig.crypto.stubbedKeySources = ["a": .itemKey(Data(repeating: 0x5A, count: 64))]
+        let store = rig.store
+        rig.crypto.whileCheckingUnlocked = { store.invalidate() }
+
+        do {
+            _ = try await rig.sync.sync(progress: { _ in })
+            XCTFail("A sync locked after its check must throw")
+        } catch PrizmCryptoServiceError.vaultLocked {
+            // expected
+        }
+
+        let source = await rig.vaultKeyCache.source(for: "a")
+        XCTAssertNil(source, "A sync locked after its check must not write key sources")
+    }
+
     /// The same for an answer without organizations, which clears the org keys of leavers.
     func testSyncWithoutOrganizationsStillRunningAtLock_doesNotClearTheNextSessionsOrgKeys() async throws {
         let rig = await makeRig()

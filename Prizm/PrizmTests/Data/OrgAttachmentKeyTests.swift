@@ -101,7 +101,7 @@ final class OrgAttachmentKeyTests: XCTestCase {
 
     // MARK: - 1.3 / 3.2 Create records the source
 
-    private func makeCreateRig() async -> (vault: VaultRepositoryImpl, api: MockPrizmAPIClient,
+    private func makeCreateRig(gate: SessionGateImpl = SessionGateImpl()) async -> (vault: VaultRepositoryImpl, api: MockPrizmAPIClient,
                                            cache: VaultKeyCache, service: VaultKeyServiceImpl,
                                            vaultKeys: CryptoKeys, orgKeys: CryptoKeys) {
         let vaultKeys = KeyedCipherBuilder.randomKeys()
@@ -115,7 +115,8 @@ final class OrgAttachmentKeyTests: XCTestCase {
         await orgKeyCache.replaceAll(with: ["org-1": orgKeys])
         let cache = VaultKeyCache()
         let vault = await RepositoryFixtures.vaultRepository(
-            apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache, vaultKeyCache: cache)
+            apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache, recordStore: RawCipherStore(gate: gate),
+            vaultKeyCache: cache)
         let service = VaultKeyServiceImpl(cache: cache, orgKeyCache: orgKeyCache, crypto: crypto)
         // The server stores the keyed request and answers with it under a new id.
         api.createCipherResponder = { try RepositoryFixtures.echoCreated($0, id: "new-1") }
@@ -138,12 +139,18 @@ final class OrgAttachmentKeyTests: XCTestCase {
     }
 
     func testCreateFinishingAfterALock_recordsNoKeySource() async throws {
-        let rig = await makeCreateRig()
+        let gate = SessionGateImpl()
+        let rig = await makeCreateRig(gate: gate)
         // The mock answers with the request itself, which carries the new item's key, so the create
         // reaches the cache write; only the lock may stop it there.
         let cache = rig.cache
-        // The lock clears the key cache while the create request is on its way.
-        rig.api.whileCreatingCipher = { await cache.clear() }
+        // A lock while the create request is on its way, as the root runs it: the session ends
+        // first, then the key cache is cleared (lock-state-machine, D1; the cache's own counter is
+        // gone, task 1.2).
+        rig.api.whileCreatingCipher = {
+            gate.end()
+            await cache.clear()
+        }
         var draft = DraftVaultItem.blank(type: .login)
         draft.name = "Late"
 
