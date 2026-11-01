@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Added: archive. Archive an item from its context menu or the toolbar to move it out of your
+  everyday lists, search and verification codes; the Archive entry in the sidebar lists archived
+  items, and Unarchive brings them back. Needs a server with archive (Vaultwarden 1.36.0 or later,
+  Bitwarden server 2025.10.0 or later); on older servers the action is hidden.
+- Fixed: items archived in another Bitwarden app no longer show in All Items, Favorites, folders,
+  search or Codes; they are listed under Archive.
 - Added: password history. When you change a login's password, or change, rename or remove a
   hidden custom field, Prizm keeps the old value in the item's history (the last five, as the
   official apps do). The item footer shows when the password last changed and a "Password history"

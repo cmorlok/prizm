@@ -14,8 +14,10 @@
   - routes at `src/api/core/ciphers.rs:1778-1805`
   - single archive at `:2026-2056`: it checks only that the item is accessible to the user, with
     no premium check
-  - the response is the full cipher JSON (Vaultwarden only; the official answer model is not
-    verified yet: task 1.1, so D3 takes nothing else from it)
+  - the response is the full cipher JSON (`cipherDetails`); `archivedDate` is an ISO 8601 string
+    with microseconds, and `null` (key present) for an item that is not archived (rig, task 1.1)
+  - an unknown id answers **400** "Cipher doesn't exist", not 404 (rig, task 1.1)
+  - soft delete and restore keep `archivedDate` (rig, task 1.1)
 - `PUT /api/ciphers/<id>` with `archivedDate` absent or null **unarchives** the item (`:580-586`).
 - `/api/config` enables `pm-19148-innovation-archive` (`src/api/core/mod.rs:222`).
 - The profile always reports `"premium": true` (`src/db/models/user.rs:312`).
@@ -32,8 +34,14 @@
   ciphers that are not yet archived (`server/src/Core/Vault/Commands/ArchiveCiphersCommand.cs:23-60`).
 - `CipherResponseModel.ArchivedDate` (`CipherResponseModel.cs:298,314`).
 - The request writes `ArchivedDate` into the per-user `Archives` JSON
-  (`CipherRequestModel.cs:79,195,257`). Whether an absent value removes the user's entry needs
-  confirming (task 1.1).
+  (`CipherRequestModel.cs:79,195,257`). An absent or `null` value removes the user's entry
+  (`UpdateUserSpecificJsonField`, `CipherRequestModel.cs:500-515` at v2026.10.1), so an edit
+  without `archivedDate` unarchives the item, as on Vaultwarden (task 1.1).
+- `PutArchive`/`PutUnarchive` answer a `CipherResponseModel` built by `BuildWriteReturnResponseAsync`
+  and carry no feature attribute; an id the user cannot archive answers 400 "Cipher was not
+  archived…" (`CiphersController.cs:1053-1067,1253-1267` at v2026.10.1). Soft delete and restore do
+  not touch `Archives` (`CipherService.cs`). So only a server without the route answers 404, which
+  is what D5 maps to "doesn't support archiving".
 - The profile has `Premium` and `PremiumFromOrganization`
   (`server/src/Api/Models/Response/ProfileResponseModel.cs:64-65`).
 
@@ -112,7 +120,8 @@ local edit or move puts an archived item back into All Items until the next sync
 
 **Delete and restore** keep the cached `archivedDate` only when the server answer or re-fetched
 record says so: after soft delete and restore, the cached `archivedDate` is taken from the record
-that the existing refresh fetches (task 1.1 records whether either server clears it).
+that the existing refresh fetches. Neither server clears it (task 1.1), so a restored archived
+item goes back to Archive.
 
 ### D3. Archive and Unarchive call the dedicated endpoints
 
@@ -122,8 +131,9 @@ that the existing refresh fetches (task 1.1 records whether either server clears
   store generation token, like `performRestoreItem` (`VaultRepositoryImpl.swift:832-850`); a lock
   during the request drops the result. One use case, `SetItemArchivedUseCase.execute(id:archived:)`
   (Domain protocol, Data impl), calls it; it never touches repository state itself.
-- The answer is not applied (the official answer may be a `CipherMiniResponseModel` without
-  folder, favourite, edit or collections; task 1.1). After the request, the cached item moves to
+- The answer is not applied. Both servers answer the full cipher (task 1.1), but applying it could
+  hide another client's edit made in between (code review R1); the record fetched afterwards is
+  checked like every refresh. After the request, the cached item moves to
   Archive or back at once, from what was asked, and the record is fetched (`refreshRecord`), which
   updates the stored record, so the next edit sends the current `archivedDate` back.
   Changed after the review (2026-10-31): the first version patched the stored record with the
@@ -219,3 +229,22 @@ the archived login that `--ui-test-archived` adds), as a server with archive sen
    back, so it affects no code here.
 
 Closed 2026-10-30 (Christian): no premium gate (D4).
+
+## Review
+
+- Spec challenge (fresh agent, before code): 13 findings, all adopted.
+- Code review (fresh agent, 2026-10-31): 2 medium, 3 low, fixed. R1: applying the archive answer
+  could hide another client's edit; the record is now fetched after the request and the answer is
+  not applied. R2: unarchiving the last archived item dropped the selection on the fallback to All
+  Items; it is kept. R4: the view model checks the session after the request. R5: API client tests.
+  Serialisation of two requests has no test of its own (note). Red 20261031T080448Z/080615Z, green
+  20261031T080645Z.
+- `/opsx:verify` (2026-10-31): 0 critical, 3 warnings, 5 suggestions. W1 restore from Trash and a
+  refresh that finds an archive change elsewhere: tests added, and the changed-elsewhere branch of
+  the refresh now applies `archivedDate` (red 20261031T182458Z, green 20261031T182515Z). W2
+  attachments on an archived item: tests added. W3 stale doc comment fixed. S5 FIX-ORDER: already
+  listed.
+- Rig (Vaultwarden 1.37.4, `bw` 2026.9.1, 2026-10-31, `.planning/batch3/live038.sh`): server probes
+  for task 1.1 (results in Context) and every task 5.2 case PASS (unit run 20261031T183859Z).
+- UI: `ArchivedItemsJourneyTests` 2/2 (20261031T210138Z). VoiceOver hand check of the badge and the
+  announcements: Christian, 2026-10-31.
