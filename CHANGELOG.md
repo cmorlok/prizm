@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Added: "No Folder" and "My Vault" in the sidebar, for items without a folder and for items that
+  belong to no organization.
+- Added: custom fields can be added (text, hidden, checkbox, linked), renamed, removed and moved up
+  or down in the edit sheet. VoiceOver names each field's controls and announces moves.
+- Changed: search matches several words in any field, ignores accents, and also searches notes,
+  card brand and last four digits, identity names and SSH key fingerprints. Lists sort numbers
+  naturally ("Server 2" before "Server 10"), and logins with the same name by username. Folders and
+  collections whose names differ only in case are no longer merged.
 - Added: archive. Archive an item from its context menu or the toolbar to move it out of your
   everyday lists, search and verification codes; the Archive entry in the sidebar lists archived
   items, and Unarchive brings them back. Needs a server with archive (Vaultwarden 1.36.0 or later,

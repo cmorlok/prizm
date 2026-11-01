@@ -239,3 +239,22 @@ states the search targets and the virtual-parent rule.
 
 None. Closed 2026-10-30 (Christian): clone and bulk delete/restore stay out (README, D7); "No Folder"
 is hidden when the user has no folders (D3).
+
+## Review
+
+- Spec challenge (fresh agent, before code): 20 findings, all adopted.
+- Code review (fresh agent, 2026-10-31): 1 medium, 5 low. Medium: after a reorder, fields with the
+  same name swapped their unknown keys; fields are now paired by their read position. Low: total
+  sort key, trimmed names, shared last-four helper, a scenario moved; one kept (row controls match
+  `URIEditRow`). Compile-red 20261031T081012Z, green 20261031T081120Z.
+- No security review needed: no crypto, keys or tokens change; custom-field writes use the reviewed
+  save path.
+- `/opsx:verify` (2026-10-31): 0 critical, 2 warnings, 3 suggestions. W1: the main specs
+  `vault-folder-organization` (items without a folder), `vault-browser-ui` (sort order) and
+  `global-search` (highlighting per word) contradicted this change; corrected by hand in this
+  archive commit. W2: remove-then-cancel test added. Suggestions done (D2 wording, `VaultSort` doc
+  comment, notes-only highlight test; green 20261031T182813Z).
+- Rig (Vaultwarden 1.37.4, `bw` 2026.9.1): fields added and reordered in Prizm come back in the same
+  order (20261031T081759Z).
+- UI: `BrowsingFiltersJourneyTests`, `CustomFieldEditJourneyTests` and `VaultBrowserJourneyTests`
+  passed (20261031T210247Z). VoiceOver hand check: Christian, 2026-10-31.
