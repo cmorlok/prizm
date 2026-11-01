@@ -502,8 +502,12 @@ final class RootViewModel: ObservableObject {
             // be written under the fallback empty-email key. Should not occur in normal flow.
             logger.error("\(caller, privacy: .public)(.vault): no stored account; sync timestamp not re-scoped")
         }
-        // Icons come only from this account's server; UI-test runs have no real server (D1).
-        let iconsBase = UITestFixtures.isEnabled ? nil : container.authRepo.storedAccount()?.serverEnvironment.iconsURL
+        // Icons come only from this account's server (fix-website-icons-privacy, D1).
+        var iconsBase = container.authRepo.storedAccount()?.serverEnvironment.iconsURL
+        #if DEBUG
+        // UI-test runs have no real server; the seam exists in Debug builds only (fix-release-build).
+        if UITestFixtures.isEnabled { iconsBase = nil }
+        #endif
         container.faviconLoader.configure(iconsBase: iconsBase)
         vaultBrowserVM.beginSession()
         screen = .vault
