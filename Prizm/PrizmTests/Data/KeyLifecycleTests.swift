@@ -382,6 +382,24 @@ final class KeyLifecycleTests: XCTestCase {
         XCTAssertFalse(crypto.isUnlocked)
     }
 
+    /// The stored account changed during the refresh with no lock or sign-out (the flow is still
+    /// current): the unlock fails with its own error and unloads the keys it loaded (code review C8).
+    func testAccountChangedDuringTheRefresh_unloadsTheKeys() async throws {
+        api.tokenResponse = tokenResponse()
+        _ = try await sut.loginWithPassword(email: "a@example.com", masterPassword: Data("pw".utf8), flow: gate.begin())
+        await lock()
+        api.whileRefreshing = { [keychain] in
+            await MainActor.run { try? keychain?.write(data: Data("another-user".utf8), key: KeychainKey.activeUserId) }
+        }
+
+        do {
+            _ = try await sut.unlockWithPassword(Data("pw".utf8), flow: gate.begin())
+            XCTFail("The unlock must fail")
+        } catch AuthError.accountChangedWhileUnlocking {}
+
+        XCTAssertFalse(crypto.isUnlocked, "no keys stay loaded behind the unlock screen")
+    }
+
     /// A locked vault leaves no bearer token in the network layer; the next unlock installs one
     /// again (code review C3).
     func testLock_removesTheAccessTokenFromTheAPIClient() async throws {

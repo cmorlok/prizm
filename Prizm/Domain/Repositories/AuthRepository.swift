@@ -139,6 +139,9 @@ nonisolated enum AuthError: Error, LocalizedError, Equatable {
     /// The vault was locked (or the user signed out) while this login or unlock was running; its keys
     /// were not loaded (lock-during-unlock-sync, D6).
     case lockedWhileUnlocking
+    /// The stored account changed while this unlock ran, with no lock or sign-out from Prizm; the
+    /// unlock's keys were unloaded again (lock-state-machine, code review C8).
+    case accountChangedWhileUnlocking
     /// The account's KDF settings are below the Bitwarden minimums; Prizm refused to derive a key,
     /// as the official clients do (fix-kdf-derivation-and-validation, D2).
     case kdfSettingsTooWeak
@@ -171,6 +174,8 @@ nonisolated enum AuthError: Error, LocalizedError, Equatable {
             return "Biometric unlock is not available. Please unlock with your master password."
         case .lockedWhileUnlocking:
             return "Prizm was locked before it finished. Try again."
+        case .accountChangedWhileUnlocking:
+            return "The saved account changed while Prizm was unlocking. Sign in again."
         case .kdfSettingsTooWeak:
             return "This account's key-derivation settings are too weak, so Prizm won't use them. Raise them in the web vault (Settings → Security → Keys), then sign in again."
         case .invalidKdfSettings:

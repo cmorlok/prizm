@@ -804,8 +804,16 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
                 // must not come back. No await from here to the writes.
                 guard start.account == accountEpoch,
                       (try? readString(key: KeychainKey.activeUserId)) == userId else {
-                    logger.info("\(caller, privacy: .public): refreshed tokens dropped, the account was signed out")
-                    throw AuthError.lockedWhileUnlocking
+                    guard isCurrent(start) else {
+                        // A sign-out overtook this flow; its teardown unloads the keys.
+                        logger.info("\(caller, privacy: .public): refreshed tokens dropped, the account was signed out")
+                        throw AuthError.lockedWhileUnlocking
+                    }
+                    // Not overtaken, so no teardown will unload the keys this flow just loaded,
+                    // and no newer session can own them yet (code review C8).
+                    await crypto.lockVault()
+                    logger.error("\(caller, privacy: .public): the stored account changed during the unlock; keys unloaded")
+                    throw AuthError.accountChangedWhileUnlocking
                 }
                 do {
                     try writeString(tokens.accessToken, key: KeychainKey.user(userId, "accessToken"))
@@ -818,8 +826,8 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
                     logger.error("\(caller, privacy: .public): failed to persist refreshed tokens — next launch may require re-auth: \(ErrorLog.describe(error), privacy: .public)")
                 }
                 accessToken = tokens.accessToken
-            } catch AuthError.lockedWhileUnlocking {
-                throw AuthError.lockedWhileUnlocking
+            } catch let error as AuthError where error == .lockedWhileUnlocking || error == .accountChangedWhileUnlocking {
+                throw error
             } catch {
                 // Refresh failed — keep the old token; sync will fail with 401 (non-fatal).
                 logger.warning("\(caller, privacy: .public): token refresh failed — sync may fail: \(ErrorLog.describe(error), privacy: .public)")
