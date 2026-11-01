@@ -77,7 +77,7 @@ final class LoginViewModel: ObservableObject {
                     masterPassword: passwordData,
                     flow:           flow
                 )
-                guard gate.isCurrent(flow) else { return endOvertakenSignIn() }
+                guard gate.isCurrent(flow) else { return endOvertaken(flow) }
 
                 switch result {
                 case .success:
@@ -98,12 +98,12 @@ final class LoginViewModel: ObservableObject {
                 }
 
             } catch let err as AuthError {
-                guard gate.isCurrent(flow) else { return endOvertakenSignIn() }
+                guard gate.isCurrent(flow) else { return endOvertaken(flow) }
                 logger.error("Sign-in failed: \(ErrorLog.describe(err), privacy: .public)")
                 errorMessage = err.errorDescription
                 flowState    = .login
             } catch {
-                guard gate.isCurrent(flow) else { return endOvertakenSignIn() }
+                guard gate.isCurrent(flow) else { return endOvertaken(flow) }
                 logger.error("Sign-in failed: \(ErrorLog.describe(error), privacy: .public)")
                 errorMessage = error.localizedDescription
                 flowState    = .login
@@ -127,14 +127,16 @@ final class LoginViewModel: ObservableObject {
         Task {
             do {
                 let _ = try await loginUseCase.completeTOTP(code: code, rememberDevice: rememberDevice)
-                guard let flow, gate.isCurrent(flow) else { return endOvertakenSignIn() }
+                guard let flow, gate.isCurrent(flow) else { return endOvertaken(flow) }
                 flowState = .vault
             } catch let err as AuthError {
-                if let flow, !gate.isCurrent(flow) { return endOvertakenSignIn() }
+                if let flow, !gate.isCurrent(flow) { return endOvertaken(flow) }
                 logger.error("TOTP submission failed: \(ErrorLog.describe(err), privacy: .public)")
                 errorMessage = err.errorDescription
                 flowState    = .totpPrompt
             } catch {
+                // No error from a submission that a lock overtook (code review C9).
+                if let flow, !gate.isCurrent(flow) { return endOvertaken(flow) }
                 logger.error("TOTP submission failed: \(ErrorLog.describe(error), privacy: .public)")
                 errorMessage = error.localizedDescription
                 flowState    = .totpPrompt
@@ -159,6 +161,17 @@ final class LoginViewModel: ObservableObject {
         case .login, .vault:
             break
         }
+    }
+
+    /// The late result of an overtaken `flow`. It changes the screen only while `flow` is still
+    /// this view model's latest sign-in: after a lock the user may already have started a new one,
+    /// whose spinner and password it must leave alone (code review C2).
+    private func endOvertaken(_ flow: FlowToken?) {
+        guard flow == signInFlow else {
+            logger.info("Late result of an earlier sign-in dropped")
+            return
+        }
+        endOvertakenSignIn()
     }
 
     /// A sign-in that a lock or sign-out overtook ends quietly on the login screen: no error, no
