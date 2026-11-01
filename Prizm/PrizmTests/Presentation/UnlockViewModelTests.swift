@@ -48,6 +48,17 @@ final class UnlockViewModelTests: XCTestCase {
         XCTAssertEqual(mockAuth.receivedFlows.first, before)
     }
 
+    /// The sync after the unlock runs with the unlock's token (design D8; code review C5).
+    func testUnlock_syncsWithItsFlow() async throws {
+        mockAuth.stubbedLoginResult = .success(stubAccount)
+        sut.password = "pw"
+
+        sut.unlock()
+        try await waitUntil { !self.mockSync.receivedFlows.isEmpty }
+
+        XCTAssertEqual(mockSync.receivedFlows, mockAuth.receivedFlows)
+    }
+
     /// A second Enter while an unlock runs starts no second unlock (code review C10).
     func testUnlock_whileAnUnlockRuns_startsNoSecond() async throws {
         mockAuth.stubbedLoginResult = .success(stubAccount)

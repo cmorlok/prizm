@@ -48,7 +48,7 @@ final class LoginUseCaseImpl: LoginUseCase {
             // the server is degraded — unacceptable for a password manager.
             logger.info("Login succeeded — starting vault sync")
             do {
-                _ = try await sync.sync(progress: { _ in })
+                _ = try await sync.sync(flow: flow, progress: { _ in })
             } catch {
                 logger.error("Post-login sync failed (non-fatal): \(ErrorLog.describe(error), privacy: .public)")
             }
@@ -63,12 +63,12 @@ final class LoginUseCaseImpl: LoginUseCase {
         }
     }
 
-    func completeTOTP(code: String, rememberDevice: Bool) async throws -> Account {
+    func completeTOTP(code: String, rememberDevice: Bool, flow: FlowToken) async throws -> Account {
         logger.info("Completing TOTP")
         let account = try await auth.loginWithTOTP(code: code, rememberDevice: rememberDevice)
         // Sync failure is non-fatal — show vault with whatever was synced (FR-049).
         do {
-            _ = try await sync.sync(progress: { _ in })
+            _ = try await sync.sync(flow: flow, progress: { _ in })
         } catch {
             logger.error("Post-TOTP sync failed (non-fatal): \(ErrorLog.describe(error), privacy: .public)")
         }

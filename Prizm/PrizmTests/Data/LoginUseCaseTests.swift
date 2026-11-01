@@ -33,6 +33,27 @@ final class LoginUseCaseTests: XCTestCase {
         XCTAssertEqual(mockAuth.receivedFlows, [flow])
     }
 
+    /// The sync after the sign-in runs with the sign-in's token (design D8; code review C5).
+    func testExecute_syncsWithTheSignInsFlow() async throws {
+        mockAuth.stubbedLoginResult = .success(makeAccount())
+        mockSync.stubbedSyncResult  = makeSyncResult()
+        let flow = FlowToken()
+
+        _ = try await sut.execute(serverURL: serverURL, email: email, masterPassword: masterPassword, flow: flow)
+
+        XCTAssertEqual(mockSync.receivedFlows, [flow])
+    }
+
+    func testCompleteTOTP_syncsWithTheSignInsFlow() async throws {
+        mockAuth.stubbedLoginResult = .success(makeAccount())
+        mockSync.stubbedSyncResult  = makeSyncResult()
+        let flow = FlowToken()
+
+        _ = try await sut.completeTOTP(code: "123456", rememberDevice: false, flow: flow)
+
+        XCTAssertEqual(mockSync.receivedFlows, [flow])
+    }
+
     // MARK: - T026: execute(serverURL:email:masterPassword:)
 
     /// Full success path: validates URL, sets environment, calls loginWithPassword, syncs, returns .success.

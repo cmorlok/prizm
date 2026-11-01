@@ -16,6 +16,14 @@ final class MockSyncUseCase: SyncUseCase {
     /// Reported through the progress callback after `onExecute`, like a sync's last step.
     var progressMessage: String?
 
+    /// The flow token of each `execute(flow:progress:)`, in order.
+    private(set) var receivedFlows: [FlowToken] = []
+
+    func execute(flow: FlowToken, progress: @Sendable @escaping (String) -> Void) async throws -> SyncResult {
+        receivedFlows.append(flow)
+        return try await execute(progress: progress)
+    }
+
     func execute(progress: @Sendable @escaping (String) -> Void) async throws -> SyncResult {
         executeCalled = true
         executeCount += 1

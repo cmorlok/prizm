@@ -357,7 +357,7 @@ final class UnlockViewModel: ObservableObject {
         guard gate.isCurrent(flow) else { return endOvertakenUnlock() }
         flowState = .syncing(message: "Preparing…")
         do {
-            _ = try await sync.execute(progress: { [weak self] message in
+            _ = try await sync.execute(flow: flow, progress: { [weak self] message in
                 Task { @MainActor [weak self] in
                     // A report that arrives after the vault was shown changes nothing (C11).
                     guard let self, self.isFlowRunning, self.gate.isCurrent(flow) else { return }

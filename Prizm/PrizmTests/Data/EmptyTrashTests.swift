@@ -391,6 +391,34 @@ final class SyncAfterLockTests: XCTestCase {
 
         XCTAssertTrue(vault.populatedItems.isEmpty, "No decrypted item may reach the store after a lock")
     }
+
+    /// The sync after a sign-in or unlock runs with that flow's token: one that a lock overtook
+    /// stores nothing, even when the gate opened for a new session before the sync began
+    /// (lock-state-machine, design D8; code review C5).
+    func testSync_withTheTokenOfAnOvertakenFlow_writesNothing() async throws {
+        let api = MockPrizmAPIClient()
+        let crypto = MockPrizmCryptoService()
+        let vault = MockVaultRepository()
+        await crypto.unlockWith(keys: CryptoKeys(encryptionKey: Data(count: 32), macKey: Data(count: 32)))
+        crypto.stubbedDecryptList = [VaultItem(id: "x", name: "Secret", isFavorite: false, isDeleted: false,
+                                               creationDate: Date(), revisionDate: Date(),
+                                               content: .secureNote(SecureNoteContent(notes: nil, customFields: [])))]
+        api.syncResponse = SyncResponse(
+            profile: RawProfile(id: "pid", email: "a@example.com", name: nil, key: "2.k==", privateKey: nil),
+            ciphers: [], folders: [], organizations: [], collections: []
+        )
+        let gate = SessionGateImpl()
+        let stale = gate.begin()
+        gate.end()
+        gate.open()
+        let sync = await RepositoryFixtures.syncRepository(apiClient: api, crypto: crypto, vaultRepository: vault,
+                                      vaultKeyCache: VaultKeyCache(), orgKeyCache: OrgKeyCache(),
+                                      recordStore: RawCipherStore(gate: gate))
+
+        _ = try? await sync.sync(flow: stale, progress: { _ in })
+
+        XCTAssertTrue(vault.populatedItems.isEmpty, "No decrypted item of an overtaken flow may reach the store")
+    }
 }
 
 /// The button is offered only while Trash has items (spec scenario "Button state").

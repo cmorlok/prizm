@@ -123,20 +123,25 @@ final class LoginViewModel: ObservableObject {
         errorMessage = nil
         flowState    = .loading
 
-        let flow = signInFlow
+        // The two-factor step belongs to the sign-in that reached it and reuses its token (D2).
+        guard let flow = signInFlow else {
+            logger.fault("TOTP submission without a sign-in")
+            flowState = .login
+            return
+        }
         Task {
             do {
-                let _ = try await loginUseCase.completeTOTP(code: code, rememberDevice: rememberDevice)
-                guard let flow, gate.isCurrent(flow) else { return endOvertaken(flow) }
+                let _ = try await loginUseCase.completeTOTP(code: code, rememberDevice: rememberDevice, flow: flow)
+                guard gate.isCurrent(flow) else { return endOvertaken(flow) }
                 flowState = .vault
             } catch let err as AuthError {
-                if let flow, !gate.isCurrent(flow) { return endOvertaken(flow) }
+                guard gate.isCurrent(flow) else { return endOvertaken(flow) }
                 logger.error("TOTP submission failed: \(ErrorLog.describe(err), privacy: .public)")
                 errorMessage = err.errorDescription
                 flowState    = .totpPrompt
             } catch {
                 // No error from a submission that a lock overtook (code review C9).
-                if let flow, !gate.isCurrent(flow) { return endOvertaken(flow) }
+                guard gate.isCurrent(flow) else { return endOvertaken(flow) }
                 logger.error("TOTP submission failed: \(ErrorLog.describe(error), privacy: .public)")
                 errorMessage = error.localizedDescription
                 flowState    = .totpPrompt

@@ -44,7 +44,7 @@ final class MockLoginUseCase: LoginUseCase {
     /// Runs inside `completeTOTP`, to hold a two-factor submission while a lock lands.
     var whileCompletingTOTP: (() async -> Void)?
 
-    func completeTOTP(code: String, rememberDevice: Bool) async throws -> Account {
+    func completeTOTP(code: String, rememberDevice: Bool, flow: FlowToken) async throws -> Account {
         completeTOTPCalled = true
         await whileCompletingTOTP?()
         if let err = completeTOTPError { throw err }

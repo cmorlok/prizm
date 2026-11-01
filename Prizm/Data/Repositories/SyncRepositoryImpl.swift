@@ -65,10 +65,13 @@ actor SyncRepositoryImpl: SyncRepository {
 
     func sync(progress: @Sendable @escaping (String) -> Void) async throws -> SyncResult {
         // Read before the first network await, not right before the write: a token read at the
-        // write is always current and would fence nothing. `clearVault()` bumps it, so a lock
-        // (also one followed by an unlock) that lands while this sync runs makes `replaceAll`
-        // refuse, which the unlocked check alone cannot do.
-        let storeGeneration = recordStore.currentGeneration()
+        // write is always current and would fence nothing. A lock (also one followed by an unlock)
+        // that lands while this sync runs makes `replaceAll` refuse, which the unlocked check alone
+        // cannot do.
+        try await sync(flow: recordStore.currentGeneration(), progress: progress)
+    }
+
+    func sync(flow storeGeneration: FlowToken, progress: @Sendable @escaping (String) -> Void) async throws -> SyncResult {
 
         // Only a sync of the same session blocks this one. A sync that started before a lock is
         // going to be discarded at its store write; if it still blocked callers, the sync that
