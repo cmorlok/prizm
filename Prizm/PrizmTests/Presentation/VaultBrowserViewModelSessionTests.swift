@@ -385,3 +385,43 @@ final class VaultBrowserViewModelArchiveTests: XCTestCase {
         XCTAssertNil(sut.announcement)
     }
 }
+
+// MARK: - No Folder and My Vault (vault-browsing-parity, task 2.2)
+
+@MainActor
+final class VaultBrowserViewModelFilterRowTests: XCTestCase {
+
+    private func waitUntil(_ condition: @escaping () -> Bool) async throws {
+        for _ in 0..<200 where !condition() { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertTrue(condition(), "condition not met in time")
+    }
+
+    func testNoFolderSelection_fallsBackWhenTheLastFolderGoes() async throws {
+        let vault = MockVaultRepository()
+        let sut = makeVaultBrowserViewModel(vault: vault, search: SearchVaultUseCaseImpl(vault: vault))
+        sut.sidebarSelection = .noFolder
+        await vault.populate(items: [], folders: [], organizations: [], collections: [], syncedAt: Date())
+        sut.refreshFolders()
+        try await waitUntil { sut.sidebarSelection == .allItems }
+    }
+
+    func testMyVaultSelection_fallsBackWhenNoOrganizationIsLeft() async throws {
+        let vault = MockVaultRepository()
+        let sut = makeVaultBrowserViewModel(vault: vault, search: SearchVaultUseCaseImpl(vault: vault))
+        sut.sidebarSelection = .myVault
+        await vault.populate(items: [], folders: [], organizations: [], collections: [], syncedAt: Date())
+        sut.refreshOrganizations()
+        try await waitUntil { sut.sidebarSelection == .allItems }
+    }
+
+    func testSelections_stayWhileTheirRowsExist() async throws {
+        let vault = MockVaultRepository()
+        let sut = makeVaultBrowserViewModel(vault: vault, search: SearchVaultUseCaseImpl(vault: vault))
+        await vault.populate(items: [], folders: [Folder(id: "f", name: "Work")], organizations: [],
+                             collections: [], syncedAt: Date())
+        sut.sidebarSelection = .noFolder
+        sut.refreshFolders()
+        try await waitUntil { sut.folders.count == 1 }
+        XCTAssertEqual(sut.sidebarSelection, .noFolder)
+    }
+}

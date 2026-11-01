@@ -157,6 +157,26 @@ nonisolated enum LinkedFieldId: RawRepresentable, Equatable, Hashable {
         }
     }
 
+    /// The fields a new linked field of `itemType` can link to, in raw-value order (Bitwarden SDK
+    /// `LinkedIdType`); the first is preselected, as in official clients. Empty for types without
+    /// linkable fields.
+    static func options(for itemType: ItemType) -> [LinkedFieldId] {
+        switch itemType {
+        case .login:
+            return [.loginUsername, .loginPassword]
+        case .card:
+            return [.cardCardholderName, .cardExpMonth, .cardExpYear, .cardCode, .cardBrand, .cardNumber]
+        case .identity:
+            return [.identityTitle, .identityMiddleName, .identityAddress1, .identityAddress2,
+                    .identityAddress3, .identityCity, .identityState, .identityPostalCode,
+                    .identityCountry, .identityCompany, .identityEmail, .identityPhone, .identitySsn,
+                    .identityUsername, .identityPassportNumber, .identityLicenseNumber,
+                    .identityFirstName, .identityLastName, .identityFullName]
+        case .secureNote, .sshKey:
+            return []
+        }
+    }
+
     /// Human-readable label shown in the linked field row (e.g. "Username").
     var displayName: String {
         switch self {

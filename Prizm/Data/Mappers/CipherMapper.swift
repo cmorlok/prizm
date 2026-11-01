@@ -769,7 +769,7 @@ nonisolated final class CipherMapper: Sendable {
             case .sshKey(let c):     return try c.notes.map { try encryptString($0, keys: keys) }
             }
         }()
-        let encFields = try toRawFields(customFieldsOf(draft.content), keys: keys, base: base?.fields, itemId: draft.id)
+        let encFields = try toRawFields(draft.content.customFields, keys: keys, base: base?.fields, itemId: draft.id)
         // One instant for the password revision date and the new history entries, as the SDK.
         let savedAt = now()
 
@@ -993,7 +993,7 @@ nonisolated final class CipherMapper: Sendable {
             for i in entries.indices { entries[i].resetBytes(in: entries[i].indices) }
         }
         oldHidden = try storedHiddenFields(base.fields, keys: keys)
-        newHidden = customFieldsOf(draft.content).compactMap { field -> PasswordHistoryPolicy.HiddenField? in
+        newHidden = draft.content.customFields.compactMap { field -> PasswordHistoryPolicy.HiddenField? in
             guard field.type == .hidden, let name = field.name, let value = field.value else { return nil }
             return PasswordHistoryPolicy.HiddenField(name: Data(name.utf8), value: Data(value.utf8))
         }
@@ -1127,19 +1127,23 @@ nonisolated final class CipherMapper: Sendable {
 
     // MARK: - Private: Custom fields reverse map
 
-    /// A draft field takes the unknown keys of the stored field with the same name and the same type
-    /// (first unused match, in stored order, so fields with equal names pair up in order). A stored
-    /// field is used at most once; a draft field without a match takes none.
+    /// A draft field read from the item takes the unknown keys of the stored field with the name it
+    /// was read with (`originalName`) and the same type: the one at its read position
+    /// (`originalIndex`) when that still matches, so two fields with the same name keep their own
+    /// keys after a reorder; otherwise the first unused match, in stored order. A stored field is used at most once; a draft field
+    /// without a match takes none, and a field added in the sheet (`isNew`) never takes any, even
+    /// when it is named like a removed one (`vault-browsing-parity`, design D6).
     ///
-    /// Why name and type and not position: the edit sheet cannot add, remove or reorder fields, but
-    /// the stored record can change under an open sheet (a sync replaced it). Pairing by position
-    /// would then attach one field's unknown keys to another field, which is wrong data and worse
-    /// than a missing key. A name and type that match are the best identity a field has: the wire
-    /// model carries no field id. Same approach as websites (`toRawLogin`).
+    /// Why the read name and type and not position: the user can add, remove and reorder fields,
+    /// and the stored record can change under an open sheet (a sync replaced it). Pairing by
+    /// position would then attach one field's unknown keys to another field, which is wrong data
+    /// and worse than a missing key. The read name and the type are the best identity a field has:
+    /// the wire model carries no field id. Pairing by the read name, not the current one, lets a
+    /// renamed field keep its keys. Same approach as websites (`toRawLogin`).
     ///
     /// The stored names are read under the item's key only for this comparison, as stored websites
     /// are: they are local `String`s that are never kept or logged (a Swift `String` cannot be
-    /// zeroed; the key check's `Data` is). A draft field without a name takes those of the next
+    /// zeroed; the key check's `Data` is). A draft field read without a name takes those of the next
     /// unused stored field without a name and of the same type (design D4 of
     /// `fix-read-mapping-lossless-fields`). Stored fields that no draft field takes are dropped, and
     /// only the count is logged, never names or values.
@@ -1149,13 +1153,29 @@ nonisolated final class CipherMapper: Sendable {
     ///   fails instead of guessing which field carried which keys (same as an unreadable website).
     private func toRawFields(_ fields: [DraftCustomField], keys: CryptoKeys,
                              base: [RawField]? = nil, itemId: String = "") throws -> [RawField] {
-        var stored = try readStoredFields(base, keys: keys)
+        let stored = try readStoredFields(base, keys: keys)
         let storedWithExtras = stored.filter { !$0.extras.isEmpty }.count
-        let rawFields: [RawField] = try fields.map { f in
-            var extras: [String: JSONValue] = [:]
-            if let match = stored.firstIndex(where: { $0.name == f.name && $0.type == f.type }) {
-                extras = stored.remove(at: match).extras
+        // A stored field matches a draft field read with its name and type. The one at the draft
+        // field's read position is taken first; the others by the first unused match.
+        func matches(_ s: Int, _ f: DraftCustomField) -> Bool {
+            stored[s].name == f.originalName && stored[s].type == f.type
+        }
+        var pairing = [Int?](repeating: nil, count: fields.count)
+        var used = Set<Int>()
+        for (d, f) in fields.enumerated() where !f.isNew {
+            if let i = f.originalIndex, stored.indices.contains(i), !used.contains(i), matches(i, f) {
+                pairing[d] = i
+                used.insert(i)
             }
+        }
+        for (d, f) in fields.enumerated() where !f.isNew && pairing[d] == nil {
+            if let i = stored.indices.first(where: { !used.contains($0) && matches($0, f) }) {
+                pairing[d] = i
+                used.insert(i)
+            }
+        }
+        let rawFields: [RawField] = try fields.enumerated().map { d, f in
+            let extras = pairing[d].map { stored[$0].extras } ?? [:]
             return RawField(
                 type:     f.type.rawValue,
                 // A field read without a name goes back without one (fix-read-mapping-lossless-fields).
@@ -1165,9 +1185,9 @@ nonisolated final class CipherMapper: Sendable {
                 extras:   extras
             )
         }
-        let dropped = stored.filter { !$0.extras.isEmpty }.count
+        let dropped = stored.indices.filter { !used.contains($0) && !stored[$0].extras.isEmpty }.count
         if dropped > 0 {
-            Self.logger.info("Custom field unknown keys dropped for \(itemId, privacy: .public): \(dropped, privacy: .public) of \(storedWithExtras, privacy: .public) stored field(s) with unknown keys had no draft field of the same name and type")
+            Self.logger.info("Custom field unknown keys dropped for \(itemId, privacy: .public): \(dropped, privacy: .public) of \(storedWithExtras, privacy: .public) stored field(s) with unknown keys had no draft field read with the same name and type")
         }
         return rawFields
     }
@@ -1202,18 +1222,6 @@ nonisolated final class CipherMapper: Sendable {
             } catch {
                 throw CipherMapperError.storedValueUnreadable("uri")
             }
-        }
-    }
-
-    // MARK: - Private: Custom field extractor
-
-    private func customFieldsOf(_ content: DraftItemContent) -> [DraftCustomField] {
-        switch content {
-        case .login(let c):      return c.customFields
-        case .secureNote(let c): return c.customFields
-        case .card(let c):       return c.customFields
-        case .identity(let c):   return c.customFields
-        case .sshKey(let c):     return c.customFields
         }
     }
 

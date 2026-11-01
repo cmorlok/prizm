@@ -67,6 +67,7 @@
 		71DD2CFC91D400C2EBF1A434 /* AppVisibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = 017B8AB3BEA1F7239B76D325 /* AppVisibility.swift */; };
 		74BF3260D5C6355D7F2280D3 /* TOTPSeedParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C4F1CA442CEB4D208ED7FCC /* TOTPSeedParser.swift */; };
 		56DEF6AB2F2DBFE354F837B5 /* PasswordHistoryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F12B3A6365866B1486AAC9E /* PasswordHistoryPolicy.swift */; };
+		15778763F956A8323763FEAE /* VaultSearchMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26A86D089F600B49E51A305B /* VaultSearchMatcher.swift */; };
 		77DF6B9FF920443AA5F94219 /* About/AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ABEC630F6934ED883504C9D /* About/AboutView.swift */; };
 		7AE873E2FB0A4DC5BEE93B9A /* LoginDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F246F209ADA45F99C9B17DB /* LoginDetailView.swift */; };
 		7B5A0F4C3D1E69A8C2B7F4DA /* PermanentDeleteVaultItemUseCaseImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C6B1A5D4E2F70B9D3C8A5EB /* PermanentDeleteVaultItemUseCaseImpl.swift */; };
@@ -82,6 +83,8 @@
 		A09339128A31094E32BA184D /* EditSheetLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39DAF06CF084CA86F5E4E0AD /* EditSheetLayoutTests.swift */; };
 		755AF9CA4D407D87B8A62461 /* WebsiteIconSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FBCEA44404318EF70D935A0 /* WebsiteIconSettingsTests.swift */; };
 		7CA4D07A029C08C8FA1A555F /* ArchivedItemsJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18D10AA44AD78683922F0B9B /* ArchivedItemsJourneyTests.swift */; };
+		C7F01AF428BE2A3646E00B8E /* CustomFieldEditJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB4A9E8F665276B1B7CE3B25 /* CustomFieldEditJourneyTests.swift */; };
+		069922D0A3C1940719417388 /* BrowsingFiltersJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF9E1F47B189EEDB56685218 /* BrowsingFiltersJourneyTests.swift */; };
 		3594B1E845A17C810B40A140 /* CollectionPickerJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A219083256A08FCA0D5EB57 /* CollectionPickerJourneyTests.swift */; };
 		6A01DCC1DFA27ADC42961580 /* KeyboardNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62BD63C6311650DC365E4EB0 /* KeyboardNavigationTests.swift */; };
 		DB96B1ECE6D3842D47240F3C /* LoginJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF759512918D91F966308B59 /* LoginJourneyTests.swift */; };
@@ -310,6 +313,7 @@
 		5A335CC7B3C743B59A7630D8 /* CreateVaultItemUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateVaultItemUseCase.swift; sourceTree = "<group>"; };
 		5C4F1CA442CEB4D208ED7FCC /* TOTPSeedParser.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TOTPSeedParser.swift; sourceTree = "<group>"; };
 		6F12B3A6365866B1486AAC9E /* PasswordHistoryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordHistoryPolicy.swift; sourceTree = "<group>"; };
+		26A86D089F600B49E51A305B /* VaultSearchMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultSearchMatcher.swift; sourceTree = "<group>"; };
 		5C607080900A10E4E5F60718 /* EditFieldRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditFieldRow.swift; sourceTree = "<group>"; };
 		5EBA517603CA448A8F9106AF /* SyncUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncUseCase.swift; sourceTree = "<group>"; };
 		644111ECFEEE4F96988BD8C7 /* Presentation/Settings/SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Presentation/Settings/SettingsView.swift; sourceTree = "<group>"; };
@@ -445,6 +449,8 @@
 		39DAF06CF084CA86F5E4E0AD /* EditSheetLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditSheetLayoutTests.swift; sourceTree = "<group>"; };
 		2FBCEA44404318EF70D935A0 /* WebsiteIconSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebsiteIconSettingsTests.swift; sourceTree = "<group>"; };
 		18D10AA44AD78683922F0B9B /* ArchivedItemsJourneyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchivedItemsJourneyTests.swift; sourceTree = "<group>"; };
+		EB4A9E8F665276B1B7CE3B25 /* CustomFieldEditJourneyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomFieldEditJourneyTests.swift; sourceTree = "<group>"; };
+		FF9E1F47B189EEDB56685218 /* BrowsingFiltersJourneyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowsingFiltersJourneyTests.swift; sourceTree = "<group>"; };
 		1A219083256A08FCA0D5EB57 /* CollectionPickerJourneyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionPickerJourneyTests.swift; sourceTree = "<group>"; };
 		62BD63C6311650DC365E4EB0 /* KeyboardNavigationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyboardNavigationTests.swift; sourceTree = "<group>"; };
 		FF759512918D91F966308B59 /* LoginJourneyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LoginJourneyTests.swift; sourceTree = "<group>"; };
@@ -890,6 +896,8 @@
 				39DAF06CF084CA86F5E4E0AD /* EditSheetLayoutTests.swift */,
 				2FBCEA44404318EF70D935A0 /* WebsiteIconSettingsTests.swift */,
 				18D10AA44AD78683922F0B9B /* ArchivedItemsJourneyTests.swift */,
+				EB4A9E8F665276B1B7CE3B25 /* CustomFieldEditJourneyTests.swift */,
+				FF9E1F47B189EEDB56685218 /* BrowsingFiltersJourneyTests.swift */,
 				1A219083256A08FCA0D5EB57 /* CollectionPickerJourneyTests.swift */,
 				62BD63C6311650DC365E4EB0 /* KeyboardNavigationTests.swift */,
 				FF759512918D91F966308B59 /* LoginJourneyTests.swift */,
@@ -959,6 +967,7 @@
 				E43B4A31C410B308EEAD61A1 /* GeneratorStrength.swift */,
 				5C4F1CA442CEB4D208ED7FCC /* TOTPSeedParser.swift */,
 				6F12B3A6365866B1486AAC9E /* PasswordHistoryPolicy.swift */,
+				26A86D089F600B49E51A305B /* VaultSearchMatcher.swift */,
 				9BF035335283019BA2C1E3B6 /* URILaunchPolicy.swift */,
 				7D72A8F03C8D7FDF19E3FF08 /* WebsiteIconHost.swift */,
 				C59C831065292C38D59EDA39 /* WebsiteIconSettings.swift */,
@@ -1409,6 +1418,7 @@
 				99A4BD0DFD57D3F34A0570A1 /* TOTPCode.swift in Sources */,
 				74BF3260D5C6355D7F2280D3 /* TOTPSeedParser.swift in Sources */,
 				56DEF6AB2F2DBFE354F837B5 /* PasswordHistoryPolicy.swift in Sources */,
+				15778763F956A8323763FEAE /* VaultSearchMatcher.swift in Sources */,
 				89A26ABF823C0154A06C3B0B /* GenerateTOTPCodeUseCase.swift in Sources */,
 				EA38CE17B58DF6F4392DCECF /* GenerateTOTPCodeUseCaseImpl.swift in Sources */,
 				258DC37C47B2217593ACC435 /* OneTimeCodeHMAC.swift in Sources */,
@@ -1458,6 +1468,8 @@
 				A09339128A31094E32BA184D /* EditSheetLayoutTests.swift in Sources */,
 				755AF9CA4D407D87B8A62461 /* WebsiteIconSettingsTests.swift in Sources */,
 				7CA4D07A029C08C8FA1A555F /* ArchivedItemsJourneyTests.swift in Sources */,
+				C7F01AF428BE2A3646E00B8E /* CustomFieldEditJourneyTests.swift in Sources */,
+				069922D0A3C1940719417388 /* BrowsingFiltersJourneyTests.swift in Sources */,
 				3594B1E845A17C810B40A140 /* CollectionPickerJourneyTests.swift in Sources */,
 				6A01DCC1DFA27ADC42961580 /* KeyboardNavigationTests.swift in Sources */,
 				DB96B1ECE6D3842D47240F3C /* LoginJourneyTests.swift in Sources */,

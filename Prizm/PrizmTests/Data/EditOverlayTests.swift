@@ -591,13 +591,112 @@ final class EditOverlayTests: XCTestCase {
         let unchanged = try await save(record)
         XCTAssertEqual(tags(try XCTUnwrap(unchanged.fields)), [.string("first"), .string("second")])
 
-        // The first twin goes: the remaining one takes the first unused match, in stored order.
+        // The first twin goes: the remaining one keeps its own keys, found by its read position
+        // (vault-browsing-parity, design D6; before the sheet could reorder, it took the first match).
         let oneLeft = try await save(record) { draft in
             guard case .login(var login) = draft.content else { return }
             login.customFields.removeFirst()
             draft.content = .login(login)
         }
-        XCTAssertEqual(tags(try XCTUnwrap(oneLeft.fields)), [.string("first")])
+        XCTAssertEqual(tags(try XCTUnwrap(oneLeft.fields)), [.string("second")])
+
+        // A draft field built without its read position falls back to the first unused match.
+        let unpositioned = try await save(record) { draft in
+            guard case .login(var login) = draft.content else { return }
+            login.customFields = [DraftCustomField(twins[1])]
+            draft.content = .login(login)
+        }
+        XCTAssertEqual(tags(try XCTUnwrap(unpositioned.fields)), [.string("first")])
+    }
+
+    // MARK: - Custom-field editing (vault-browsing-parity, design D6, task 5.2)
+
+    func testRenamedField_keepsItsUnknownKeys() async throws {
+        let record = try recordWithTaggedFields()
+
+        let sent = try await save(record) { draft in
+            guard case .login(var login) = draft.content else { return }
+            let index = try! XCTUnwrap(login.customFields.firstIndex { $0.name == "Field A" })
+            login.customFields[index].nameText = "New name"
+            draft.content = .login(login)
+        }
+
+        let fields = try XCTUnwrap(sent.fields)
+        XCTAssertEqual(try names(fields), [nil, "New name", "Field B"])
+        XCTAssertEqual(tags(fields), [.string("on-nameless"), .string("on-a"), .string("on-b")])
+    }
+
+    func testSameNamedFields_keepTheirOwnUnknownKeysWhenMoved() async throws {
+        let twins = [
+            CustomField(name: "Q", value: "first", type: .hidden, linkedId: nil),
+            CustomField(name: "Q", value: "second", type: .hidden, linkedId: nil),
+        ]
+        let item = VaultItem(
+            id: "item-1", name: "Twins", isFavorite: false, isDeleted: false,
+            creationDate: Date(), revisionDate: RepositoryFixtures.revisionDate,
+            content: .login(LoginContent(username: nil, password: nil, uris: [], totp: nil, notes: nil, customFields: twins)))
+        let record = try storedRecord(for: item, keys: vaultKeys) { json in
+            var fields = (json["fields"] as? [[String: Any]]) ?? []
+            fields[0]["tag"] = "of-first"
+            fields[1]["tag"] = "of-second"
+            json["fields"] = fields
+        }
+
+        let sent = try await save(record) { draft in
+            guard case .login(var login) = draft.content else { return }
+            login.customFields.moveField(id: login.customFields[1].id, by: -1)
+            draft.content = .login(login)
+        }
+
+        let fields = try XCTUnwrap(sent.fields)
+        XCTAssertEqual(try fields.map { try decrypt($0.value, keys: vaultKeys) }, ["second", "first"])
+        XCTAssertEqual(tags(fields), [.string("of-second"), .string("of-first")], "each value keeps its own keys")
+    }
+
+    func testNewFieldNamedLikeARemovedOne_takesNoUnknownKeys() async throws {
+        let record = try recordWithTaggedFields()
+
+        let sent = try await save(record) { draft in
+            guard case .login(var login) = draft.content else { return }
+            login.customFields.removeAll { $0.name == "Field A" }
+            var added = DraftCustomField(newOfType: .text, for: .login)
+            added.nameText = "Field A"
+            added.value = "fresh"
+            login.customFields.append(added)
+            draft.content = .login(login)
+        }
+
+        let fields = try XCTUnwrap(sent.fields)
+        XCTAssertEqual(try names(fields), [nil, "Field B", "Field A"])
+        XCTAssertEqual(tags(fields), [.string("on-nameless"), .string("on-b"), nil])
+        XCTAssertEqual(try decrypt(fields[2].value, keys: vaultKeys), "fresh")
+        XCTAssertFalse(try encoded(sent).description.contains("on-a"), "nothing of the removed field is sent")
+    }
+
+    func testAddedAndMovedFields_areSentInTheDraftOrder_withTheirTypesAndLinks() async throws {
+        let record = try recordWithTaggedFields()
+
+        let sent = try await save(record) { draft in
+            guard case .login(var login) = draft.content else { return }
+            var hidden = DraftCustomField(newOfType: .hidden, for: .login)
+            hidden.nameText = "PIN"
+            hidden.value = "1234"
+            var linked = DraftCustomField(newOfType: .linked, for: .login)
+            linked.nameText = "Mirror"
+            linked.linkedId = .loginPassword
+            login.customFields.insert(hidden, at: 0)
+            login.customFields.append(linked)
+            let last = login.customFields[3].id  // Field B
+            login.customFields.moveField(id: last, by: -1)
+            draft.content = .login(login)
+        }
+
+        let fields = try XCTUnwrap(sent.fields)
+        XCTAssertEqual(try names(fields), ["PIN", nil, "Field B", "Field A", "Mirror"])
+        XCTAssertEqual(fields.map(\.type), [1, 0, 1, 0, 3])
+        XCTAssertEqual(try decrypt(fields[0].value, keys: vaultKeys), "1234")
+        XCTAssertEqual(fields[4].linkedId, LinkedFieldId.loginPassword.rawValue)
+        XCTAssertEqual(tags(fields), [nil, .string("on-nameless"), .string("on-b"), .string("on-a"), nil])
     }
 
     // MARK: - What the draft owns

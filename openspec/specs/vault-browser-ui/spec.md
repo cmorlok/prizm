@@ -30,7 +30,7 @@ The system SHALL display a `NavigationSplitView` with a sidebar (categories + co
 
 #### Scenario: Item list is sorted alphabetically
 - **WHEN** any category is selected
-- **THEN** the item list is sorted alphabetically by item name, case-insensitive
+- **THEN** the item list is sorted by item name in natural order, case-insensitive ("Server 2" before "Server 10"); logins with the same name are ordered by username (`vault-browsing-parity`)
 
 #### Scenario: Org item rows show org membership badge
 - **WHEN** an org item appears in the item list (e.g., under All Items or a type selection)

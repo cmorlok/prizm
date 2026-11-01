@@ -165,6 +165,12 @@ struct SidebarView: View {
                     onRenameFolder: { id, name in onRenameFolder?(id, name) }
                 )
             }
+            // Without folders it would list the same items as All Items (vault-browsing-parity, D3).
+            if !folders.isEmpty {
+                SidebarRowView(title: "No Folder", systemImage: "folder.badge.minus", selection: .noFolder,
+                               count: itemCounts[.noFolder] ?? 0)
+                    .accessibilityIdentifier(AccessibilityID.Sidebar.noFolder)
+            }
             if folders.isEmpty && !isCreatingFolder {
                 Text("No folders")
                     .font(Typography.listSubtitle)
@@ -176,6 +182,11 @@ struct SidebarView: View {
                 SidebarRowView(title: type.displayName, systemImage: type.sfSymbol, selection: .type(type), count: itemCounts[.type(type)] ?? 0)
             }
         case .organizations:
+            if !organizations.isEmpty {
+                SidebarRowView(title: "My Vault", systemImage: "person", selection: .myVault,
+                               count: itemCounts[.myVault] ?? 0)
+                    .accessibilityIdentifier(AccessibilityID.Sidebar.myVault)
+            }
             ForEach(organizations) { org in
                 let orgCollections = collections.filter { $0.organizationId == org.id }
                 OrgDisclosureRow(

@@ -318,6 +318,26 @@ final class PasswordHistoryTests: XCTestCase {
         XCTAssertEqual(try decrypt(history[0]).0, "PIN: 1234")
     }
 
+    /// The custom-field edits of `vault-browsing-parity` (task 5.6) record history like any other
+    /// change: removing, renaming (a rename is a removal, as in the SDK) or changing a hidden field
+    /// each add `"<name>: <old value>"`.
+    func testSave_fieldEditsOfTheEditSheet_recordHiddenFields() async throws {
+        let login = item(login(password: "p", fields: [
+            CustomField(name: "PIN", value: "1234", type: .hidden, linkedId: nil),
+            CustomField(name: "Code", value: "abcd", type: .hidden, linkedId: nil),
+            CustomField(name: "Pass", value: "old", type: .hidden, linkedId: nil),
+        ]))
+        let sent = try await save(try record(login, history: nil)) { draft in
+            guard case .login(var c) = draft.content else { return XCTFail("not a login") }
+            c.customFields.removeField(id: c.customFields[0].id)
+            c.customFields[0].nameText = "Token"
+            c.customFields[1].value = "new"
+            draft.content = .login(c)
+        }
+        let recorded = try Set(elements(sent).map { try decrypt($0).0 })
+        XCTAssertEqual(recorded, ["PIN: 1234", "Code: abcd", "Pass: old"])
+    }
+
     func testHistory_ofAnOrgItem_usesTheOrgKey_andNeedsIt() async throws {
         let orgKeys = KeyedCipherBuilder.randomKeys()
         let raw = try record(item(login(password: "p")), history: [entry("shared", "2026-01-01T00:00:00.000Z", keys: orgKeys)],

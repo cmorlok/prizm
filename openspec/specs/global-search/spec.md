@@ -34,17 +34,17 @@ The system SHALL provide a ⌘F keyboard shortcut that activates global search m
 ---
 
 ### Requirement: Matching text is highlighted in item list rows during search
-The system SHALL highlight matching substrings in the item name and subtitle when a search query is active (both global and category-scoped). Highlighting SHALL use bold text weight to distinguish matched fragments from surrounding text.
+The system SHALL highlight, in the item name and subtitle, every match of every word of the search query when a query is active (both global and category-scoped); matching ignores case and accents (`vault-browsing-parity`). Highlighting SHALL use bold text weight to distinguish matched fragments from surrounding text.
 
 #### Scenario: Name match is highlighted
 - **GIVEN** a search query is active
-- **WHEN** an item's name contains the query as a substring
-- **THEN** the matching portion of the name is rendered in bold
+- **WHEN** an item's name contains a word of the query
+- **THEN** each matching portion of the name is rendered in bold
 
 #### Scenario: Subtitle match is highlighted
 - **GIVEN** a search query is active
-- **WHEN** an item's subtitle (username, cardholder, etc.) contains the query as a substring
-- **THEN** the matching portion of the subtitle is rendered in bold
+- **WHEN** an item's subtitle (username, cardholder, etc.) contains a word of the query
+- **THEN** each matching portion of the subtitle is rendered in bold
 
 #### Scenario: No highlight when search is empty
 - **WHEN** the search field is empty

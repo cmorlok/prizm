@@ -115,4 +115,21 @@ enum CustomFieldLabels {
     static let unsupportedType = "Unsupported field type"
 
     static func unsupported(_ name: String) -> String { "\(name) (\(unsupportedType))" }
+
+    // MARK: Editing (vault-browsing-parity, design D6)
+
+    /// The VoiceOver name of a field added in the sheet that has no name yet.
+    static let newField = "New field"
+    static let nameRequired = "A name is required."
+
+    /// The name VoiceOver uses for a field's controls ("Move PIN up").
+    static func accessibilityName(of field: DraftCustomField) -> String {
+        if let name = field.name, !name.isEmpty { return name }
+        return field.isNew ? newField : unnamed
+    }
+
+    /// Announced after a move, as the official form does: "PIN moved to position 2 of 4".
+    static func moved(_ name: String, to position: Int, of count: Int) -> String {
+        "\(name) moved to position \(position) of \(count)"
+    }
 }

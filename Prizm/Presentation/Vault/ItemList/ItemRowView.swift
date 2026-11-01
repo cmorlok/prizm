@@ -34,7 +34,7 @@ struct ItemRowView: View {
                 Text(styledName)
                     .font(.headline)
                     .lineLimit(1)
-                if let subtitle = subtitle(for: item) {
+                if let subtitle = Self.subtitle(for: item) {
                     Text(styledSubtitle(subtitle))
                         .font(.callout)
                         .foregroundStyle(.secondary)
@@ -66,33 +66,30 @@ struct ItemRowView: View {
         return Self.highlightedText(text, query: q)
     }
 
-    /// Returns an `AttributedString` with the first case-insensitive match of `query` rendered in bold.
+    /// Returns an `AttributedString` with every match of every search term in bold, ignoring case
+    /// and diacritics, with the ranges the search itself uses (`VaultSearchMatcher`).
     static func highlightedText(_ text: String, query: String) -> AttributedString {
         var result = AttributedString(text)
-        guard !query.isEmpty,
-              let range = text.range(of: query, options: .caseInsensitive) else {
-            return result
+        for range in VaultSearchMatcher.ranges(of: query, in: text) {
+            let lower = text.distance(from: text.startIndex, to: range.lowerBound)
+            let upper = text.distance(from: text.startIndex, to: range.upperBound)
+            let start = result.index(result.startIndex, offsetByCharacters: lower)
+            let end   = result.index(result.startIndex, offsetByCharacters: upper)
+            result[start..<end].inlinePresentationIntent = .stronglyEmphasized
         }
-        let lower = text.distance(from: text.startIndex, to: range.lowerBound)
-        let upper = text.distance(from: text.startIndex, to: range.upperBound)
-        let start = result.index(result.startIndex, offsetByCharacters: lower)
-        let end   = result.index(result.startIndex, offsetByCharacters: upper)
-        result[start..<end].inlinePresentationIntent = .stronglyEmphasized
         return result
     }
 
     // MARK: - Subtitle (FR-021, FR-046, FR-047)
 
-    private func subtitle(for item: VaultItem) -> String? {
+    static func subtitle(for item: VaultItem) -> String? {
         switch item.content {
         case .login(let l):
             return l.username
 
         case .card(let c):
-            if let number = c.number, number.count >= 4 {
-                return "*" + String(number.suffix(4))
-            }
-            return nil
+            // The same four digits search matches (VaultSearchMatcher), so a match is highlighted.
+            return c.number.flatMap(VaultSearchMatcher.lastFourDigits(of:)).map { "*" + $0 }
 
         case .identity(let i):
             let firstName = i.firstName ?? ""

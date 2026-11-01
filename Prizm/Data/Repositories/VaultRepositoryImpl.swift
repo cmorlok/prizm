@@ -66,6 +66,10 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
     /// Maps orgId → Set<collectionId> for O(1) org-membership tests.
     private var _orgCollectionIds: [String: Set<String>]
 
+    /// Item id → folded search targets (`VaultSearchMatcher.searchKey(of:)`), rebuilt with the
+    /// indexes. Holds the same decrypted text as `items`, folded; emptied with them on lock.
+    private var searchKeys: [String: [String]] = [:]
+
     // MARK: - Init
 
     // `nonisolated` avoids a Swift 6 strict-concurrency error when this init is called
@@ -156,6 +160,7 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
         _bySelection      = [:]
         _counts           = [:]
         _orgCollectionIds = [:]
+        searchKeys        = [:]
         logger.info("Vault cleared")
     }
 
@@ -179,6 +184,9 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
         bySelection[.favorites] = sorted(active.filter(\.isFavorite))
         bySelection[.trash]     = sorted(items.filter(\.isDeleted))
         bySelection[.archive]   = sorted(items.filter { !$0.isDeleted && $0.isArchived })
+        // Folders hold org items too, so "No Folder" does as well (vault-browsing-parity, D3).
+        bySelection[.noFolder]  = sorted(active.filter { $0.folderId == nil })
+        bySelection[.myVault]   = sorted(active.filter { $0.organizationId == nil })
         // Verification Codes: every non-trashed Login with a non-blank seed. Whether the seed is
         // *usable* is decided at display time, so items with bad seeds still appear (as
         // "unavailable") and the user can see they exist.
@@ -215,6 +223,9 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
             })
         }
         _bySelection = bySelection
+        // Folded search targets, so a keystroke does not fold every item again (vault-browsing-parity).
+        searchKeys = Dictionary(items.map { ($0.id, VaultSearchMatcher.searchKey(of: $0)) },
+                                uniquingKeysWith: { first, _ in first })
 
         // Derive _counts from _bySelection — no second filtering pass over items.
         var counts: [SidebarSelection: Int] = [:]
@@ -222,6 +233,8 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
         counts[.favorites] = bySelection[.favorites]?.count ?? 0
         counts[.trash]     = bySelection[.trash]?.count     ?? 0
         counts[.archive]   = bySelection[.archive]?.count   ?? 0
+        counts[.noFolder]  = bySelection[.noFolder]?.count  ?? 0
+        counts[.myVault]   = bySelection[.myVault]?.count   ?? 0
         counts[.verificationCodes] = bySelection[.verificationCodes]?.count ?? 0
         for type in ItemType.allCases {
             counts[.type(type)] = bySelection[.type(type)]?.count ?? 0
@@ -245,15 +258,15 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
     }
 
     func folders() async throws -> [Folder] {
-        folderStore.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        folderStore.sorted { VaultSort.ascending($0.name, $1.name) }
     }
 
     func organizations() async throws -> [Organization] {
-        organizationStore.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        organizationStore.sorted { VaultSort.ascending($0.name, $1.name) }
     }
 
     func collections() async throws -> [OrgCollection] {
-        collectionStore.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        collectionStore.sorted { VaultSort.ascending($0.name, $1.name) }
     }
 
     func items(for collection: String) async throws -> [VaultItem] {
@@ -272,7 +285,10 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
     func searchItems(query: String, in selection: SidebarSelection) async throws -> [VaultItem] {
         let base = _bySelection[selection] ?? []
         guard !query.isEmpty else { return base }
-        return base.filter { $0.matchesSearch(query: query) }
+        let terms = VaultSearchMatcher.terms(query).map(VaultSearchMatcher.fold)
+        return base.filter {
+            VaultSearchMatcher.matches(searchKey: searchKeys[$0.id] ?? VaultSearchMatcher.searchKey(of: $0), foldedTerms: terms)
+        }
     }
 
     func itemCounts() async throws -> [SidebarSelection: Int] {
@@ -1570,7 +1586,7 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
     }
 
     private func sorted(_ input: [VaultItem]) -> [VaultItem] {
-        input.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        VaultSort.items(input)
     }
 
     /// Encrypts a plaintext folder name as a type-2 EncString using the current vault keys.
@@ -1618,25 +1634,6 @@ nonisolated private extension ItemContent {
         case (.secureNote, .secureNote): return true
         case (.sshKey,     .sshKey):     return true
         default:                         return false
-        }
-    }
-}
-
-nonisolated private extension VaultItem {
-    /// Case-insensitive substring search across type-specific fields (FR-012).
-    func matchesSearch(query: String) -> Bool {
-        if name.localizedCaseInsensitiveContains(query) { return true }
-        switch content {
-        case .login(let l):
-            return (l.username?.localizedCaseInsensitiveContains(query) == true) ||
-                   l.uris.contains { $0.uri?.localizedCaseInsensitiveContains(query) == true }
-        case .card(let c):
-            return c.cardholderName?.localizedCaseInsensitiveContains(query) == true
-        case .identity(let i):
-            return (i.email?.localizedCaseInsensitiveContains(query) == true) ||
-                   (i.company?.localizedCaseInsensitiveContains(query) == true)
-        case .secureNote, .sshKey:
-            return false
         }
     }
 }

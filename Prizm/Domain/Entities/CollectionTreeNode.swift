@@ -2,8 +2,9 @@ import Foundation
 
 /// A node in the collection tree for one organization, built by parsing `/`-delimited names.
 ///
-/// Mirrors `FolderTreeNode` — Bitwarden uses the same `/` convention for collection hierarchy
-/// (e.g. "Engineering/Backend" nests "Backend" under "Engineering").
+/// Mirrors `FolderTreeNode`: "Engineering/Backend" nests "Backend" under "Engineering". Segments
+/// compare exactly, as the official clients' `nestedTraverse`; unlike them, a missing parent is
+/// shown as a virtual grouping node (vault-browsing-parity, D1 and D4).
 nonisolated struct CollectionTreeNode: Identifiable {
     let id: String
     let name: String
@@ -16,7 +17,7 @@ nonisolated struct CollectionTreeNode: Identifiable {
 
     static func buildTree(from collections: [OrgCollection]) -> [CollectionTreeNode] {
         var root: [CollectionTreeNode] = []
-        let sorted = collections.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        let sorted = collections.sorted { VaultSort.ascending($0.name, $1.name) }
         for col in sorted {
             let parts = col.name.split(separator: "/").map(String.init).filter { !$0.isEmpty }
             guard !parts.isEmpty else { continue }
@@ -28,7 +29,7 @@ nonisolated struct CollectionTreeNode: Identifiable {
     private static func insertNode(into nodes: inout [CollectionTreeNode], parts: [String], collection: OrgCollection) {
         guard let first = parts.first else { return }
         let remaining = Array(parts.dropFirst())
-        if let idx = nodes.firstIndex(where: { $0.name.caseInsensitiveCompare(first) == .orderedSame }) {
+        if let idx = nodes.firstIndex(where: { $0.name == first }) {
             if remaining.isEmpty {
                 if nodes[idx].collection == nil {
                     // Promote virtual placeholder to real collection, preserving any children.

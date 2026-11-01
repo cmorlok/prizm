@@ -264,6 +264,21 @@ enum UITestFixtures {
         )
     }
 
+    /// `--ui-test-personal-in-folder` (with `--ui-test-org-folders`): adds a personal note filed in
+    /// "Work", so "No Folder" and "My Vault" list different items (vault-browsing-parity).
+    static var withPersonalItemInFolder: Bool { CommandLine.arguments.contains("--ui-test-personal-in-folder") }
+
+    /// The note `--ui-test-personal-in-folder` adds.
+    static var personalItemInFolder: VaultItem {
+        VaultItem(
+            id: "sigma", name: "Sigma Personal", isFavorite: false, isDeleted: false,
+            creationDate: Date(timeIntervalSince1970: 1_700_000_000),
+            revisionDate: Date(timeIntervalSince1970: 1_700_000_000),
+            content: .secureNote(SecureNoteContent(notes: "filed", customFields: [])),
+            folderId: "work"
+        )
+    }
+
     /// `--ui-test-blocked-item`: adds an item Prizm cannot edit, for the journey that checks the
     /// disabled Edit button and its note. Off by default so the other journeys' lists stay unchanged.
     static var withBlockedItem: Bool { CommandLine.arguments.contains("--ui-test-blocked-item") }
@@ -286,6 +301,7 @@ enum UITestFixtures {
     static var items: [VaultItem] {
         let all = seededItems + (withOrgFolders ? [orgItemInFolder] : []) + (withBlockedItem ? [blockedItem] : [])
             + (withArchivedItem ? [archivedItem] : [])
+            + (withOrgFolders && withPersonalItemInFolder ? [personalItemInFolder] : [])
         guard withoutSeeds else { return all }
         return all.map { item in
             guard case .login = item.content else { return item }

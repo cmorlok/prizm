@@ -63,7 +63,8 @@ final class ItemEditViewModel: ObservableObject {
 
     // MARK: - Derived state
 
-    /// `true` when the Name field is non-empty, no save is in-flight and no conflict is open.
+    /// `true` when the Name field is non-empty, every custom field that needs a name has one, no save
+    /// is in-flight and no conflict is open.
     ///
     /// The conflict check lives here and not in the toolbar button: Item > Save and its shortcut
     /// reach `save()` through the vault browser without the button, so only this guard blocks them.
@@ -71,6 +72,7 @@ final class ItemEditViewModel: ObservableObject {
         !draft.name.trimmingCharacters(in: .whitespaces).isEmpty && !isSaving && conflict == .none
             && collectionHint == nil
             && hasSSHKeyIfCreating
+            && !draft.content.customFields.hasMissingName
     }
 
     // MARK: - SSH key create (ssh-key-import-and-generation, design D6)
@@ -215,10 +217,15 @@ final class ItemEditViewModel: ObservableObject {
         conflict == .syncing ? "Available when the sync finishes." : nil
     }
 
-    /// Why Save is disabled, for its accessibility hint and tooltip; nil when no conflict blocks it.
+    /// Shown while a custom field needs a name (vault-browsing-parity, design D6).
+    static let customFieldNameRequiredHint = "Every custom field needs a name."
+
+    /// Why Save is disabled, for its accessibility hint and tooltip; nil when no conflict and no
+    /// nameless custom field blocks it.
     var saveBlockedHint: String? {
         switch conflict {
-        case .none:                          return nil
+        case .none:
+            return draft.content.customFields.hasMissingName ? Self.customFieldNameRequiredHint : nil
         case .syncing, .synced, .syncFailed: return "Reload the item first."
         case .itemGone:                      return "This item no longer exists."
         case .accessLost:                    return "You no longer have access to this item."

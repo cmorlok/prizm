@@ -911,6 +911,8 @@ final class VaultBrowserViewModel: ObservableObject {
                 let loaded = try await vault.folders()
                 guard isCurrent(generation) else { return }
                 folders = loaded
+                // "No Folder" is shown only while a folder exists (vault-browsing-parity, D3).
+                if loaded.isEmpty, sidebarSelection == .noFolder { sidebarSelection = .allItems }
             } catch {
                 logger.error("Failed to load folders: \(ErrorLog.describe(error), privacy: .public)")
             }
@@ -927,6 +929,8 @@ final class VaultBrowserViewModel: ObservableObject {
                 guard isCurrent(generation) else { return }
                 organizations = loadedOrganizations
                 collections   = loadedCollections
+                // "My Vault" is shown only while the user belongs to an organization.
+                if loadedOrganizations.isEmpty, sidebarSelection == .myVault { sidebarSelection = .allItems }
             } catch {
                 logger.error("Failed to load organizations: \(ErrorLog.describe(error), privacy: .public)")
             }
