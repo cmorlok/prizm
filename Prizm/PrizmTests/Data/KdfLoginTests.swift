@@ -26,7 +26,7 @@ final class KdfLoginTests: XCTestCase {
                                  biometricKeychain: MockBiometricKeychainService(),
                                  vaultKeyCache: VaultKeyCache(), orgKeyCache: OrgKeyCache(),
                                  defaults: makePrivateDefaults(), gate: gate)
-        try await sut.setServerEnvironment(ServerEnvironment(base: URL(string: "https://vault.example.com")!, overrides: nil))
+        try await sut.setServerEnvironment(ServerEnvironment(base: URL(string: "https://vault.example.com")!, overrides: nil), flow: gate.begin())
         api.tokenResponse = tokenResponse()
     }
 

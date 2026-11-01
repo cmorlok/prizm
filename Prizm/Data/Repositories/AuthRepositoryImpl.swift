@@ -200,7 +200,9 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         }
     }
 
-    func setServerEnvironment(_ environment: ServerEnvironment) async throws {
+    func setServerEnvironment(_ environment: ServerEnvironment, flow: FlowToken) async throws {
+        let start = startFlow(flow)
+        guard isCurrent(start) else { throw AuthError.lockedWhileUnlocking }
         serverEnvironment = environment
         await apiClient.setBaseURL(environment.base)
     }
@@ -487,8 +489,9 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         try await loadVaultKeys(&vaultKeys, startedAt: start)
         try await restoreSession(userId: userId, account: restoredAccount, startedAt: start, caller: "Unlock")
         logger.info("Unlock succeeded")
+        // Only for an unlock that is still current (lock-state-machine, design D2).
         await MainActor.run {
-            NotificationCenter.default.post(name: .vaultDidUnlock, object: nil)
+            if isCurrent(start) { NotificationCenter.default.post(name: .vaultDidUnlock, object: nil) }
         }
         return restoredAccount
     }
@@ -550,6 +553,8 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         // Clear the bearer token from the API client's memory so it cannot be read
         // from a heap dump after sign-out (Constitution §III).
         await apiClient.clearAccessToken()
+        // Nor the server address of the signed-out account (lock-state-machine, design D3).
+        await apiClient.clearBaseURL()
 
         serverEnvironment = nil
         clearPendingTwoFactor()
@@ -711,8 +716,9 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         try await loadVaultKeys(&vaultKeys, startedAt: start)
         try await restoreSession(userId: userId, account: restoredAccount, startedAt: start, caller: "Biometric unlock")
         logger.info("Biometric unlock succeeded")
+        // Only for an unlock that is still current (lock-state-machine, design D2).
         await MainActor.run {
-            NotificationCenter.default.post(name: .vaultDidUnlock, object: nil)
+            if isCurrent(start) { NotificationCenter.default.post(name: .vaultDidUnlock, object: nil) }
         }
         return restoredAccount
     }
@@ -766,8 +772,9 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         try await loadVaultKeys(&vaultKeys, startedAt: start)
         try await restoreSession(userId: userId, account: restoredAccount, startedAt: start, caller: "Embedded biometric unlock")
         logger.info("Embedded biometric unlock succeeded")
+        // Only for an unlock that is still current (lock-state-machine, design D2).
         await MainActor.run {
-            NotificationCenter.default.post(name: .vaultDidUnlock, object: nil)
+            if isCurrent(start) { NotificationCenter.default.post(name: .vaultDidUnlock, object: nil) }
         }
         return restoredAccount
     }

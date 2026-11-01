@@ -48,7 +48,7 @@ final class MockAuthRepository: AuthRepository {
     /// Runs while the server environment is set, for example to lock meanwhile.
     var whileSettingServerEnvironment: (() async -> Void)?
 
-    func setServerEnvironment(_ environment: ServerEnvironment) async throws {
+    func setServerEnvironment(_ environment: ServerEnvironment, flow: FlowToken) async throws {
         serverEnvironment            = environment
         setServerEnvironmentCalled   = true
         await whileSettingServerEnvironment?()

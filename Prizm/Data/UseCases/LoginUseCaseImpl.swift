@@ -31,7 +31,7 @@ final class LoginUseCaseImpl: LoginUseCase {
         let trimmed = serverURL.hasSuffix("/") ? String(serverURL.dropLast()) : serverURL
         guard let url = URL(string: trimmed) else { throw AuthError.invalidURL }
         let environment = ServerEnvironment(base: url, overrides: nil)
-        try await auth.setServerEnvironment(environment)
+        try await auth.setServerEnvironment(environment, flow: flow)
 
         // Step 3: Attempt password login.
         logger.info("Attempting login for \(email, privacy: .private)")

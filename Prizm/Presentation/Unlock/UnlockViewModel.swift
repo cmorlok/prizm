@@ -258,6 +258,9 @@ final class UnlockViewModel: ObservableObject {
         Task {
             do {
                 try await auth.enableBiometricUnlock(flow: flow)
+            } catch where !gate.isCurrent(flow) {
+                // Refused because a lock or sign-out came first: expected, not an error (C12).
+                logger.info("Enable biometric unlock skipped: a lock or sign-out came first")
             } catch {
                 logger.error("Enable biometric unlock failed: \(ErrorLog.describe(error), privacy: .public)")
             }

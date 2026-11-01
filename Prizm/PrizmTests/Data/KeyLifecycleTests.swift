@@ -34,7 +34,7 @@ final class KeyLifecycleTests: XCTestCase {
                                  defaults: defaults, gate: gate)
         zeroed = []
         sut.zeroedKeyObserver = { [weak self] in self?.zeroed.append($0) }
-        try await sut.setServerEnvironment(env)
+        try await sut.setServerEnvironment(env, flow: gate.begin())
         crypto.stubbedMasterKey = Data(repeating: 0x5A, count: 32)
         crypto.stubbedStretchedKeys = CryptoKeys(encryptionKey: Data(repeating: 0x6B, count: 32),
                                                  macKey: Data(repeating: 0x7C, count: 32))
@@ -398,6 +398,31 @@ final class KeyLifecycleTests: XCTestCase {
         } catch AuthError.accountChangedWhileUnlocking {}
 
         XCTAssertFalse(crypto.isUnlocked, "no keys stay loaded behind the unlock screen")
+    }
+
+    /// A sign-in that a lock overtook sets up no server (task 2.1; code review C12).
+    func testStaleSignIn_setsUpNoServer() async throws {
+        let stale = gate.begin()
+        gate.end()
+        gate.open()
+        let other = ServerEnvironment(base: URL(string: "https://other.example.com")!, overrides: nil)
+
+        do {
+            try await sut.setServerEnvironment(other, flow: stale)
+            XCTFail("A stale sign-in must not set up its server")
+        } catch AuthError.lockedWhileUnlocking {}
+
+        XCTAssertEqual(api.baseURL, env.base, "the current session's server stays")
+    }
+
+    /// A sign-out leaves no server address in the network layer (task 2.2; code review C12).
+    func testSignOut_clearsTheServerAddress() async throws {
+        api.tokenResponse = tokenResponse()
+        _ = try await sut.loginWithPassword(email: "a@example.com", masterPassword: Data("pw".utf8), flow: gate.begin())
+
+        try await sut.signOut()
+
+        XCTAssertNil(api.baseURL)
     }
 
     /// A locked vault leaves no bearer token in the network layer; the next unlock installs one

@@ -23,6 +23,9 @@ protocol PrizmAPIClientProtocol: Actor {
     /// Stores the access token used for subsequent authenticated requests.
     func setAccessToken(_ token: String)
 
+    /// Forgets the base URL, on sign-out (lock-state-machine, design D3).
+    func clearBaseURL()
+
     /// Clears the in-memory access token.
     ///
     /// - Security goal: removes the bearer token from memory on sign-out so it cannot
@@ -672,6 +675,10 @@ actor PrizmAPIClientImpl: PrizmAPIClientProtocol {
 
     func setBaseURL(_ url: URL) {
         baseURL = url
+    }
+
+    func clearBaseURL() {
+        baseURL = nil
     }
 
     func setAccessToken(_ token: String) {

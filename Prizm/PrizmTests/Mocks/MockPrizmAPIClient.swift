@@ -58,6 +58,10 @@ actor MockPrizmAPIClient: PrizmAPIClientProtocol {
         baseURL = url
     }
 
+    func clearBaseURL() {
+        baseURL = nil
+    }
+
     func setAccessToken(_ token: String) {
         storedAccessToken = token
     }

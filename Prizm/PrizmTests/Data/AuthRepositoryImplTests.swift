@@ -58,7 +58,7 @@ final class AuthRepositoryImplTests: XCTestCase {
             base: URL(string: "https://vault.example.com")!,
             overrides: nil
         )
-        try await sut.setServerEnvironment(serverEnv)
+        try await sut.setServerEnvironment(serverEnv, flow: gate.begin())
 
         // Arrange mock responses
         mockAPI.preLoginResponse = PreLoginResponse(
@@ -102,7 +102,7 @@ final class AuthRepositoryImplTests: XCTestCase {
             base: URL(string: "https://vault.example.com")!,
             overrides: nil
         )
-        try await sut.setServerEnvironment(serverEnv)
+        try await sut.setServerEnvironment(serverEnv, flow: gate.begin())
 
         mockAPI.preLoginResponse = PreLoginResponse(
             kdf: 0, kdfIterations: 600_000, kdfMemory: nil, kdfParallelism: nil
@@ -131,7 +131,7 @@ final class AuthRepositoryImplTests: XCTestCase {
             base: URL(string: "https://vault.example.com")!,
             overrides: nil
         )
-        try await sut.setServerEnvironment(serverEnv)
+        try await sut.setServerEnvironment(serverEnv, flow: gate.begin())
 
         mockAPI.preLoginResponse = PreLoginResponse(
             kdf: 0, kdfIterations: 600_000, kdfMemory: nil, kdfParallelism: nil
@@ -161,7 +161,7 @@ final class AuthRepositoryImplTests: XCTestCase {
             base: URL(string: "https://vault.example.com")!,
             overrides: nil
         )
-        try await sut.setServerEnvironment(serverEnv)
+        try await sut.setServerEnvironment(serverEnv, flow: gate.begin())
 
         // Pre-stage the pending 2FA state (normally set by loginWithPassword returning .requiresTwoFactor)
         mockAPI.preLoginResponse = PreLoginResponse(
@@ -190,7 +190,7 @@ final class AuthRepositoryImplTests: XCTestCase {
             base: URL(string: "https://vault.example.com")!,
             overrides: nil
         )
-        try await sut.setServerEnvironment(serverEnv)
+        try await sut.setServerEnvironment(serverEnv, flow: gate.begin())
         mockAPI.preLoginResponse = PreLoginResponse(kdf: 0, kdfIterations: 600_000, kdfMemory: nil, kdfParallelism: nil)
         mockAPI.tokenTwoFactorProviders = [0]
         mockCrypto.stubbedServerHash = "hash=="
@@ -214,7 +214,7 @@ final class AuthRepositoryImplTests: XCTestCase {
             base: URL(string: "https://vault.example.com")!,
             overrides: nil
         )
-        try await sut.setServerEnvironment(serverEnv)
+        try await sut.setServerEnvironment(serverEnv, flow: gate.begin())
         mockAPI.preLoginResponse       = PreLoginResponse(kdf: 0, kdfIterations: 600_000, kdfMemory: nil, kdfParallelism: nil)
         mockAPI.tokenTwoFactorProviders = [0]
         mockCrypto.stubbedServerHash   = "hash=="
@@ -240,7 +240,7 @@ final class AuthRepositoryImplTests: XCTestCase {
             base: URL(string: "https://vault.example.com")!,
             overrides: nil
         )
-        try await sut.setServerEnvironment(serverEnv)
+        try await sut.setServerEnvironment(serverEnv, flow: gate.begin())
         mockAPI.preLoginResponse        = PreLoginResponse(kdf: 0, kdfIterations: 600_000, kdfMemory: nil, kdfParallelism: nil)
         mockAPI.tokenTwoFactorProviders = [0]
         mockCrypto.stubbedServerHash    = "hash=="

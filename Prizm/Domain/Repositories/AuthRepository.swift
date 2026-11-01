@@ -14,7 +14,9 @@ protocol AuthRepository: AnyObject {
     func validateServerURL(_ urlString: String) throws
 
     /// Persists `environment` and configures the API client base URL.
-    func setServerEnvironment(_ environment: ServerEnvironment) async throws
+    /// Refused with `AuthError.lockedWhileUnlocking` for a sign-in that a lock overtook
+    /// (lock-state-machine, design D2).
+    func setServerEnvironment(_ environment: ServerEnvironment, flow: FlowToken) async throws
 
     // MARK: - Login
 
