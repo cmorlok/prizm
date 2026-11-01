@@ -569,6 +569,9 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         await crypto.lockVault()
         await vaultKeyCache.clear()
         await orgKeyCache.clear()
+        // No bearer token stays in the network layer while locked; the next unlock installs one
+        // again (lock-state-machine, design D3; code review C3). The Keychain keeps the tokens.
+        await apiClient.clearAccessToken()
         // Notify any open edit sheets to dismiss immediately (no confirmation prompt).
         // Posted on the main queue because subscribers are @MainActor UI components.
         await MainActor.run {

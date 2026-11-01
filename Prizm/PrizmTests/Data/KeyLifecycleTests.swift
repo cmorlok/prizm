@@ -382,13 +382,24 @@ final class KeyLifecycleTests: XCTestCase {
         XCTAssertFalse(crypto.isUnlocked)
     }
 
+    /// A locked vault leaves no bearer token in the network layer; the next unlock installs one
+    /// again (code review C3).
+    func testLock_removesTheAccessTokenFromTheAPIClient() async throws {
+        api.tokenResponse = tokenResponse()
+        _ = try await sut.loginWithPassword(email: "a@example.com", masterPassword: Data("pw".utf8), flow: gate.begin())
+        XCTAssertNotNil(api.storedAccessToken)
+
+        await lock()
+
+        XCTAssertNil(api.storedAccessToken)
+    }
+
     /// A lock while an unlock refreshes the token: the account stays signed in, so the rotated tokens
     /// are kept in the Keychain, but the API client gets none and no keys stay loaded.
     func testLockDuringTheUnlocksRefresh_keepsTheRotatedTokensOnlyInTheKeychain() async throws {
         api.tokenResponse = tokenResponse()
         _ = try await sut.loginWithPassword(email: "a@example.com", masterPassword: Data("pw".utf8), flow: gate.begin())
         await lock()
-        api.storedAccessToken = nil
         api.refreshRotatedRefreshToken = "rotated-rt"
         api.whileRefreshing = { [sut, gate] in
             gate?.end()
