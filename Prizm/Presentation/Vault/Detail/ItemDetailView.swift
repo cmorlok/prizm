@@ -29,6 +29,8 @@ struct ItemDetailView: View {
     var onPermanentDelete: ((String) async -> Void)? = nil
     /// Creates a tracker for the Verification Code card (injected from `AppContainer`).
     var makeCodesViewModel: (() -> TOTPCodesViewModel)? = nil
+    /// Creates the password history sheet's view model for an item id (injected from `AppContainer`).
+    var makePasswordHistoryViewModel: ((String) -> PasswordHistoryViewModel)? = nil
     var editTrigger: Int = 0
     var saveTrigger: Int = 0
 
@@ -42,6 +44,8 @@ struct ItemDetailView: View {
     @State private var isPickingAttachment = false   // drives spinner while NSOpenPanel blocks
 
     @State private var batchAttachmentViewModel: AttachmentBatchViewModel?
+
+    @State private var historyViewModel: PasswordHistoryViewModel?
 
     @Environment(\.colorSchemeContrast) private var contrast
 
@@ -73,6 +77,9 @@ struct ItemDetailView: View {
                 }) { vm in
                     AttachmentBatchSheet(viewModel: vm)
                 }
+                .sheet(item: $historyViewModel) { vm in
+                    PasswordHistorySheet(viewModel: vm, onCopy: onCopy)
+                }
                 .onChange(of: editTrigger) { if !item.isDeleted && item.editBlock == nil { openEditSheet(for: item) } }
             } else {
                 ContentUnavailableView(
@@ -88,6 +95,10 @@ struct ItemDetailView: View {
         // remove the selected item, and the list may then drop its selection, so this view switches
         // to the empty state. That must not close the sheet: it holds the user's text and the
         // note that the item is gone. Only Save, Discard, Close, Esc or a lock end it.
+        // The history sheet belongs to one item. When its item goes (another selection, a sync), the
+        // view model goes too; kept, it would bring the sheet back already dismissed, with a
+        // spinner that never stops (review of password-history).
+        .onChange(of: item?.id) { historyViewModel = nil }
         .sheet(isPresented: $isEditSheetPresented, onDismiss: {
             editViewModel = nil
             onEditSheetChanged?(false)
@@ -142,16 +153,22 @@ struct ItemDetailView: View {
     }
 
     private func metadataFooter(for item: VaultItem) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 0) {
-                Text("Updated:")
-                    .frame(width: 70, alignment: .leading)
-                Text(item.revisionDate.formatted(.dateTime.day(.twoDigits).month(.twoDigits).year()))
+        let footer = ItemFooterModel(item: item)
+        return VStack(alignment: .leading, spacing: 4) {
+            ForEach(footer.rows, id: \.label) { row in
+                HStack(spacing: 0) {
+                    Text(row.label)
+                        .frame(width: Spacing.footerLabelWidth, alignment: .leading)
+                    Text(row.date.formatted(.dateTime.day(.twoDigits).month(.twoDigits).year()))
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier(row.accessibilityID)
             }
-            HStack(spacing: 0) {
-                Text("Created:")
-                    .frame(width: 70, alignment: .leading)
-                Text(item.creationDate.formatted(.dateTime.day(.twoDigits).month(.twoDigits).year()))
+            if let title = footer.historyButtonTitle, let makePasswordHistoryViewModel {
+                Button(title) { historyViewModel = makePasswordHistoryViewModel(item.id) }
+                    .buttonStyle(.link)
+                    .accessibilityHint("Shows earlier passwords and hidden field values")
+                    .accessibilityIdentifier(AccessibilityID.Detail.passwordHistoryButton)
             }
         }
         .font(Typography.fieldValue)

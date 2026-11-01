@@ -57,14 +57,21 @@ struct MaskedFieldView: View {
     let value:  String?
     /// A stable identifier for the current item; changing this resets the reveal state.
     let itemId: String
+    /// What VoiceOver calls the field, when `label` is not a name ("History entry from …").
+    var accessibilityName: String? = nil
+    /// The key of the accessibility identifiers, when `label` is not unique on screen.
+    var identifierKey: String? = nil
 
     @State private var state: MaskedFieldState
     @Environment(OptionKeyMonitor.self) private var optionKeyMonitor
 
-    init(label: String, value: String?, itemId: String) {
+    init(label: String, value: String?, itemId: String,
+         accessibilityName: String? = nil, identifierKey: String? = nil) {
         self.label  = label
         self.value  = value
         self.itemId = itemId
+        self.accessibilityName = accessibilityName
+        self.identifierKey = identifierKey
         _state = State(initialValue: MaskedFieldState(value: value ?? ""))
     }
 
@@ -80,7 +87,8 @@ struct MaskedFieldView: View {
                 // Without it VoiceOver read the dots after Reveal; with it the password does not
                 // stay in the text's character data after Hide either.
                 .selectableValueText(effectiveDisplayValue)
-                .accessibilityIdentifier(AccessibilityID.Masked.value(label))
+                .modifier(OptionalAccessibilityLabel(accessibilityName))
+                .accessibilityIdentifier(AccessibilityID.Masked.value(identifierKey ?? label))
             Button {
                 state = state.toggled()
             } label: {
@@ -90,8 +98,8 @@ struct MaskedFieldView: View {
             }
             .buttonStyle(.plain)
             .help(state.isRevealed ? "Hide" : "Reveal")
-            .accessibilityLabel(state.isRevealed ? "Hide \(label)" : "Reveal \(label)")
-            .accessibilityIdentifier(AccessibilityID.Masked.toggle(label))
+            .accessibilityLabel(state.isRevealed ? "Hide \(accessibilityName ?? label)" : "Reveal \(accessibilityName ?? label)")
+            .accessibilityIdentifier(AccessibilityID.Masked.toggle(identifierKey ?? label))
         }
         // Reset to masked whenever the parent item changes (FR-027).
         .onChange(of: itemId) { _, _ in
@@ -101,5 +109,16 @@ struct MaskedFieldView: View {
         .onChange(of: value) { _, newValue in
             state = MaskedFieldState(value: newValue ?? "", isRevealed: state.isRevealed)
         }
+    }
+}
+
+/// Sets an accessibility label only when one is given, so fields that VoiceOver names from their
+/// text keep doing so.
+private struct OptionalAccessibilityLabel: ViewModifier {
+    let label: String?
+    init(_ label: String?) { self.label = label }
+
+    func body(content: Content) -> some View {
+        if let label { content.accessibilityLabel(label) } else { content }
     }
 }

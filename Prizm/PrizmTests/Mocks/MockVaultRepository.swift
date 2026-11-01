@@ -185,6 +185,18 @@ final class MockVaultRepository: VaultRepository {
         populatedItems.removeAll { $0.id == id }
     }
 
+    // MARK: - passwordHistory stubbing
+
+    var stubbedPasswordHistory: [PasswordHistoryEntry] = []
+    var stubbedPasswordHistoryError: Error?
+    private(set) var passwordHistoryRequests: [String] = []
+
+    func passwordHistory(itemId: String) async throws -> [PasswordHistoryEntry] {
+        passwordHistoryRequests.append(itemId)
+        if let error = stubbedPasswordHistoryError { throw error }
+        return stubbedPasswordHistory
+    }
+
     // MARK: - restoreItem stubbing
 
     var stubbedRestoreError: Error?

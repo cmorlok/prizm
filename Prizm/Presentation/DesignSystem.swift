@@ -137,4 +137,11 @@ enum Spacing {
 
     /// Height of the strength bar in the password generator (generator-strength-meter).
     static let strengthBarHeight: CGFloat = 6
+    /// Width of the detail footer's label column; fits the longest label, "Password updated:"
+    /// (password-history, design D3).
+    static let footerLabelWidth: CGFloat = 130
+    /// Smallest width of the password history sheet: a date and a masked value side by side.
+    static let historySheetWidth: CGFloat = 440
+    /// Height of the password history list once it scrolls (more than ten entries).
+    static let historyListMaxHeight: CGFloat = 420
 }

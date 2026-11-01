@@ -97,13 +97,32 @@ enum UITestFixtures {
             } else {
                 keys = vaultKeys
             }
-            let record = try! mapper.toUnkeyedRawCipher(DraftVaultItem(item), encryptedWith: keys, encryptedFor: "ui-test-seed")
+            var record = try! mapper.toUnkeyedRawCipher(DraftVaultItem(item), encryptedWith: keys, encryptedFor: "ui-test-seed")
+            if let history = passwordHistory[item.id] {
+                record = try! withPasswordHistory(record, history, keys: keys)
+            }
             // The UI-test vault's records follow the same rule as the server's: each carries its
             // item's revision, which the save path relies on to compare revisions. Re-encoding a
             // fixed record cannot fail, so a failure traps in this DEBUG seam, like the other
             // fixture builders.
             return try! withRevision(record, serverRevisionString(for: item.revisionDate))
         }
+    }
+
+    /// Password history entries of the seeded items, newest first (password-history): two that share
+    /// a minute, so the sheet's identifiers cannot rely on dates. The item's count must match.
+    static let passwordHistory: [String: [(value: String, date: String)]] = [
+        "kappa": [("kappa-old-2", "2026-02-01T10:30:00.000Z"), ("kappa-old-1", "2026-02-01T10:30:00.000Z")],
+    ]
+
+    private static func withPasswordHistory(_ record: RawCipher, _ entries: [(value: String, date: String)],
+                                            keys: CryptoKeys) throws -> RawCipher {
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(record)) as? [String: Any] ?? [:]
+        json["passwordHistory"] = try entries.map { entry in
+            ["password": try EncString.encrypt(data: Data(entry.value.utf8), keys: keys).toString(),
+             "lastUsedDate": entry.date]
+        }
+        return try JSONDecoder().decode(RawCipher.self, from: JSONSerialization.data(withJSONObject: json))
     }
 
     /// `date` the way Vaultwarden 1.37.4 writes revisions: ISO-8601 UTC with six fractional digits
@@ -245,7 +264,8 @@ enum UITestFixtures {
         return all.map { item in
             guard case .login = item.content else { return item }
             return login(id: item.id, name: item.name, totp: nil, isDeleted: item.isDeleted,
-                         isFavorite: item.isFavorite, attachments: item.attachments)
+                         isFavorite: item.isFavorite, passwordHistoryCount: item.passwordHistoryCount,
+                         attachments: item.attachments)
         }
     }
 
@@ -265,7 +285,8 @@ enum UITestFixtures {
             // A counter-based seed: never a valid time-based code, so "unavailable" (totp-parity, D2).
             login(id: "delta", name: "Delta Bad Seed", totp: "otpauth://hotp/Delta:me?secret=\(rfcSeed)&counter=1"),
             login(id: "zeta", name: "Zeta Trashed", totp: rfcSeed, isDeleted: true),
-            login(id: "kappa", name: "Kappa Login", totp: nil, isFavorite: true, attachments: [
+            login(id: "kappa", name: "Kappa Login", totp: nil, isFavorite: true,
+                  passwordHistoryCount: passwordHistory["kappa"]?.count ?? 0, attachments: [
                 Attachment(id: "att1", fileName: "kappa-notes.txt", encryptedKey: "", size: 1024,
                            sizeName: "1 KB", url: nil),
                 // In Prizm's old file layout (fix-attachment-file-format): badge and Convert.
@@ -318,10 +339,11 @@ enum UITestFixtures {
 
     private static func login(
         id: String, name: String, totp: String?, isDeleted: Bool = false,
-        isFavorite: Bool = false, attachments: [Attachment] = [], uris: [LoginURI] = [],
-        hiddenURICount: Int = 0
+        isFavorite: Bool = false, passwordHistoryCount: Int = 0, attachments: [Attachment] = [],
+        uris: [LoginURI] = [], hiddenURICount: Int = 0
     ) -> VaultItem {
         item(id: id, name: name, isDeleted: isDeleted, isFavorite: isFavorite, attachments: attachments,
+             passwordHistoryCount: passwordHistoryCount,
              content: .login(LoginContent(
                  username: "user-\(id)", password: "pw-\(id)", uris: uris, totp: totp, notes: nil, customFields: [],
                  hiddenURICount: hiddenURICount
@@ -330,13 +352,13 @@ enum UITestFixtures {
 
     private static func item(
         id: String, name: String, isDeleted: Bool = false, isFavorite: Bool = false,
-        attachments: [Attachment] = [], content: ItemContent
+        attachments: [Attachment] = [], passwordHistoryCount: Int = 0, content: ItemContent
     ) -> VaultItem {
         VaultItem(
             id: id, name: name, isFavorite: isFavorite, isDeleted: isDeleted,
             creationDate: Date(timeIntervalSince1970: 1_700_000_000),
             revisionDate: Date(timeIntervalSince1970: 1_700_000_000),
-            content: content, attachments: attachments
+            content: content, attachments: attachments, passwordHistoryCount: passwordHistoryCount
         )
     }
 }

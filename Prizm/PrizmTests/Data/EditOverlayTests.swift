@@ -309,7 +309,7 @@ final class EditOverlayTests: XCTestCase {
         }
     }
 
-    func testPasswordChange_doesNotAppendToHistory() async throws {
+    func testPasswordChange_keepsTheStoredHistoryBehindTheNewEntry() async throws {
         let record = try storedRecord(for: sampleItem(1), keys: vaultKeys) {
             $0["passwordHistory"] = self.plain(self.oneEntryHistory)
         }
@@ -320,8 +320,12 @@ final class EditOverlayTests: XCTestCase {
             draft.content = .login(login)
         }
 
-        // Appending belongs to the password-history change; until then the stored history goes back unchanged.
-        XCTAssertEqual(sent.passwordHistory, oneEntryHistory)
+        // The replaced password goes in front (password-history); the stored entry follows unchanged.
+        guard case .array(let sentHistory)? = sent.passwordHistory, case .array(let stored) = oneEntryHistory else {
+            return XCTFail("history is not a list")
+        }
+        XCTAssertEqual(sentHistory.count, 2)
+        XCTAssertEqual(Array(sentHistory.dropFirst()), stored)
         XCTAssertEqual(try decrypt(sent.login?.password, keys: vaultKeys), "a-completely-new-password")
     }
 

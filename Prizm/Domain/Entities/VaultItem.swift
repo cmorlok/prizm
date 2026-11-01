@@ -82,6 +82,10 @@ nonisolated struct VaultItem: Identifiable, Equatable, Hashable {
     /// every Edit entry point and the repository can refuse it; nil for an item Prizm can edit.
     /// Kept by every `with(...)` copy, so a local update never lifts the block.
     private(set) var editBlock: EditBlockReason?
+    /// How many entries the server holds in the item's password history. Only the count: the
+    /// entries are decrypted on demand for the history sheet (`GetPasswordHistoryUseCase`), never
+    /// at sync (openspec change `password-history`, design D1).
+    let passwordHistoryCount: Int
 
     /// Custom memberwise init with `reprompt` defaulted to 0, `attachments` defaulted to `[]`,
     /// `organizationId` defaulted to nil, `collectionIds` defaulted to `[]` and `editBlock` defaulted
@@ -94,7 +98,8 @@ nonisolated struct VaultItem: Identifiable, Equatable, Hashable {
         folderId: String? = nil,
         organizationId: String? = nil,
         collectionIds: [String] = [],
-        editBlock: EditBlockReason? = nil
+        editBlock: EditBlockReason? = nil,
+        passwordHistoryCount: Int = 0
     ) {
         self.id = id
         self.folderId = folderId
@@ -109,6 +114,7 @@ nonisolated struct VaultItem: Identifiable, Equatable, Hashable {
         self.organizationId = organizationId
         self.collectionIds = collectionIds
         self.editBlock = editBlock
+        self.passwordHistoryCount = passwordHistoryCount
     }
 }
 
@@ -190,6 +196,9 @@ nonisolated struct LoginContent: Equatable, Hashable {
     /// (openspec change `uri-checksum-validation`). They are not in `uris`, so nothing shows, searches
     /// or saves them; the detail view tells the user they were there.
     var hiddenURICount: Int = 0
+    /// When the password was last changed, as the server stores it (`login.passwordRevisionDate`);
+    /// nil when it never was or the stored value is not a date. Shown in the detail footer.
+    var passwordRevisionDate: Date? = nil
 }
 
 nonisolated extension LoginContent {

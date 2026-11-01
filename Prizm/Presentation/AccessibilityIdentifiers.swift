@@ -104,10 +104,25 @@ nonisolated enum AccessibilityID {
         static let updatedDate       = "detail.updated"
         /// The notice row for websites the integrity check hid (uri-checksum-validation).
         static let hiddenWebsitesNotice = "detail.hiddenWebsites"
+        static let passwordUpdatedDate = "detail.passwordUpdated"
+        /// The "Password history: N" footer button (password-history).
+        static let passwordHistoryButton = "detail.passwordHistory"
         /// Accessibility identifier for a `DetailSectionCard` header label.
         static func cardHeader(_ title: String) -> String {
             "detail.cardHeader.\(title.lowercased().replacingOccurrences(of: " ", with: "."))"
         }
+    }
+
+    // MARK: - Password history sheet (password-history)
+
+    enum History {
+        static let sheet = "history.sheet"
+        static let close = "history.close"
+        /// The key of a readable row's field identifiers (`Field.row`, `Masked.value`,
+        /// `Masked.toggle`), by position: two entries can share a date.
+        static func rowKey(_ index: Int) -> String { "history.\(index)" }
+        /// A row that could not be read.
+        static func row(_ index: Int) -> String { "history.\(index).unreadable" }
     }
 
     // MARK: - Field Row (US3)

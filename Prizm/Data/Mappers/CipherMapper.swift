@@ -189,7 +189,8 @@ nonisolated final class CipherMapper: Sendable {
             folderId:       raw.folderId,
             organizationId: raw.organizationId,
             collectionIds:  raw.collectionIds,
-            editBlock:      editBlock(for: raw) ?? incompleteSSHKeyBlock(for: content)
+            editBlock:      editBlock(for: raw) ?? incompleteSSHKeyBlock(for: content),
+            passwordHistoryCount: Self.passwordHistoryCount(of: raw)
         )
         return (item: item, cipherKey: effective.toData())
     }
@@ -210,6 +211,56 @@ nonisolated final class CipherMapper: Sendable {
         var flagged = attachment
         flagged.wrappedWithPersonalKey = true
         return flagged
+    }
+
+    // MARK: - Password history
+
+    /// The number of elements of the stored `passwordHistory`: 0 when it is absent, `null` or not a
+    /// list (logged, without values). Unreadable elements count, so the footer and the sheet agree.
+    /// Nothing is decrypted here (openspec change `password-history`, design D1).
+    private static func passwordHistoryCount(of raw: RawCipher) -> Int {
+        switch raw.passwordHistory {
+        case nil, .null?:
+            return 0
+        case .array(let elements)?:
+            return elements.count
+        default:
+            logger.error("Password history of cipher \(raw.id, privacy: .public) is not a list; shown as empty")
+            return 0
+        }
+    }
+
+    /// The entries of `raw`'s stored password history, decrypted under `keys`, in stored order.
+    ///
+    /// - Security goal: the history (up to five old secrets per item) is plaintext only while the
+    ///   history sheet shows it, never at sync (Constitution §III, minimum lifetime).
+    /// - `keys` must be the item's effective key, derived and checked as for a save
+    ///   (`effectiveKeys(for:activeKeys:)` and `verifyKey(_:against:)`); no fallback key is tried.
+    /// - An element that is not an object, has no `password` string, or does not decrypt to UTF-8
+    ///   under `keys` comes back with a nil value ("Entry could not be read"); the others still do.
+    ///   A missing or unparsable `lastUsedDate` gives a nil date. Only the count of unreadable
+    ///   entries is logged, never a value.
+    func passwordHistoryEntries(of raw: RawCipher, keys: CryptoKeys) -> [PasswordHistoryEntry] {
+        guard case .array(let elements)? = raw.passwordHistory else { return [] }
+        var unreadable = 0
+        let entries = elements.map { element -> PasswordHistoryEntry in
+            guard case .object(let members) = element else {
+                unreadable += 1
+                return PasswordHistoryEntry(value: nil, lastUsedDate: nil)
+            }
+            var date: Date?
+            if case .string(let text)? = members["lastUsedDate"] { date = Self.parseRevisionDate(text) }
+            guard case .string(let encrypted)? = members["password"],
+                  let value = try? decryptRequired(encrypted, field: "passwordHistory", keys: keys) else {
+                unreadable += 1
+                return PasswordHistoryEntry(value: nil, lastUsedDate: date)
+            }
+            return PasswordHistoryEntry(value: value, lastUsedDate: date)
+        }
+        if unreadable > 0 {
+            Self.logger.error("Password history of cipher \(raw.id, privacy: .public): \(unreadable, privacy: .public) of \(elements.count, privacy: .public) entries could not be read")
+        }
+        return entries
     }
 
     /// Backward-compatible overload — passes empty orgKeys (personal vault, no org support).
@@ -452,7 +503,8 @@ nonisolated final class CipherMapper: Sendable {
             totp:         try login.totp.map { try decryptRequired($0, field: "totp", keys: keys) },
             notes:        notes,
             customFields: fields,
-            hiddenURICount: hidden
+            hiddenURICount: hidden,
+            passwordRevisionDate: Self.parseRevisionDate(login.passwordRevisionDate)
         ))
     }
 
@@ -652,11 +704,13 @@ nonisolated final class CipherMapper: Sendable {
     ///   key text field. Plain values from the draft: folder, favorite, reprompt, organization and
     ///   collections.
     /// - Copied from `base` as received, never decrypted: `key` (byte for byte, never re-wrapped),
-    ///   `passwordHistory`, `archivedDate`, `sshKey.keyFingerprint`
+    ///   the existing `passwordHistory` elements, `archivedDate`, `sshKey.keyFingerprint`
     ///   and the unknown keys of the login, each website, card, identity, SSH key and each custom
     ///   field (passkeys and `autofillOnPageLoad` among them). They are ciphertext or plain flags
     ///   that Prizm has no reason to read; decrypting a passkey or a history entry to validate it
-    ///   would make a secret plaintext for nothing. A website takes the unknown keys of the stored
+    ///   would make a secret plaintext for nothing.
+    /// - Added in front of `passwordHistory`: the replaced password and hidden field values
+    ///   (`passwordHistory(for:base:keys:savedAt:)`). A website takes the unknown keys of the stored
     ///   website with the same text, a custom field those of the stored field with the same name and
     ///   type (first unused match each), never those of the one at the same position.
     /// - Never copied from `base`: `folderId`, `favorite`, `organizationId`, `collectionIds`. The
@@ -665,11 +719,12 @@ nonisolated final class CipherMapper: Sendable {
     ///   and copying it would revert the user's change. The response-only keys (`data`, the legacy
     ///   `login.uri`, `edit`, `permissions`) never reach the model, so they cannot be sent.
     /// - Set by Prizm: `login.passwordRevisionDate` is the save time when the password was changed,
-    ///   added or cleared, else the stored value as received (`passwordRevisionDate(newPassword:base:keys:)`).
+    ///   added or cleared, else the stored value as received
+    ///   (`passwordRevisionDate(newPassword:base:keys:savedAt:)`); the same save time dates the new
+    ///   history entries.
     /// - Intentionally NOT done: re-encrypting only the fields that changed; adding, dropping or
     ///   re-wrapping the item key (the SDK re-wraps a key under the key it was read with; Prizm
-    ///   keeps it unchanged, and giving new items a key is `per-item-key-on-create`); appending to
-    ///   the password history when the password changes (the separate `password-history` change).
+    ///   keeps it unchanged, and giving new items a key is `per-item-key-on-create`).
     ///
     /// - Parameter encryptedFor: The profile id of the last sync (Vaultwarden 1.37.4 answers 422
     ///   without it).
@@ -696,9 +751,12 @@ nonisolated final class CipherMapper: Sendable {
             }
         }()
         let encFields = try toRawFields(customFieldsOf(draft.content), keys: keys, base: base?.fields, itemId: draft.id)
+        // One instant for the password revision date and the new history entries, as the SDK.
+        let savedAt = now()
 
         let (type, loginData, cardData, identityData, secureNoteData, sshKeyData) =
-            try encryptContent(draft.content, keys: keys, base: base, itemId: draft.id)
+            try encryptContent(draft.content, keys: keys, base: base, itemId: draft.id, savedAt: savedAt)
+        let history = try passwordHistory(for: draft, base: base, keys: keys, savedAt: savedAt)
 
         return RawCipher(
             id:             draft.id,
@@ -726,9 +784,7 @@ nonisolated final class CipherMapper: Sendable {
             // As received (absent stays absent, null stays null): a request without them clears both
             // on the server (design E4).
             archivedDate:   base?.archivedDate,
-            // TODO: append the replaced password here when the password changes. Deferred to the
-            // password-history change; until then the stored history goes back unchanged (design D3).
-            passwordHistory: base?.passwordHistory,
+            passwordHistory: history,
             // The stored record's own revision string, byte for byte, so the server rejects an edit
             // based on an older copy instead of overwriting a change made elsewhere. Never formatted
             // from a `Date` and never the epoch fallback (a changed fraction or a default date is a
@@ -745,7 +801,8 @@ nonisolated final class CipherMapper: Sendable {
         _ content: DraftItemContent,
         keys: CryptoKeys,
         base: RawCipher?,
-        itemId: String
+        itemId: String,
+        savedAt: Date
     ) throws -> (
         type: Int,
         login: RawLoginData?,
@@ -758,7 +815,7 @@ nonisolated final class CipherMapper: Sendable {
         // Must match the forward mapper (mapContent) and the Bitwarden server CipherType enum.
         switch content {
         case .login(let c):
-            return (1, try toRawLogin(c, keys: keys, base: base?.login, checksAddresses: base?.key != nil), nil, nil, nil, nil)
+            return (1, try toRawLogin(c, keys: keys, base: base?.login, checksAddresses: base?.key != nil, savedAt: savedAt), nil, nil, nil, nil)
         case .secureNote:
             return (2, nil, nil, nil, RawSecureNoteData(type: 0), nil)
         case .card(let c):
@@ -773,7 +830,7 @@ nonisolated final class CipherMapper: Sendable {
     // MARK: - Private: Login reverse map
 
     private func toRawLogin(_ c: DraftLoginContent, keys: CryptoKeys, base: RawLoginData?,
-                            checksAddresses: Bool) throws -> RawLoginData {
+                            checksAddresses: Bool, savedAt: Date) throws -> RawLoginData {
         // An empty address is not sent (the edit sheet drops blank rows already; this is the
         // backstop). Every other address gets a checksum computed from the exact string that is
         // encrypted as `uri`, under the same keys, so official clients accept it.
@@ -816,7 +873,8 @@ nonisolated final class CipherMapper: Sendable {
             password: try c.password.map { try encryptString($0, keys: keys) },
             uris:     rawURIs,
             totp:     try c.totp.map { try encryptString($0, keys: keys) },
-            passwordRevisionDate: try passwordRevisionDate(newPassword: c.password, base: base, keys: keys),
+            passwordRevisionDate: try passwordRevisionDate(newPassword: c.password, base: base, keys: keys,
+                                                           savedAt: savedAt),
             // From the stored login as received: the passkeys, `autofillOnPageLoad` and unknown keys.
             extras:   base?.extras ?? [:]
         )
@@ -842,12 +900,13 @@ nonisolated final class CipherMapper: Sendable {
     /// - Format: ISO-8601 UTC with milliseconds and `Z` (RFC 3339), the formatter this mapper already
     ///   uses for dates. The SDK writes nanoseconds and `+00:00`. Vaultwarden 1.37.4 accepts this
     ///   form (tested live); the official server is source-reviewed, not tested.
-    /// - Intentionally NOT done: the replaced password is not appended to `passwordHistory`
-    ///   (the separate `password-history` change).
+    /// - The replaced password goes into `passwordHistory` separately
+    ///   (`passwordHistory(for:base:keys:savedAt:)`), with this same `savedAt`.
     ///
     /// - Throws: `CipherMapperError.storedValueUnreadable("password")` when the stored password does
     ///   not decrypt under `keys` (a mixed-key record that passed the name check); the save fails.
-    private func passwordRevisionDate(newPassword: String?, base: RawLoginData?, keys: CryptoKeys) throws -> String? {
+    private func passwordRevisionDate(newPassword: String?, base: RawLoginData?, keys: CryptoKeys,
+                                      savedAt: Date) throws -> String? {
         guard let base else { return nil }
         // Compared as bytes, not as `String`: a `String` cannot be zeroed, `Data` can (Constitution III).
         // The typed password still arrives as a `String` from the draft; only the copies made here
@@ -864,7 +923,105 @@ nonisolated final class CipherMapper: Sendable {
         var typed = Data((newPassword ?? "").utf8)
         defer { typed.resetBytes(in: typed.indices) }
         if stored == typed { return base.passwordRevisionDate }
-        return Self.iso8601.string(from: now())
+        return Self.iso8601.string(from: savedAt)
+    }
+
+    /// The `passwordHistory` to send: the new entries of this save in front of the stored elements,
+    /// at most `PasswordHistoryPolicy.maxEntries`; nil on create.
+    ///
+    /// - Rule and source: `PasswordHistoryPolicy` (Bitwarden SDK `update_password_history`). The
+    ///   draft is compared with `base`, the server's stored record, the same way
+    ///   `passwordRevisionDate` decides the date, so a second save of the same draft (a retry after
+    ///   a collection change that failed, whose stored record is the saved one) adds nothing again.
+    /// - Security goal: the stored originals are decrypted under the item's effective key only for
+    ///   this comparison, into `Data` that is zeroed before returning, together with the plaintext
+    ///   entries; nothing is logged but the item id. Each new entry is encrypted under the same key
+    ///   as every other field (EncString type 2, AES-256-CBC + HMAC-SHA256, Bitwarden Security
+    ///   Whitepaper §4), dated `savedAt` in this mapper's ISO-8601 format.
+    /// - Intentionally NOT done: decrypting or re-encrypting the stored elements. They are copied
+    ///   byte for byte, malformed ones too. A stored value that is not a list is sent back unchanged
+    ///   and gets no entry (logged): Prizm cannot add to it without dropping it.
+    /// - When nothing is added, the stored value goes back as received (absent stays absent, null
+    ///   stays null).
+    ///
+    /// - Throws: `CipherMapperError.storedValueUnreadable` when a stored password, field name or
+    ///   hidden value does not decrypt under `keys`; the save fails, as for a stored website.
+    private func passwordHistory(for draft: DraftVaultItem, base: RawCipher?, keys: CryptoKeys,
+                                 savedAt: Date) throws -> JSONValue? {
+        guard let base else { return nil }
+        let existing: [JSONValue]
+        switch base.passwordHistory {
+        case nil, .null?:
+            existing = []
+        case .array(let elements)?:
+            existing = elements
+        default:
+            Self.logger.error("Password history of cipher \(draft.id, privacy: .public) is not a list; sent back unchanged, nothing added")
+            return base.passwordHistory
+        }
+
+        var oldPassword: Data?
+        var newPassword = Data()
+        var oldHidden: [PasswordHistoryPolicy.HiddenField] = []
+        var newHidden: [PasswordHistoryPolicy.HiddenField] = []
+        var entries: [Data] = []
+        // Set up before the first decryption, so a throw below still zeroes what was decrypted.
+        defer {
+            if let count = oldPassword?.count { oldPassword?.resetBytes(in: 0..<count) }
+            newPassword.resetBytes(in: newPassword.indices)
+            for i in oldHidden.indices { oldHidden[i].wipe() }
+            for i in newHidden.indices { newHidden[i].wipe() }
+            for i in entries.indices { entries[i].resetBytes(in: entries[i].indices) }
+        }
+        oldHidden = try storedHiddenFields(base.fields, keys: keys)
+        newHidden = customFieldsOf(draft.content).compactMap { field -> PasswordHistoryPolicy.HiddenField? in
+            guard field.type == .hidden, let name = field.name, let value = field.value else { return nil }
+            return PasswordHistoryPolicy.HiddenField(name: Data(name.utf8), value: Data(value.utf8))
+        }
+        if case .login(let login) = draft.content, let storedLogin = base.login {
+            oldPassword = try storedLogin.password.map { encrypted in
+                do { return try EncString(string: encrypted).decrypt(keys: keys) } catch {
+                    throw CipherMapperError.storedValueUnreadable("password")
+                }
+            } ?? Data()
+            newPassword = Data((login.password ?? "").utf8)
+        }
+        entries = PasswordHistoryPolicy.newEntries(oldPassword: oldPassword, newPassword: newPassword,
+                                                   oldHidden: oldHidden, newHidden: newHidden)
+        guard !entries.isEmpty else { return base.passwordHistory }
+
+        let date = JSONValue.string(Self.iso8601.string(from: savedAt))
+        let added: [JSONValue] = try entries.map { entry in
+            .object(["password": .string(try EncString.encrypt(data: entry, keys: keys).toString()),
+                     "lastUsedDate": date])
+        }
+        return .array(Array((added + existing).prefix(PasswordHistoryPolicy.maxEntries)))
+    }
+
+    /// The stored custom fields of type hidden, name and value decrypted under `keys`. A field
+    /// without a name or value is skipped (the policy ignores it anyway). When one does not
+    /// decrypt, the ones read before it are zeroed before the error is thrown.
+    private func storedHiddenFields(_ stored: [RawField]?, keys: CryptoKeys) throws -> [PasswordHistoryPolicy.HiddenField] {
+        var fields: [PasswordHistoryPolicy.HiddenField] = []
+        for field in stored ?? [] {
+            guard CustomFieldType(rawValue: field.type) == .hidden,
+                  let name = field.name, let value = field.value else { continue }
+            do {
+                var hidden = PasswordHistoryPolicy.HiddenField(name: Data(), value: Data())
+                hidden.name = try EncString(string: name).decrypt(keys: keys)
+                do {
+                    hidden.value = try EncString(string: value).decrypt(keys: keys)
+                } catch {
+                    hidden.wipe()
+                    throw error
+                }
+                fields.append(hidden)
+            } catch {
+                for i in fields.indices { fields[i].wipe() }
+                throw CipherMapperError.storedValueUnreadable("field")
+            }
+        }
+        return fields
     }
 
     // MARK: - Private: Card reverse map

@@ -280,9 +280,9 @@ final class PasswordRevisionDateTests: XCTestCase {
         }
     }
 
-    // MARK: - Password history stays as it is
+    // MARK: - Password history gets the old password in front (password-history)
 
-    func testPasswordChange_doesNotAppendToHistory() async throws {
+    func testPasswordChange_prependsToHistory() async throws {
         let history: JSONValue = .array([
             .object(["password": .string("2.AAAA|BBBB|CCCC"), "lastUsedDate": .string("2026-01-01T00:00:00.000Z")]),
         ])
@@ -294,7 +294,11 @@ final class PasswordRevisionDateTests: XCTestCase {
         let sent = try await save(stored, password: "new")
 
         XCTAssertEqual(sent.login?.passwordRevisionDate, Self.saveTimeString)
-        XCTAssertEqual(sent.passwordHistory, history, "the history goes back as it was stored")
+        guard case .array(let sentHistory)? = sent.passwordHistory, case .array(let storedHistory) = history else {
+            return XCTFail("history is not a list")
+        }
+        XCTAssertEqual(sentHistory.count, 2)
+        XCTAssertEqual(Array(sentHistory.dropFirst()), storedHistory, "the stored entry goes back as it was")
     }
 
     // MARK: - Format
