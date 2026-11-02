@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed: Prizm builds again in the Release configuration (`xcodebuild -configuration Release`);
+  since the website-icon privacy change a UI-test helper was referenced outside Debug builds.
 - Added: "No Folder" and "My Vault" in the sidebar, for items without a folder and for items that
   belong to no organization.
 - Added: custom fields can be added (text, hidden, checkbox, linked), renamed, removed and moved up
