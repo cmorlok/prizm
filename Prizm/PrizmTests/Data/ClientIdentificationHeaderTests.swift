@@ -53,6 +53,17 @@ final class ClientIdentificationHeaderTests: XCTestCase {
         XCTAssertTrue(tokenForm.contains("deviceType=7"), tokenForm)
     }
 
+    /// The client does not install a refreshed token itself; the auth layer decides whether the
+    /// unlock that asked for it is still current (lock-state-machine, design D3).
+    func testRefresh_doesNotReplaceTheTokenTheClientSends() async throws {
+        respond(#"{"access_token":"refreshed","refresh_token":"rt2","token_type":"Bearer","expires_in":3600}"#)
+        let tokens = try await client.refreshAccessToken(refreshToken: "rt")
+        XCTAssertEqual(tokens.accessToken, "refreshed")
+        respond("{}")
+        _ = try? await client.fetchSync()
+        XCTAssertEqual(StubURLProtocol.requests.last?.headers["Authorization"], "Bearer token")
+    }
+
     func testSyncAndCipherWrites_areIdentified() async throws {
         respond("{}")
         _ = try? await client.fetchSync()

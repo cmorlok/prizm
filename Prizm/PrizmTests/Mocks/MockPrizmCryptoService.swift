@@ -8,7 +8,13 @@ actor MockPrizmCryptoService: PrizmCryptoService {
     // nonisolated(unsafe) allows tests to read/write without await — safe in single-threaded tests.
 
     nonisolated(unsafe) var _isUnlocked: Bool = false
-    nonisolated var isUnlocked: Bool { _isUnlocked }
+    nonisolated var isUnlocked: Bool {
+        whileCheckingUnlocked?()
+        return _isUnlocked
+    }
+    /// Runs inside every `isUnlocked` read, so a test can lock right after a caller's own token
+    /// check passed (the sync's `ensureStillUnlocked`; lock-state-machine, gap 6).
+    nonisolated(unsafe) var whileCheckingUnlocked: (@Sendable () -> Void)?
 
     // MARK: - Stubs
 
@@ -66,8 +72,10 @@ actor MockPrizmCryptoService: PrizmCryptoService {
                           macKey: Data(Array(stubbedVaultKeys.macKey)))
     }
 
+    nonisolated(unsafe) var stubbedKeySources: [String: CipherKeySource] = [:]
+
     func decryptList(ciphers: [RawCipher]) async throws -> (items: [VaultItem], failedCount: Int, keySources: [String: CipherKeySource]) {
-        (items: stubbedDecryptList, failedCount: stubbedFailedCount, keySources: [:])
+        (items: stubbedDecryptList, failedCount: stubbedFailedCount, keySources: stubbedKeySources)
     }
 
     func decryptFolders(folders: [RawFolder]) async throws -> (folders: [Folder], failedCount: Int) {

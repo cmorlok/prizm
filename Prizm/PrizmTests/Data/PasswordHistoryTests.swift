@@ -230,6 +230,19 @@ final class PasswordHistoryTests: XCTestCase {
         }
     }
 
+    /// A lock that lands while the entries are decrypted: the decryption ran on its own copy of the
+    /// key, and its result must not come back (lock-state-machine, gap 7).
+    func testHistory_lockDuringTheDecryption_isDropped() async throws {
+        let rig = await makeRig(storing: try record(item(login(password: "p")), history: [entry("x", "2026-01-01T00:00:00.000Z")]))
+        await rig.repository.setAfterPasswordHistoryDecrypted { [store = rig.store] in store.invalidate() }
+        do {
+            let entries = try await rig.repository.passwordHistory(itemId: "item-1")
+            XCTFail("Expected vaultLocked, got \(entries.count) entries")
+        } catch VaultError.vaultLocked {
+            // expected
+        }
+    }
+
     func testHistory_withoutAStoredRecord_throwsItemRecordUnavailable() async throws {
         let rig = await makeRig(storing: nil)
         do {

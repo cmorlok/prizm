@@ -38,8 +38,7 @@ final class VaultKeyCacheTests: XCTestCase {
 
     func test_record_addsOneEntry_keepingTheOthers() async {
         await sut.populate(sources: ["old": .personal])
-        let generation = await sut.generation
-        await sut.record(.organization(orgId: "org-1"), for: "new", ifGeneration: generation)
+        await sut.record(.organization(orgId: "org-1"), for: "new", ifStillCurrent: { true })
         let old = await sut.source(for: "old")
         let new = await sut.source(for: "new")
         XCTAssertEqual(old, .personal)
@@ -47,13 +46,21 @@ final class VaultKeyCacheTests: XCTestCase {
     }
 
     /// A create that finishes after a lock must not leave its key source in the next session
-    /// (review of fix-org-attachment-key, 2026-10-30).
-    func test_record_fromBeforeAClear_isIgnored() async {
-        let generation = await sut.generation
-        await sut.clear()
-        await sut.record(.itemKey(Data(repeating: 0x05, count: 64)), for: "late", ifGeneration: generation)
+    /// (review of fix-org-attachment-key, 2026-10-30). The session check is the gate's, made inside
+    /// the actor in the write's turn (lock-state-machine, task 1.2); the refused item key is zeroed.
+    func test_record_afterTheSessionEnded_isIgnored_andZeroesTheKey() async {
+        let zeroed = ZeroedKeys()
+        await sut.setZeroedObserver { bytes, inPlace in zeroed.append(bytes, inPlace) }
+        let gate = SessionGateImpl()
+        let token = gate.begin()
+        gate.end()
+
+        await sut.record(.itemKey(Data(repeating: 0x05, count: 64)), for: "late",
+                         ifStillCurrent: { gate.isCurrent(token) })
+
         let late = await sut.source(for: "late")
         XCTAssertNil(late)
+        XCTAssertEqual(zeroed.all.map(\.bytes), [Data(count: 64)])
     }
 
     func test_clear_makesAllLookupsReturnNil() async {
@@ -78,6 +85,43 @@ final class VaultKeyCacheTests: XCTestCase {
         let seen = zeroed.all
         XCTAssertEqual(seen.count, 1, "Only the own item key has bytes to zero")
         XCTAssertTrue(seen.allSatisfy { $0.inPlace && $0.bytes.allSatisfy { $0 == 0 } })
+    }
+
+    // MARK: - Lock fence (lock-state-machine, design D8, gap 6)
+
+    /// A sync whose session ended after its last lock check writes no sources and no item keys.
+    func test_populateIfStillCurrent_staleSession_writesNothingAndZeroesTheKeys() async {
+        let zeroed = ZeroedKeys()
+        await sut.setZeroedObserver { bytes, inPlace in zeroed.append(bytes, inPlace) }
+
+        let written = await sut.populate(sources: ["keyed": .itemKey(Data(repeating: 0x07, count: 64)), "mine": .personal],
+                                         ifStillCurrent: { false })
+
+        XCTAssertFalse(written)
+        let keyed = await sut.source(for: "keyed")
+        let mine = await sut.source(for: "mine")
+        XCTAssertNil(keyed)
+        XCTAssertNil(mine)
+        XCTAssertEqual(zeroed.all.count, 1, "the refused item key is zeroed")
+        XCTAssertTrue(zeroed.all.allSatisfy { $0.bytes.allSatisfy { $0 == 0 } })
+    }
+
+    func test_populateIfStillCurrent_currentSession_writes() async {
+        let written = await sut.populate(sources: ["mine": .personal], ifStillCurrent: { true })
+        XCTAssertTrue(written)
+        let mine = await sut.source(for: "mine")
+        XCTAssertEqual(mine, .personal)
+    }
+
+    /// The check runs inside the cache, in the same turn as the write: a gate ended before the
+    /// call is seen even though the caller's own check passed earlier.
+    func test_populateIfStillCurrent_followsTheGateAtTheWrite() async {
+        let gate = SessionGateImpl()
+        let token = gate.begin()
+        XCTAssertTrue(gate.isCurrent(token), "the caller's earlier check passes")
+        gate.end()
+        let written = await sut.populate(sources: ["mine": .personal], ifStillCurrent: { gate.isCurrent(token) })
+        XCTAssertFalse(written)
     }
 
     func test_populate_replacesExistingEntries() async {

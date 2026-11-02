@@ -23,7 +23,7 @@ final class LoginUseCaseImpl: LoginUseCase {
         self.sync = sync
     }
 
-    func execute(serverURL: String, email: String, masterPassword: Data) async throws -> LoginResult {
+    func execute(serverURL: String, email: String, masterPassword: Data, flow: FlowToken) async throws -> LoginResult {
         // Step 1: Validate URL (throws AuthError.invalidURL on failure).
         try auth.validateServerURL(serverURL)
 
@@ -31,11 +31,13 @@ final class LoginUseCaseImpl: LoginUseCase {
         let trimmed = serverURL.hasSuffix("/") ? String(serverURL.dropLast()) : serverURL
         guard let url = URL(string: trimmed) else { throw AuthError.invalidURL }
         let environment = ServerEnvironment(base: url, overrides: nil)
-        try await auth.setServerEnvironment(environment)
+        try await auth.setServerEnvironment(environment, flow: flow)
 
         // Step 3: Attempt password login.
         logger.info("Attempting login for \(email, privacy: .private)")
-        let result = try await auth.loginWithPassword(email: email, masterPassword: masterPassword)
+        // The sign-in's token, not one taken here: the server setup above is awaited, and a lock
+        // during it must still refuse this login (lock-state-machine, gap 4).
+        let result = try await auth.loginWithPassword(email: email, masterPassword: masterPassword, flow: flow)
 
         switch result {
         case .success:
@@ -46,7 +48,7 @@ final class LoginUseCaseImpl: LoginUseCase {
             // the server is degraded — unacceptable for a password manager.
             logger.info("Login succeeded — starting vault sync")
             do {
-                _ = try await sync.sync(progress: { _ in })
+                _ = try await sync.sync(flow: flow, progress: { _ in })
             } catch {
                 logger.error("Post-login sync failed (non-fatal): \(ErrorLog.describe(error), privacy: .public)")
             }
@@ -61,12 +63,12 @@ final class LoginUseCaseImpl: LoginUseCase {
         }
     }
 
-    func completeTOTP(code: String, rememberDevice: Bool) async throws -> Account {
+    func completeTOTP(code: String, rememberDevice: Bool, flow: FlowToken) async throws -> Account {
         logger.info("Completing TOTP")
         let account = try await auth.loginWithTOTP(code: code, rememberDevice: rememberDevice)
         // Sync failure is non-fatal — show vault with whatever was synced (FR-049).
         do {
-            _ = try await sync.sync(progress: { _ in })
+            _ = try await sync.sync(flow: flow, progress: { _ in })
         } catch {
             logger.error("Post-TOTP sync failed (non-fatal): \(ErrorLog.describe(error), privacy: .public)")
         }

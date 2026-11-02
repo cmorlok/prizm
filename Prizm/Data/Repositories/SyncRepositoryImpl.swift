@@ -65,10 +65,13 @@ actor SyncRepositoryImpl: SyncRepository {
 
     func sync(progress: @Sendable @escaping (String) -> Void) async throws -> SyncResult {
         // Read before the first network await, not right before the write: a token read at the
-        // write is always current and would fence nothing. `clearVault()` bumps it, so a lock
-        // (also one followed by an unlock) that lands while this sync runs makes `replaceAll`
-        // refuse, which the unlocked check alone cannot do.
-        let storeGeneration = recordStore.currentGeneration()
+        // write is always current and would fence nothing. A lock (also one followed by an unlock)
+        // that lands while this sync runs makes `replaceAll` refuse, which the unlocked check alone
+        // cannot do.
+        try await sync(flow: recordStore.currentGeneration(), progress: progress)
+    }
+
+    func sync(flow storeGeneration: FlowToken, progress: @Sendable @escaping (String) -> Void) async throws -> SyncResult {
 
         // Only a sync of the same session blocks this one. A sync that started before a lock is
         // going to be discarded at its store write; if it still blocked callers, the sync that
@@ -190,7 +193,12 @@ actor SyncRepositoryImpl: SyncRepository {
                     }
                 }
                 try await ensureStillUnlocked(storeGeneration)
-                await orgKeyCache.replaceAll(with: unwrappedOrgKeys)
+                // Checked again inside the cache, in the same turn as the write: a lock may land
+                // on the hop between the check above and the write (lock-state-machine, gap 6).
+                guard await orgKeyCache.replaceAll(with: unwrappedOrgKeys,
+                                                   ifStillCurrent: { [recordStore] in recordStore.isCurrent(storeGeneration) }) else {
+                    throw PrizmCryptoServiceError.vaultLocked
+                }
 
                 // Build domain Organization entities.
                 let orgKeysSnapshot = await orgKeyCache.snapshot()
@@ -267,24 +275,24 @@ actor SyncRepositoryImpl: SyncRepository {
                 // from this sync, so the old org keys have no use and go
                 // (harden-key-lifecycle-and-logging, D2). Not for a sync that was cleared while it
                 // ran: the keys then belong to the next session.
-                if recordStore.isCurrent(storeGeneration) {
-                    await orgKeyCache.replaceAll(with: [:])
-                }
+                await orgKeyCache.replaceAll(with: [:], ifStillCurrent: { [recordStore] in recordStore.isCurrent(storeGeneration) })
             }
         } else {
             // No organizations (or no private key to unwrap them): drop the keys of orgs the user
             // has left. Not for a sync that was cleared while it ran: the keys then belong to the
             // next session.
-            if recordStore.isCurrent(storeGeneration) {
-                await orgKeyCache.replaceAll(with: [:])
-            }
+            await orgKeyCache.replaceAll(with: [:], ifStillCurrent: { [recordStore] in recordStore.isCurrent(storeGeneration) })
         }
 
         // Phase 2d: Replace the key cache once, with the source of every item, personal and org
         // (fix-org-attachment-key, D2). Until here the previous sync's sources stay, so an org item
         // still listed from that sync keeps its key while this one runs.
         try await ensureStillUnlocked(storeGeneration)
-        await vaultKeyCache.populate(sources: keySources)
+        // Checked again inside the cache, in the same turn as the write (lock-state-machine, gap 6).
+        guard await vaultKeyCache.populate(sources: keySources,
+                                           ifStillCurrent: { [recordStore] in recordStore.isCurrent(storeGeneration) }) else {
+            throw PrizmCryptoServiceError.vaultLocked
+        }
         logger.info("VaultKeyCache populated with \(keySources.count, privacy: .public) key source(s)")
 
         // Phase 3: Populate the in-memory vault store.

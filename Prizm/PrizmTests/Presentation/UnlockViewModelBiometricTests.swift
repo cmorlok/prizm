@@ -9,6 +9,7 @@ final class UnlockViewModelBiometricTests: XCTestCase {
     private var mockAuth:     MockAuthRepository!
     private var mockSync:     MockSyncUseCase!
     private var defaults:     UserDefaults!
+    private var gate:         SessionGateImpl!
     private var cancellables: Set<AnyCancellable> = []
 
     private let stubAccount = Account(
@@ -26,12 +27,51 @@ final class UnlockViewModelBiometricTests: XCTestCase {
         mockAuth = MockAuthRepository()
         mockSync = MockSyncUseCase()
         defaults = makePrivateDefaults()
-        sut      = UnlockViewModel(auth: mockAuth, sync: mockSync, account: stubAccount, defaults: defaults)
+        gate     = SessionGateImpl()
+        sut      = UnlockViewModel(auth: mockAuth, sync: mockSync, account: stubAccount, defaults: defaults, gate: gate)
     }
 
     override func tearDown() async throws {
         cancellables.removeAll()
         try await super.tearDown()
+    }
+
+    private func waitUntil(timeout: Duration = .seconds(2), _ condition: @escaping () -> Bool) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while !condition(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+    }
+
+    // MARK: - Embedded Touch ID: a running unlock from the accepted finger on (lock-state-machine, D5)
+
+    func testEmbeddedTouchID_isARunningUnlockFromTheTouchOn() async throws {
+        mockAuth.stubbedBiometricUnlockAvailable = true
+        let touch = HeldEmbeddedBiometric(account: stubAccount)
+        sut = UnlockViewModel(auth: mockAuth, sync: mockSync, account: stubAccount, embeddedBiometric: touch,
+                              defaults: defaults, gate: gate)
+
+        sut.triggerEmbeddedBiometricIfAvailable()
+        XCTAssertFalse(sut.isFlowRunning, "a sensor waiting for a finger is no running unlock")
+        try await waitUntil { touch.touched }
+
+        XCTAssertTrue(sut.isFlowRunning, "keys can load from the touch on")
+        await touch.release.open()
+    }
+
+    func testEmbeddedTouchID_failingAfterTheTouch_isNoLongerRunning() async throws {
+        mockAuth.stubbedBiometricUnlockAvailable = true
+        let touch = HeldEmbeddedBiometric(account: stubAccount)
+        touch.error = AuthError.biometricUnavailable
+        sut = UnlockViewModel(auth: mockAuth, sync: mockSync, account: stubAccount, embeddedBiometric: touch,
+                              defaults: defaults, gate: gate)
+
+        sut.triggerEmbeddedBiometricIfAvailable()
+        try await waitUntil { touch.touched }
+        await touch.release.open()
+        try await waitUntil { self.sut.errorMessage != nil }
+
+        XCTAssertFalse(sut.isFlowRunning)
     }
 
     // MARK: - biometricUnlockAvailable
@@ -207,6 +247,30 @@ final class UnlockViewModelBiometricTests: XCTestCase {
 
         XCTAssertFalse(sut.showEnrollmentPrompt)
         XCTAssertTrue(defaults.bool(forKey: "biometricEnrollmentPromptShown"))
+    }
+
+    /// Enrollment accepted after a lock: it uses the unlock's (now stale) token, so the auth layer
+    /// refuses it, the prompt is not marked as shown and no sync runs (lock-state-machine, D2).
+    func testConfirmEnrollBiometric_afterALock_usesTheUnlocksTokenAndMarksNothing() async throws {
+        mockAuth.stubbedDeviceBiometricCapable = true
+        defaults.set(false, forKey: "biometricUnlockEnabled")
+        defaults.set(false, forKey: "biometricEnrollmentPromptShown")
+        let enrollExp = expectation(description: "enrollment prompt shown")
+        sut.$showEnrollmentPrompt.filter { $0 }.first().sink { _ in enrollExp.fulfill() }.store(in: &cancellables)
+        sut.password = "TestPassword1!"
+        sut.unlock()
+        await fulfillment(of: [enrollExp], timeout: 3.0)
+        let unlockFlow = try XCTUnwrap(mockAuth.receivedFlows.first)
+
+        gate.end()
+        gate.open()
+        sut.confirmEnrollBiometric()
+        try await Task.sleep(for: .milliseconds(300))
+
+        XCTAssertEqual(mockAuth.receivedFlows.last, unlockFlow, "enrollment reuses the unlock's token")
+        XCTAssertFalse(defaults.bool(forKey: "biometricEnrollmentPromptShown"), "offered again after the next unlock")
+        XCTAssertFalse(mockSync.executeCalled)
+        XCTAssertNotEqual(sut.flowState, .vault)
     }
 
     func testEnrollmentPrompt_reason_isFirstTime_onInitialUnlock() async {

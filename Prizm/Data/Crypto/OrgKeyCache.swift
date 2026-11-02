@@ -59,18 +59,38 @@ actor OrgKeyCache {
         logger.info("OrgKeyCache cleared — key material zeroed")
     }
 
-    /// Replaces all org keys in one step and zeroes the replaced ones.
+    /// Replaces all org keys in one step and zeroes the replaced ones, if the sync's session is
+    /// still current.
     ///
     /// Security goal: a save that runs during a sync sees either the previous keys or the new ones,
     /// never an empty map, so it can never take a path without the org key
     /// (fix-org-key-required-on-write, D2). Called once per sync after every org key is unwrapped;
-    /// orgs that are not in `newKeys` have no key afterwards.
-    func replaceAll(with newKeys: [String: CryptoKeys]) {
+    /// orgs that are not in `newKeys` have no key afterwards. A lock between the sync's last lock
+    /// check and this write must not put org keys back into the cache the lock just cleared
+    /// (`lock-state-machine`, gap 6): `isStillCurrent` runs here, in the same actor turn as the
+    /// write. A refused write zeroes `newKeys` (best effort, as `clear()`).
+    /// - Returns: false when the session ended; the cache is unchanged then.
+    @discardableResult
+    func replaceAll(with newKeys: [String: CryptoKeys], ifStillCurrent isStillCurrent: @Sendable () -> Bool) -> Bool {
+        guard isStillCurrent() else {
+            var refused = newKeys
+            zero(&refused)
+            logger.info("OrgKeyCache: \(newKeys.count, privacy: .public) org key(s) not written: the session ended")
+            return false
+        }
         var replaced = cache
         cache = newKeys
         zero(&replaced)
         logger.info("OrgKeyCache replaced: \(newKeys.count, privacy: .public) org key(s)")
+        return true
     }
+
+    #if DEBUG
+    /// Test seam: replaces the keys without a session check, for tests that set up a cache.
+    func replaceAll(with newKeys: [String: CryptoKeys]) {
+        replaceAll(with: newKeys, ifStillCurrent: { true })
+    }
+    #endif
 
     #if DEBUG
     /// A key as it was right after zeroing, and whether both halves were zeroed in place.

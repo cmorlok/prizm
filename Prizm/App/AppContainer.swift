@@ -27,6 +27,10 @@ final class AppContainer: ObservableObject {
     /// (Constitution §III).
     let orgKeyCache: OrgKeyCache
 
+    /// The one lock fence of the app (lock-state-machine, design D1): the record store derives its
+    /// generation from it, and `RootViewModel` ends it first on every lock and sign-out.
+    let sessionGate: any SessionGate
+
     #if DEBUG
     /// The one record store, also held here so the UI-test seam can fill it (`seedUITestRecords`).
     private let uiTestRecordStore: RawCipherStore
@@ -46,7 +50,6 @@ final class AppContainer: ObservableObject {
 
     let syncUseCase:                     SyncUseCaseImpl
     let loginUseCase:                    LoginUseCaseImpl
-    let unlockUseCase:                   UnlockUseCaseImpl
     let searchVaultUseCase:              SearchVaultUseCaseImpl
     let generateTOTPCodeUseCase:         GenerateTOTPCodeUseCaseImpl
     let editVaultItemUseCase:            EditVaultItemUseCaseImpl
@@ -115,12 +118,14 @@ final class AppContainer: ObservableObject {
         keychain          = KeychainServiceImpl()
         biometricKeychain = BiometricKeychainServiceImpl()
         #endif
+        let sessionGate   = SessionGateImpl()
+        self.sessionGate  = sessionGate
         let keyCache      = VaultKeyCache()
         let orgKeyCache   = OrgKeyCache()
         // One holder for both repositories: sync fills it, saves read it.
         let profileIds    = ProfileIdCache()
         // Exactly one store: sync fills it, `clearVault()` (lock and sign-out) empties it.
-        let recordStore   = RawCipherStore()
+        let recordStore   = RawCipherStore(gate: sessionGate)
         let vault         = VaultRepositoryImpl(apiClient: api, crypto: crypto, orgKeyCache: orgKeyCache, profileIds: profileIds, recordStore: recordStore, vaultKeyCache: keyCache)
         let vaultKeyService = VaultKeyServiceImpl(cache: keyCache, orgKeyCache: orgKeyCache, crypto: crypto)
 
@@ -131,7 +136,8 @@ final class AppContainer: ObservableObject {
             biometricKeychain: biometricKeychain,
             vaultKeyCache: keyCache,
             orgKeyCache:   orgKeyCache,
-            defaults:      preferences
+            defaults:      preferences,
+            gate:          sessionGate
         )
         let sync = SyncRepositoryImpl(
             apiClient:       api,
@@ -182,7 +188,6 @@ final class AppContainer: ObservableObject {
         self.syncUseCase                     = syncUseCase
         self.emptyTrashUseCase               = EmptyTrashUseCaseImpl(repository: vault, sync: syncUseCase)
         self.loginUseCase                    = LoginUseCaseImpl(auth: auth, sync: sync)
-        self.unlockUseCase                   = UnlockUseCaseImpl(auth: auth, sync: sync)
         self.searchVaultUseCase              = SearchVaultUseCaseImpl(vault: vault)
         self.generateTOTPCodeUseCase         = GenerateTOTPCodeUseCaseImpl(crypto: crypto)
         self.editVaultItemUseCase            = EditVaultItemUseCaseImpl(repository: vault)
@@ -205,9 +210,9 @@ final class AppContainer: ObservableObject {
         // Attachment use cases — Upload and Download inject VaultKeyService;
         // Delete does NOT (no key material required, Constitution §VI).
         self.uploadAttachmentUseCase   = UploadAttachmentUseCaseImpl(repository: attachmentRepo, vaultKeyService: vaultKeyService)
-        self.downloadAttachmentUseCase = DownloadAttachmentUseCaseImpl(repository: attachmentRepo, vaultKeyService: vaultKeyService)
+        self.downloadAttachmentUseCase = DownloadAttachmentUseCaseImpl(repository: attachmentRepo, vaultKeyService: vaultKeyService, gate: sessionGate)
         self.deleteAttachmentUseCase   = DeleteAttachmentUseCaseImpl(repository: attachmentRepo)
-        self.convertAttachmentUseCase  = ConvertAttachmentUseCaseImpl(repository: attachmentRepo, vaultKeyService: vaultKeyService)
+        self.convertAttachmentUseCase  = ConvertAttachmentUseCaseImpl(repository: attachmentRepo, vaultKeyService: vaultKeyService, gate: sessionGate)
         self.tempFileManager           = AttachmentTempFileManager()
         // Launch sweep: files a crash or a forced quit left behind are gone before any screen
         // appears (fix-attachment-transfer-flow, D7).
@@ -239,13 +244,13 @@ final class AppContainer: ObservableObject {
 
     /// Creates a `LoginViewModel` pre-wired with the container's login use case.
     func makeLoginViewModel() -> LoginViewModel {
-        LoginViewModel(loginUseCase: loginUseCase)
+        LoginViewModel(loginUseCase: loginUseCase, gate: sessionGate)
     }
 
     /// Creates an `UnlockViewModel` for a returning user with a stored session.
     func makeUnlockViewModel(account: Account) -> UnlockViewModel {
         UnlockViewModel(auth: authRepository, sync: syncUseCase, account: account, embeddedBiometric: authRepository,
-                        defaults: preferences)
+                        defaults: preferences, gate: sessionGate)
     }
 
     /// Creates the once-per-second tracker that keeps displayed TOTP codes current.

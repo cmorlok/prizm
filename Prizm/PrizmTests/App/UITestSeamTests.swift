@@ -7,6 +7,8 @@ import XCTest
 @MainActor
 final class UITestSeamTests: XCTestCase {
 
+    private let gate = SessionGateImpl()
+
     // MARK: - Launch state (D1)
 
     func test_launchState_noTestArgument_isNil() {
@@ -57,8 +59,7 @@ final class UITestSeamTests: XCTestCase {
                 biometricKeychain: InMemoryBiometricKeychainService(),
                 vaultKeyCache: VaultKeyCache(),
                 orgKeyCache: OrgKeyCache(),
-                defaults: makePrivateDefaults()
-            )
+                defaults: makePrivateDefaults(), gate: gate)
             let account = try XCTUnwrap(auth.storedAccount(), "state \(state)")
             XCTAssertEqual(account.email, UITestFixtures.accountEmail)
             XCTAssertEqual(account.serverEnvironment.base, UITestFixtures.serverURL)

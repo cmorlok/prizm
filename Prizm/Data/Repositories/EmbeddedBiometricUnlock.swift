@@ -15,9 +15,13 @@ protocol EmbeddedBiometricUnlock: AnyObject {
     /// window before this call, `evaluatePolicy` routes its UI through that view —
     /// no system modal dialog appears. This is the inline Touch ID experience.
     ///
-    /// - Parameter context: The same `LAContext` instance passed to
-    ///   `EmbeddedTouchIDView`. Must not have been previously evaluated.
+    /// - Parameters:
+    ///   - context: The same `LAContext` instance passed to
+    ///     `EmbeddedTouchIDView`. Must not have been previously evaluated.
+    ///   - onAuthenticated: Called once, when the finger was accepted and before any key loads.
+    ///     The caller counts the unlock as running from here, so a lock applies to the key load
+    ///     and token refresh that follow (lock-state-machine, design D5).
     /// - Returns: The unlocked `Account`.
     /// - Throws: `AuthError.biometricInvalidated` if the Keychain item is gone.
-    func unlockWithBiometrics(context: LAContext) async throws -> Account
+    func unlockWithBiometrics(context: LAContext, flow: FlowToken, onAuthenticated: () -> Void) async throws -> Account
 }

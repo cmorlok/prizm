@@ -145,8 +145,20 @@ frameworks).
    d. Org cipher fields are then decrypted using the org symmetric key rather than the personal vault key, with collection names decrypted via the same org key.
 3. **Lock** — `AuthRepositoryImpl.lockVault()` zeroes the vault keys and clears the
    per-item key cache and `OrgKeyCache`: each `CryptoKeys` entry's underlying `Data` bytes
-   are overwritten with zeros before the dictionary entry is removed. Keychain entries are
+   are overwritten with zeros before the dictionary entry is removed, and the network layer
+   drops its access token. Keychain entries are
    retained so the vault can be unlocked offline without re-authenticating to the server.
+   **Flows still running at the lock** (sign-in, two-factor step, password or Touch ID unlock,
+   Touch ID enrollment, the sync after them, a password-history read, an attachment download):
+   a lock or sign-out first ends the session gate (`SessionGate`), in the same main-actor turn
+   as the user's action or the system event, before any await. Every flow carries the token it
+   took when the user acted; a write it guards (keys, access token, Keychain tokens, enrollment,
+   key caches, record store, decrypted results) is refused once the token is stale, also after a
+   later unlock opened a new session. A token refresh that a lock overtakes still stores the
+   server's new tokens in the Keychain (the server may have replaced the refresh token), but
+   loads no keys and gives the network layer no token; after a sign-out it writes nothing. The
+   Touch ID context is invalidated, and the sleep, screensaver and screen-lock events run the
+   whole lock also on the unlock screen (openspec change `lock-state-machine`).
 4. **Sign out** — the same teardown as lock (sign-out calls `lockVault()`, also when
    "Sign in with a different account" is chosen on the unlock screen), and all Keychain
    entries for the account except the device identifier are deleted. The app returns to a

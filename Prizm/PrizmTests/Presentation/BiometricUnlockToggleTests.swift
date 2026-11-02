@@ -15,7 +15,7 @@ final class BiometricUnlockToggleTests: XCTestCase {
     }
 
     func testEnableBiometricUnlock_callsAuthRepository() async throws {
-        try await mockAuth.enableBiometricUnlock()
+        try await mockAuth.enableBiometricUnlock(flow: FlowToken())
         XCTAssertTrue(mockAuth.enableBiometricUnlockCalled)
     }
 
@@ -27,7 +27,7 @@ final class BiometricUnlockToggleTests: XCTestCase {
     func testEnableBiometricUnlock_vaultLocked_throws() async {
         mockAuth.enableBiometricUnlockError = AuthError.biometricUnavailable
         do {
-            try await mockAuth.enableBiometricUnlock()
+            try await mockAuth.enableBiometricUnlock(flow: FlowToken())
             XCTFail("Expected biometricUnavailable")
         } catch {
             XCTAssertEqual(error as? AuthError, .biometricUnavailable)

@@ -19,6 +19,11 @@ protocol SyncRepository: Actor {
     /// - Throws: `SyncError` on catastrophic failure. Individual cipher failures
     ///   are skipped and counted in `SyncResult.failedDecryptionCount`.
     func sync(progress: @Sendable @escaping (String) -> Void) async throws -> SyncResult
+
+    /// The same, as the last step of the sign-in or unlock `flow`: its writes are fenced by that
+    /// flow's token, so a lock that overtook the flow before the sync began also stops the sync
+    /// (lock-state-machine, design D8).
+    func sync(flow: FlowToken, progress: @Sendable @escaping (String) -> Void) async throws -> SyncResult
 }
 
 // MARK: - Supporting types

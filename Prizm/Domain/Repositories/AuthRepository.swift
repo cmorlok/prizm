@@ -14,7 +14,9 @@ protocol AuthRepository: AnyObject {
     func validateServerURL(_ urlString: String) throws
 
     /// Persists `environment` and configures the API client base URL.
-    func setServerEnvironment(_ environment: ServerEnvironment) async throws
+    /// Refused with `AuthError.lockedWhileUnlocking` for a sign-in that a lock overtook
+    /// (lock-state-machine, design D2).
+    func setServerEnvironment(_ environment: ServerEnvironment, flow: FlowToken) async throws
 
     // MARK: - Login
 
@@ -26,9 +28,12 @@ protocol AuthRepository: AnyObject {
     ///
     /// - Security goal: `masterPassword` is `Data` so the caller can zero the bytes
     ///   after the call returns, reducing heap exposure (Constitution §III).
+    /// - Parameter flow: the sign-in's token, taken when the user signed in (`SessionGate.begin()`).
+    ///   A lock or sign-out since then makes the login load no keys and store nothing
+    ///   (lock-state-machine, design D2).
     /// - Returns: `.success(Account)` or `.requiresTwoFactor(method:)`.
     /// - Throws: `AuthError` on network or credential failure.
-    func loginWithPassword(email: String, masterPassword: Data) async throws -> LoginResult
+    func loginWithPassword(email: String, masterPassword: Data, flow: FlowToken) async throws -> LoginResult
 
     /// Completes a pending TOTP two-factor challenge.
     /// - Parameters:
@@ -53,9 +58,10 @@ protocol AuthRepository: AnyObject {
     ///
     /// - Security goal: `masterPassword` is `Data` so the caller can zero the bytes
     ///   after the call returns (Constitution §III).
+    /// - Parameter flow: the unlock's token, taken when the user unlocked (design D2).
     /// - Returns: The unlocked `Account`.
     /// - Throws: `AuthError.invalidCredentials` on wrong password.
-    func unlockWithPassword(_ masterPassword: Data) async throws -> Account
+    func unlockWithPassword(_ masterPassword: Data, flow: FlowToken) async throws -> Account
 
     // MARK: - Session
 
@@ -89,8 +95,10 @@ protocol AuthRepository: AnyObject {
 
     /// Stores the current vault symmetric key in a biometric-protected Keychain item.
     /// Requires the vault to be unlocked (keys in memory).
+    /// - Parameter flow: the token of the unlock or settings action that asked for it; a stale one
+    ///   stores nothing (design D2).
     /// - Throws: `AuthError.biometricUnavailable` if the vault is locked.
-    func enableBiometricUnlock() async throws
+    func enableBiometricUnlock(flow: FlowToken) async throws
 
     /// Deletes the biometric Keychain item and clears the preference.
     func disableBiometricUnlock() async throws
@@ -98,7 +106,7 @@ protocol AuthRepository: AnyObject {
     /// Reads the vault key from the biometric Keychain item and unlocks the vault.
     /// - Returns: The unlocked `Account`.
     /// - Throws: `AuthError.biometricInvalidated` if biometric enrollment changed.
-    func unlockWithBiometrics() async throws -> Account
+    func unlockWithBiometrics(flow: FlowToken) async throws -> Account
 }
 
 // MARK: - Supporting types
@@ -133,6 +141,9 @@ nonisolated enum AuthError: Error, LocalizedError, Equatable {
     /// The vault was locked (or the user signed out) while this login or unlock was running; its keys
     /// were not loaded (lock-during-unlock-sync, D6).
     case lockedWhileUnlocking
+    /// The stored account changed while this unlock ran, with no lock or sign-out from Prizm; the
+    /// unlock's keys were unloaded again (lock-state-machine, code review C8).
+    case accountChangedWhileUnlocking
     /// The account's KDF settings are below the Bitwarden minimums; Prizm refused to derive a key,
     /// as the official clients do (fix-kdf-derivation-and-validation, D2).
     case kdfSettingsTooWeak
@@ -165,6 +176,8 @@ nonisolated enum AuthError: Error, LocalizedError, Equatable {
             return "Biometric unlock is not available. Please unlock with your master password."
         case .lockedWhileUnlocking:
             return "Prizm was locked before it finished. Try again."
+        case .accountChangedWhileUnlocking:
+            return "The saved account changed while Prizm was unlocking. Sign in again."
         case .kdfSettingsTooWeak:
             return "This account's key-derivation settings are too weak, so Prizm won't use them. Raise them in the web vault (Settings → Security → Keys), then sign in again."
         case .invalidKdfSettings:

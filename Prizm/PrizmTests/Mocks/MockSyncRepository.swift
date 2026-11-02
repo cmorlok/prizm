@@ -21,6 +21,14 @@ actor MockSyncRepository: SyncRepository {
 
     // MARK: - SyncRepository
 
+    /// The flow token of each `sync(flow:progress:)`, in order.
+    nonisolated(unsafe) var receivedFlows: [FlowToken] = []
+
+    func sync(flow: FlowToken, progress: @Sendable @escaping (String) -> Void) async throws -> SyncResult {
+        receivedFlows.append(flow)
+        return try await sync(progress: progress)
+    }
+
     func sync(progress: @Sendable @escaping (String) -> Void) async throws -> SyncResult {
         syncCalled = true
         if let err = syncShouldThrow { throw err }

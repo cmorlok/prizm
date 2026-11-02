@@ -7,6 +7,8 @@ import XCTest
 @MainActor
 final class KdfLoginTests: XCTestCase {
 
+    private let gate = SessionGateImpl()
+
     private var sut: AuthRepositoryImpl!
     private var api: MockPrizmAPIClient!
     private var crypto: MockPrizmCryptoService!
@@ -23,8 +25,8 @@ final class KdfLoginTests: XCTestCase {
         sut = AuthRepositoryImpl(apiClient: api, crypto: crypto, keychain: keychain,
                                  biometricKeychain: MockBiometricKeychainService(),
                                  vaultKeyCache: VaultKeyCache(), orgKeyCache: OrgKeyCache(),
-                                 defaults: makePrivateDefaults())
-        try await sut.setServerEnvironment(ServerEnvironment(base: URL(string: "https://vault.example.com")!, overrides: nil))
+                                 defaults: makePrivateDefaults(), gate: gate)
+        try await sut.setServerEnvironment(ServerEnvironment(base: URL(string: "https://vault.example.com")!, overrides: nil), flow: gate.begin())
         api.tokenResponse = tokenResponse()
     }
 
@@ -39,7 +41,7 @@ final class KdfLoginTests: XCTestCase {
     }
 
     private func login(_ email: String = "user@example.com") async throws {
-        _ = try await sut.loginWithPassword(email: email, masterPassword: Data("pw".utf8))
+        _ = try await sut.loginWithPassword(email: email, masterPassword: Data("pw".utf8), flow: gate.begin())
     }
 
     private func storedString(_ name: String) -> String? {
@@ -91,7 +93,7 @@ final class KdfLoginTests: XCTestCase {
         keychain.seed(key: "bw.macos:\(userId):serverEnvironment", data: try JSONEncoder().encode(env))
 
         do {
-            _ = try await sut.unlockWithPassword(Data("pw".utf8))
+            _ = try await sut.unlockWithPassword(Data("pw".utf8), flow: gate.begin())
             XCTFail("Unlock must be refused")
         } catch {
             XCTAssertEqual(error as? AuthError, .kdfSettingsTooWeak)
@@ -201,13 +203,13 @@ final class KdfLoginTests: XCTestCase {
 
     func testUnlock_usesStoredSalt() async throws {
         try seedSession(salt: "other@example.com")
-        _ = try await sut.unlockWithPassword(Data("pw".utf8))
+        _ = try await sut.unlockWithPassword(Data("pw".utf8), flow: gate.begin())
         XCTAssertEqual(crypto.derivations.map(\.salt), ["other@example.com"])
     }
 
     func testUnlock_withoutStoredSalt_fallsBackToNormalizedEmail() async throws {
         try seedSession(salt: nil)
-        _ = try await sut.unlockWithPassword(Data("pw".utf8))
+        _ = try await sut.unlockWithPassword(Data("pw".utf8), flow: gate.begin())
         XCTAssertEqual(crypto.derivations.map(\.salt), ["user@example.com"])
     }
 
@@ -217,7 +219,7 @@ final class KdfLoginTests: XCTestCase {
         try seedSession(salt: "other@example.com")
         keychain.readErrors["bw.macos:\(userId):masterPasswordSalt"] = KeychainError.unexpectedStatus(-25308)
         do {
-            _ = try await sut.unlockWithPassword(Data("pw".utf8))
+            _ = try await sut.unlockWithPassword(Data("pw".utf8), flow: gate.begin())
             XCTFail("The Keychain failure must be reported")
         } catch {
             XCTAssertEqual(error as? AuthError, .invalidCredentials, "Got \(error)")

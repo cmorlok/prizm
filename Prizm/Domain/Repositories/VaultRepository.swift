@@ -55,7 +55,7 @@ protocol VaultRepository: AnyObject, Sendable {
     /// the call a no-op: a sync result must not put decrypted items back into a vault that was just
     /// emptied. There is no way to skip the check.
     func populate(items: [VaultItem], folders: [Folder], organizations: [Organization],
-                  collections: [OrgCollection], syncedAt: Date, session: VaultSessionToken) async
+                  collections: [OrgCollection], syncedAt: Date, session: FlowToken) async
 
     #if DEBUG
     /// Test seam only (the UI-test vault and unit tests): `populate` under the session that is
@@ -127,33 +127,6 @@ protocol VaultRepository: AnyObject, Sendable {
     func renameCollection(id: String, organizationId: String, name: String) async throws -> OrgCollection
     func deleteCollection(id: String, organizationId: String) async throws
 
-}
-
-// MARK: - Session token
-
-/// An opaque marker of one unlocked session of the record store, compared with `==`.
-///
-/// What it guarantees: a token equals only copies of itself. The Data layer's `RawCipherStore` holds
-/// the current token and replaces it with a new one on every lock or sign-out, so a token read
-/// before a lock is never current again, and a token built anywhere else (`VaultSessionToken()`) is
-/// never current at all: no caller can make a current token without asking the store for it.
-/// What it does not guarantee: that the caller read it at the start of its operation. A token read
-/// right before the write it guards is always current and fences nothing.
-///
-/// Why it lives in Domain: `populate` carries it, and the protocol cannot name a Data type.
-/// It holds no secret and no key material.
-nonisolated struct VaultSessionToken: Equatable, Sendable {
-    /// The token is the identity of this object: two separately created markers are never the same.
-    nonisolated private final class Marker: Sendable {}
-
-    private let marker = Marker()
-
-    /// A new token, unequal to every token created before it.
-    init() {}
-
-    static func == (lhs: VaultSessionToken, rhs: VaultSessionToken) -> Bool {
-        lhs.marker === rhs.marker
-    }
 }
 
 // MARK: - Errors

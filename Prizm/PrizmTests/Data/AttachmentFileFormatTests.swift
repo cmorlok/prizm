@@ -298,7 +298,8 @@ final class AttachmentFileFormatTests: XCTestCase {
         await orgKeyCache.replaceAll(with: ["org-1": orgKeys])
         return ConvertAttachmentUseCaseImpl(
             repository: AttachmentRepositoryImpl(apiClient: api, crypto: cryptoService, vaultRepository: MockVaultRepository()),
-            vaultKeyService: VaultKeyServiceImpl(cache: cache, orgKeyCache: orgKeyCache, crypto: cryptoService))
+            vaultKeyService: VaultKeyServiceImpl(cache: cache, orgKeyCache: orgKeyCache, crypto: cryptoService),
+            gate: SessionGateImpl())
     }
 
     func testConvertOrgAttachment_wrapsTheNewKeyWithTheOrgKey() async throws {

@@ -15,4 +15,8 @@ final class SyncUseCaseImpl: SyncUseCase {
     func execute(progress: @Sendable @escaping (String) -> Void) async throws -> SyncResult {
         try await sync.sync(progress: progress)
     }
+
+    func execute(flow: FlowToken, progress: @Sendable @escaping (String) -> Void) async throws -> SyncResult {
+        try await sync.sync(flow: flow, progress: progress)
+    }
 }

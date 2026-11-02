@@ -127,7 +127,7 @@ final class RawCipherStoreTests: XCTestCase {
         let passkey = await rig.store.record(for: passkeyCipherId)
         XCTAssertNotNil(passkey?.login?.extras["fido2Credentials"], "The passkey login keeps its credentials")
 
-        await rig.vault.clearVault()
+        await rig.vault.lockAsTheRootDoes()
 
         let countAfterClear = await rig.store.count
         XCTAssertEqual(countAfterClear, 0)
@@ -140,7 +140,7 @@ final class RawCipherStoreTests: XCTestCase {
         // The crypto mock stays unlocked, so `ensureStillUnlocked()` passes (this is also what a
         // lock followed by an unlock looks like): only the store's token can stop the write.
         let vault = rig.vault
-        rig.api.whileFetchingSync = { await vault.clearVault() }
+        rig.api.whileFetchingSync = { await vault.lockAsTheRootDoes() }
 
         do {
             _ = try await rig.sync.sync(progress: { _ in })
@@ -169,7 +169,7 @@ final class RawCipherStoreTests: XCTestCase {
         let nextSessionOrgKeys = ["next-org": vaultKeys]
         // By the time the old answer arrives, the next session's sync has filled the caches.
         rig.api.whileFetchingSync = {
-            await vault.clearVault()
+            await vault.lockAsTheRootDoes()
             await orgKeys.replaceAll(with: nextSessionOrgKeys)
             await itemKeys.populate(sources: ["next-cipher": .itemKey(Data(repeating: 0x33, count: 64))])
         }
@@ -187,6 +187,46 @@ final class RawCipherStoreTests: XCTestCase {
         XCTAssertNotNil(itemKeyAfter, "The discarded sync must not replace the per-item keys")
     }
 
+    /// A lock that lands after the sync's last lock check, on the hop to the org key cache, leaves
+    /// no org keys behind (lock-state-machine, gap 6).
+    func testLockAfterTheLastCheck_beforeTheOrgKeyWrite_leavesNoOrgKeys() async throws {
+        let rig = await makeRig()
+        rig.api.syncResponse = try goldenSyncResponse()
+        rig.crypto.stubbedDecryptList = [vaultItem("a")]
+        let store = rig.store
+        // The first lock check of a sync with organizations sits right before the org key write.
+        rig.crypto.whileCheckingUnlocked = { store.invalidate() }
+
+        _ = try? await rig.sync.sync(progress: { _ in })
+
+        let orgKeysAfter = await rig.orgKeyCache.snapshot()
+        XCTAssertTrue(orgKeysAfter.isEmpty, "A sync locked after its check must not write org keys")
+        let anySource = await rig.vaultKeyCache.source(for: "a")
+        XCTAssertNil(anySource)
+    }
+
+    /// The same for the item key cache: without organizations, the first lock check sits right
+    /// before `populate` (phase 2d).
+    func testLockAfterTheLastCheck_beforeTheItemKeyWrite_leavesNoKeySources() async throws {
+        let rig = await makeRig()
+        let golden = try goldenSyncResponse()
+        rig.api.syncResponse = SyncResponse(profile: golden.profile, ciphers: golden.ciphers, folders: golden.folders)
+        rig.crypto.stubbedDecryptList = [vaultItem("a")]
+        rig.crypto.stubbedKeySources = ["a": .itemKey(Data(repeating: 0x5A, count: 64))]
+        let store = rig.store
+        rig.crypto.whileCheckingUnlocked = { store.invalidate() }
+
+        do {
+            _ = try await rig.sync.sync(progress: { _ in })
+            XCTFail("A sync locked after its check must throw")
+        } catch PrizmCryptoServiceError.vaultLocked {
+            // expected
+        }
+
+        let source = await rig.vaultKeyCache.source(for: "a")
+        XCTAssertNil(source, "A sync locked after its check must not write key sources")
+    }
+
     /// The same for an answer without organizations, which clears the org keys of leavers.
     func testSyncWithoutOrganizationsStillRunningAtLock_doesNotClearTheNextSessionsOrgKeys() async throws {
         let rig = await makeRig()
@@ -197,7 +237,7 @@ final class RawCipherStoreTests: XCTestCase {
         let orgKeys = rig.orgKeyCache
         let nextSessionOrgKeys = ["next-org": vaultKeys]
         rig.api.whileFetchingSync = {
-            await vault.clearVault()
+            await vault.lockAsTheRootDoes()
             await orgKeys.replaceAll(with: nextSessionOrgKeys)
         }
 
@@ -284,7 +324,8 @@ final class RawCipherStoreTests: XCTestCase {
         }
 
         // Lock and unlock (the crypto mock stays unlocked, which is what the unlock looks like).
-        await rig.vault.clearVault()
+        await rig.vault.lockAsTheRootDoes()
+        rig.store.openAfterTeardown()
         let result = try await rig.sync.sync(progress: { _ in })
         XCTAssertEqual(result.totalCiphers, 6, "The new session's sync ran")
 
@@ -300,9 +341,11 @@ final class RawCipherStoreTests: XCTestCase {
         XCTAssertEqual(storedCount, 6)
     }
 
-    func testStaleTokens_areRefusedAfterClear() async {
+    /// A lock as the root runs it: the gate ends first, then the store is cleared (D1).
+    func testStaleTokens_areRefusedAfterALock() async {
         let store = RawCipherStore()
         let stale = await store.currentGeneration()
+        store.invalidate()
         await store.clear()
 
         let replaced = await store.replaceAll([rawCipher("a")], ifCurrent: stale)
@@ -315,6 +358,7 @@ final class RawCipherStoreTests: XCTestCase {
         XCTAssertFalse(removed)
         XCTAssertEqual(countAfterStale, 0, "Refused writes change nothing")
 
+        store.openAfterTeardown()
         let fresh = await store.currentGeneration()
         let replacedFresh = await store.replaceAll([rawCipher("a")], ifCurrent: fresh)
         let upsertedFresh = await store.upsert(rawCipher("b"), ifCurrent: fresh)
@@ -564,7 +608,7 @@ final class RawCipherStoreTests: XCTestCase {
     func testUpdateCompletingAfterLock_doesNotRefillTheStore() async throws {
         let rig = await makeRig(seedProfileId: RepositoryFixtures.profileId)
         let vault = rig.vault
-        rig.api.whileUpdatingCipher = { await vault.clearVault() }
+        rig.api.whileUpdatingCipher = { await vault.lockAsTheRootDoes() }
         try await RepositoryFixtures.seedRecords(
             for: [personalLogin("c1", name: "Original")], in: rig.store, vaultKeys: vaultKeys)
 
@@ -585,7 +629,7 @@ final class RawCipherStoreTests: XCTestCase {
     func testCreateCompletingAfterLock_doesNotRefillTheStore() async throws {
         let rig = await makeRig(seedProfileId: RepositoryFixtures.profileId)
         let vault = rig.vault
-        rig.api.whileCreatingCipher = { await vault.clearVault() }
+        rig.api.whileCreatingCipher = { await vault.lockAsTheRootDoes() }
 
         do {
             _ = try await rig.vault.create(loginDraft(id: "n1", name: "New"))
@@ -613,7 +657,8 @@ final class RawCipherStoreTests: XCTestCase {
         let store = rig.store
         let newRecord = rawCipher("t1", revisionDate: "new")
         rig.api.whileDeletingCipher = {
-            await vault.clearVault()
+            await vault.lockAsTheRootDoes()
+            store.openAfterTeardown()
             let token = await store.currentGeneration()
             await store.replaceAll([newRecord], ifCurrent: token)
         }
@@ -634,7 +679,8 @@ final class RawCipherStoreTests: XCTestCase {
         let store = rig.store
         let newRecords = [rawCipher("t1", revisionDate: "new"), rawCipher("t2", revisionDate: "new")]
         rig.api.whileDeletingCiphers = {
-            await vault.clearVault()
+            await vault.lockAsTheRootDoes()
+            store.openAfterTeardown()
             let token = await store.currentGeneration()
             await store.replaceAll(newRecords, ifCurrent: token)
         }
@@ -718,5 +764,26 @@ final class RawCipherStoreTests: XCTestCase {
         assertNoSecret(store, "RawCipherStore")
         XCTAssertEqual(String(describing: store), "RawCipherStore(redacted)")
         XCTAssertEqual(String(reflecting: store), "RawCipherStore(redacted)")
+    }
+
+    // MARK: - Session gate (lock-state-machine, design D1)
+
+    /// A lock that ends the app's gate fences the store, without the store being cleared.
+    func testEndingTheSharedGate_makesTheStoreTokenStale() async {
+        let gate = SessionGateImpl()
+        let store = RawCipherStore(gate: gate)
+        let token = store.currentGeneration()
+        gate.end()
+        XCTAssertFalse(store.isCurrent(token))
+        let written = await store.upsert(rawCipher("x"), ifCurrent: token)
+        XCTAssertFalse(written)
+    }
+
+    /// While the gate is closed (a lock's teardown), the store hands out no current token.
+    func testClosedGate_storeTokenIsNeverCurrent() {
+        let gate = SessionGateImpl()
+        let store = RawCipherStore(gate: gate)
+        gate.end()
+        XCTAssertFalse(store.isCurrent(store.currentGeneration()))
     }
 }

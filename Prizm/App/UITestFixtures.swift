@@ -428,6 +428,10 @@ final class UITestConflictSyncUseCase: SyncUseCase {
         self.scenario = scenario
     }
 
+    func execute(flow: FlowToken, progress: @Sendable @escaping (String) -> Void) async throws -> SyncResult {
+        try await execute(progress: progress)
+    }
+
     func execute(progress: @Sendable @escaping (String) -> Void) async throws -> SyncResult {
         if scenario == .syncFailsOnce, !hasFailed {
             hasFailed = true

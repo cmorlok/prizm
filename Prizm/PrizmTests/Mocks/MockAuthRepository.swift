@@ -45,12 +45,20 @@ final class MockAuthRepository: AuthRepository {
         if let err = validateServerURLError { throw err }
     }
 
-    func setServerEnvironment(_ environment: ServerEnvironment) async throws {
+    /// Runs while the server environment is set, for example to lock meanwhile.
+    var whileSettingServerEnvironment: (() async -> Void)?
+
+    func setServerEnvironment(_ environment: ServerEnvironment, flow: FlowToken) async throws {
         serverEnvironment            = environment
         setServerEnvironmentCalled   = true
+        await whileSettingServerEnvironment?()
     }
 
-    func loginWithPassword(email: String, masterPassword: Data) async throws -> LoginResult {
+    /// The flow token of each call, in order (lock-state-machine, design D2).
+    private(set) var receivedFlows: [FlowToken] = []
+
+    func loginWithPassword(email: String, masterPassword: Data, flow: FlowToken) async throws -> LoginResult {
+        receivedFlows.append(flow)
         loginWithPasswordCalled = true
         if let err = loginWithPasswordError { throw err }
         return stubbedLoginResult
@@ -74,7 +82,8 @@ final class MockAuthRepository: AuthRepository {
     /// lock or sign-out loads no keys.
     private(set) var lockCount = 0
 
-    func unlockWithPassword(_ masterPassword: Data) async throws -> Account {
+    func unlockWithPassword(_ masterPassword: Data, flow: FlowToken) async throws -> Account {
+        receivedFlows.append(flow)
         unlockWithPasswordCalled = true
         let started = lockCount
         await whileUnlockingWithPassword?()
@@ -94,9 +103,14 @@ final class MockAuthRepository: AuthRepository {
 
     func signOut() async throws {
         signOutCalled = true
+        await whileTearingDown?()
     }
 
+    /// Runs inside `lockVault()` and `signOut()`, to hold a lock's teardown in that window.
+    var whileTearingDown: (() async -> Void)?
+
     func lockVault() async {
+        await whileTearingDown?()
         lockVaultCalledCount += 1
         lockCount += 1
         stubbedIsVaultUnlocked = false
@@ -128,7 +142,8 @@ final class MockAuthRepository: AuthRepository {
     var deviceBiometricCapable: Bool { stubbedDeviceBiometricCapable }
     var biometricUnlockAvailable: Bool { stubbedBiometricUnlockAvailable }
 
-    func enableBiometricUnlock() async throws {
+    func enableBiometricUnlock(flow: FlowToken) async throws {
+        receivedFlows.append(flow)
         enableBiometricUnlockCalled = true
         if let err = enableBiometricUnlockError { throw err }
     }
@@ -137,13 +152,16 @@ final class MockAuthRepository: AuthRepository {
         disableBiometricUnlockCalled = true
     }
 
-    func unlockWithBiometrics() async throws -> Account {
+    func unlockWithBiometrics(flow: FlowToken) async throws -> Account {
+        receivedFlows.append(flow)
         unlockWithBiometricsCalled = true
         unlockWithBiometricsCallCount += 1
         if let err = unlockWithBiometricsError { throw err }
         guard case .success(let account) = stubbedLoginResult else {
             throw AuthError.biometricUnavailable
         }
+        // Loads the keys, as the password unlock above and the real repository do.
+        stubbedIsVaultUnlocked = true
         return account
     }
 }

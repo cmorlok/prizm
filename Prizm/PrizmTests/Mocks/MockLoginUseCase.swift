@@ -29,14 +29,24 @@ final class MockLoginUseCase: LoginUseCase {
 
     // MARK: - LoginUseCase
 
-    func execute(serverURL: String, email: String, masterPassword: Data) async throws -> LoginResult {
+    /// The flow token of each `execute`, and a hook that runs inside it.
+    private(set) var receivedFlows: [FlowToken] = []
+    var whileExecuting: (() async -> Void)?
+
+    func execute(serverURL: String, email: String, masterPassword: Data, flow: FlowToken) async throws -> LoginResult {
+        receivedFlows.append(flow)
         executeCallCount += 1
+        await whileExecuting?()
         if let err = executeError { throw err }
         return stubbedResult
     }
 
-    func completeTOTP(code: String, rememberDevice: Bool) async throws -> Account {
+    /// Runs inside `completeTOTP`, to hold a two-factor submission while a lock lands.
+    var whileCompletingTOTP: (() async -> Void)?
+
+    func completeTOTP(code: String, rememberDevice: Bool, flow: FlowToken) async throws -> Account {
         completeTOTPCalled = true
+        await whileCompletingTOTP?()
         if let err = completeTOTPError { throw err }
         guard case .success(let account) = stubbedResult else {
             throw AuthError.invalidTwoFactorCode

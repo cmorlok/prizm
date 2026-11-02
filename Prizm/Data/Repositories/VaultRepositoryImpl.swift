@@ -118,7 +118,7 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
     /// cleared while the sync ran. The check is the first statement and synchronous, so nothing is
     /// changed when the token is stale or was not handed out by the record store.
     func populate(items: [VaultItem], folders: [Folder], organizations: [Organization],
-                  collections: [OrgCollection], syncedAt: Date, session: VaultSessionToken) async {
+                  collections: [OrgCollection], syncedAt: Date, session: FlowToken) async {
         guard recordStore.isCurrent(session) else {
             logger.info("Sync result dropped: the vault was cleared while it ran")
             return
@@ -142,14 +142,20 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
     }
     #endif
 
-    func clearVault() async {
-        // First: lock and sign-out both reach this hook (RootViewModel), so neither the id nor the
-        // records outlive the session. The invalidation is the very first statement, before any
-        // suspension: it is synchronous, so a save that resumes on this actor after this call sees
-        // the lock at its next `isCurrent` check, and `clear()` below only has to empty the store.
-        // The second bump `clear()` makes is harmless; the first one is what the item-cache checks
-        // in `update` and `create` rely on.
+    #if DEBUG
+    /// Test seam: a lock as `RootViewModel` runs it, for Data tests without a root: the session gate
+    /// ends first (lock-state-machine, design D1), then the vault is cleared.
+    func lockAsTheRootDoes() async {
         recordStore.invalidate()
+        await clearVault()
+    }
+    #endif
+
+    func clearVault() async {
+        // Lock and sign-out both reach this hook (RootViewModel), so neither the id nor the records
+        // outlive the session. The root ended the session gate before calling it (lock-state-machine,
+        // design D1), so every save and sync that started before is already stale at its next
+        // `isCurrent` check; this only empties.
         await recordStore.clear()
         await profileIds.clear()
         items             = []
@@ -351,8 +357,27 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
             logger.info("Password history dropped, the vault was cleared while it loaded: \(itemId, privacy: .public)")
             throw VaultError.vaultLocked
         }
-        return mapper.passwordHistoryEntries(of: base, keys: keys)
+        let entries = mapper.passwordHistoryEntries(of: base, keys: keys)
+        #if DEBUG
+        afterPasswordHistoryDecrypted?()
+        #endif
+        // Again after decrypting: the lock closes the gate from the main actor while this actor
+        // decrypts on its own copy of the key, so a lock can land in between (lock-state-machine,
+        // gap 7). The entries are dropped then.
+        guard recordStore.isCurrent(token) else {
+            logger.info("Password history dropped, the vault was locked while it decrypted: \(itemId, privacy: .public)")
+            throw VaultError.vaultLocked
+        }
+        return entries
     }
+
+    #if DEBUG
+    /// Test seam: runs right after the password history is decrypted, to lock in that window.
+    private var afterPasswordHistoryDecrypted: (@Sendable () -> Void)?
+    func setAfterPasswordHistoryDecrypted(_ hook: (@Sendable () -> Void)?) {
+        afterPasswordHistoryDecrypted = hook
+    }
+    #endif
 
     // MARK: - Update (write path — called by EditVaultItemUseCaseImpl)
 
@@ -711,7 +736,6 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
         // lands while the request runs makes the store write and the cache write below refuse. A
         // token read at the write would always be current.
         let storeGeneration = recordStore.currentGeneration()
-        let keyCacheGeneration = await vaultKeyCache.generation
 
         let vaultKeys: CryptoKeys
         do {
@@ -807,10 +831,10 @@ actor VaultRepositoryImpl: VaultRepository, AttachmentRecordApplying {
         await storeRecord(createdRaw, ifCurrent: storeGeneration)
         // An attachment added before the next sync needs the new item's key source; without it the
         // key service refuses (fix-org-attachment-key, D2). The cache ignores it when a lock
-        // cleared the cache since the request began, so it never reaches the next session; a lock
-        // in this await is caught by the check below for the item cache.
+        // started since the request began, so it never reaches the next session; a lock in this
+        // await is caught by the check below for the item cache.
         await vaultKeyCache.record(.of(createdRaw, effectiveKey: cipherKey), for: createdRaw.id,
-                                   ifGeneration: keyCacheGeneration)
+                                   ifStillCurrent: { [recordStore] in recordStore.isCurrent(storeGeneration) })
         // Last check before the cache write: everything below is synchronous.
         guard recordStore.isCurrent(storeGeneration) else {
             logger.info("Save finished after lock, dropped: \(createdRaw.id, privacy: .public)")

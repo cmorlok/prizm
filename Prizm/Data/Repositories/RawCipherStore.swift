@@ -1,6 +1,5 @@
 import Foundation
 import os.log
-import Synchronization
 
 // MARK: - RawCipherStore
 
@@ -20,7 +19,9 @@ import Synchronization
 ///   item (the restore or collections answer, or a fetch of the item:
 ///   `VaultRepositoryImpl.refreshRecord`). Emptied by: permanent delete (per id) and `clear()`.
 ///
-/// - The fence: `clear()` and `invalidate()` replace the current `Generation` token with a new one.
+/// - The fence: the `Generation` token is the session gate's (lock-state-machine, design D1). The
+///   lock or sign-out ends the gate as its first step, before `clearVault()`; the store itself never
+///   ends or opens it, so no caller of `clear()` can leave the gate closed.
 ///   Every write takes the token an operation read when it STARTED and is refused when it is stale.
 ///   The token must be read at the start of a sync or save, before its first network await: a token
 ///   read right before the write is always current and fences nothing. A write that is refused
@@ -29,7 +30,7 @@ import Synchronization
 ///   true again for the old operation.
 ///
 /// - The generation is read, compared and replaced synchronously (`currentGeneration()`,
-///   `isCurrent(_:)` and `invalidate()` are `nonisolated` over a lock-protected token). That lets
+///   `isCurrent(_:)` are `nonisolated` over the gate's lock-protected token). That lets
 ///   `VaultRepositoryImpl` check a token and write its own item cache in ONE actor turn, with no
 ///   suspension point in between: an `await` between the check and the write would let a lock land
 ///   after the check, and the plaintext item would be cached anyway. Tokens for the repository's
@@ -48,10 +49,9 @@ import Synchronization
 ///   • No fallback for a missing record: `VaultRepositoryImpl.update` reads the store and refuses a
 ///     full save without a record (`itemRecordUnavailable`), so the store is not optional.
 ///
-/// - Only a token handed out here can be current (a `VaultSessionToken` equals only copies of
-///   itself). Tokens are independent of `AuthRepositoryImpl.lockEpoch` and of the view model's lock
-///   generation, so the open `lock-state-machine` change can derive them from its session token
-///   later without changing any caller.
+/// - Only a token handed out by the session gate can be current (a `FlowToken` equals only copies
+///   of itself). The store's generation is the gate's token, so a sign-in or unlock passes its own
+///   flow token to the sync that ends it (lock-state-machine, design D1, D8).
 ///
 /// - Logging: counts only. Neither the records nor their ids are logged here, and the type prints
 ///   as "RawCipherStore(redacted)".
@@ -59,33 +59,45 @@ actor RawCipherStore {
 
     /// The token type is shared with Domain (`VaultRepository.populate` carries it). A token built
     /// anywhere else is never current, and none survives a `clear()`.
-    typealias Generation = VaultSessionToken
+    typealias Generation = FlowToken
 
     private let logger = Logger(subsystem: "com.prizm", category: "RawCipherStore")
 
-    /// The current token behind the fence. A `Mutex` and not an actor-isolated `var`, so that the
-    /// check in `isCurrent(_:)` needs no suspension (see the type comment).
-    private let generation = Mutex<Generation>(Generation())
+    /// The lock fence. Its token is the store's generation (openspec change `lock-state-machine`,
+    /// design D1): one gate for every layer, so a lock seen by the view model is seen here too.
+    /// `AppContainer` passes the app's gate; a store built without one has a private gate.
+    private let gate: any SessionGate
     private var records: [String: RawCipher] = [:]
+
+    init(gate: any SessionGate = SessionGateImpl()) {
+        self.gate = gate
+    }
 
     // MARK: - Fence
 
     /// The current generation. Read it at the start of the operation whose writes it guards.
     nonisolated func currentGeneration() -> Generation {
-        generation.withLock { $0 }
+        gate.begin()
     }
 
     /// Whether `token` is still the current generation, i.e. nothing cleared the vault since.
     nonisolated func isCurrent(_ token: Generation) -> Bool {
-        generation.withLock { $0 } == token
+        gate.isCurrent(token)
     }
 
-    /// Makes every token handed out before stale, without touching the records. `clear()` calls it;
-    /// `VaultRepositoryImpl.clearVault()` calls it first, before any suspension, so that a save on
-    /// the repository's own actor sees the lock at its next check. Idempotent in effect.
+    #if DEBUG
+    /// Test seam: the lock's first step, as `RootViewModel` takes it (`gate.end()`), for Data tests
+    /// without a root. Every token handed out before is stale; the records stay.
     nonisolated func invalidate() {
-        generation.withLock { $0 = Generation() }
+        gate.end()
     }
+
+    /// Test seam: opens the gate as `RootViewModel`'s teardown does at its end, for Data tests that
+    /// model "lock, then unlock" with `clearVault()` alone.
+    nonisolated func openAfterTeardown() {
+        gate.open()
+    }
+    #endif
 
     // MARK: - Writes
 
@@ -120,7 +132,6 @@ actor RawCipherStore {
     /// Drops every record and invalidates every token handed out before. Idempotent.
     func clear() {
         records = [:]
-        invalidate()
         logger.info("RawCipherStore: cleared")
     }
 

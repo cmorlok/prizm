@@ -47,6 +47,8 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         // (Constitution §III). Swift ARC does not guarantee immediate deallocation on nil.
         var stretchedKeys: CryptoKeys
         let deviceId:      String
+        /// The sign-in's start: the code completes the sign-in only while it is still current.
+        let start:         FlowStart
     }
     private var pendingTwoFactor: PendingTwoFactor?
 
@@ -71,7 +73,8 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         biometricKeychain: any BiometricKeychainService,
         vaultKeyCache: VaultKeyCache,
         orgKeyCache:   OrgKeyCache,
-        defaults:      UserDefaults
+        defaults:      UserDefaults,
+        gate:          any SessionGate
     ) {
         self.apiClient = apiClient
         self.crypto    = crypto
@@ -80,30 +83,53 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         self.vaultKeyCache = vaultKeyCache
         self.orgKeyCache   = orgKeyCache
         self.defaults      = defaults
+        self.gate          = gate
     }
 
     // MARK: - Locks during a login or unlock
 
-    /// Counts locks and sign-outs. A login or unlock that started before one must not load its keys
-    /// afterwards (lock-during-unlock-sync, D6).
-    private var lockEpoch = 0
+    /// The app's lock fence (lock-state-machine, design D1). `RootViewModel` closes it first on every
+    /// lock and sign-out; this repository only reads it.
+    private let gate: any SessionGate
 
-    /// Loads `keys` into the crypto service unless a lock or sign-out came since `epoch`; on success
+    /// Counts sign-outs. A lock keeps the account signed in, a sign-out does not: tokens refreshed
+    /// by an unlock that a lock overtook still go to the Keychain, those of a signed-out account
+    /// never do (design D3).
+    private var accountEpoch = 0
+
+    /// When a login or unlock started, as seen by both fences.
+    struct FlowStart {
+        let token: FlowToken
+        let account: Int
+    }
+
+    /// `flow` comes from the view model's action; the account epoch is read here, which is
+    /// enough: a sign-out between the action and this call also ends the gate.
+    private func startFlow(_ flow: FlowToken) -> FlowStart {
+        FlowStart(token: flow, account: accountEpoch)
+    }
+
+    /// No lock and no sign-out since `start`.
+    private func isCurrent(_ start: FlowStart) -> Bool {
+        gate.isCurrent(start.token) && start.account == accountEpoch
+    }
+
+    /// Loads `keys` into the crypto service unless a lock or sign-out came since `start`; on success
     /// `keys` is left empty.
     ///
     /// Security goal: a lock stays in effect even when a login or unlock that was already running
     /// finishes its key derivation afterwards; otherwise its keys would stay loaded behind the lock
     /// or login screen (and could, for example, be enrolled for Touch ID). If a lock comes while the
     /// keys are being loaded, they are unloaded again. Refused keys are zeroed in place.
-    private func loadVaultKeys(_ keys: inout CryptoKeys, startedAt epoch: Int) async throws {
-        guard epoch == lockEpoch else {
+    private func loadVaultKeys(_ keys: inout CryptoKeys, startedAt start: FlowStart) async throws {
+        guard isCurrent(start) else {
             zero(&keys.encryptionKey, "refusedVaultEncryptionKey")
             zero(&keys.macKey, "refusedVaultMacKey")
             logger.info("Keys not loaded: the vault was locked while unlocking")
             throw AuthError.lockedWhileUnlocking
         }
         await crypto.unlockWith(keys: keys)
-        guard epoch == lockEpoch else {
+        guard isCurrent(start) else {
             await crypto.lockVault()
             // The crypto service zeroed its copy; this buffer is the original and now ours alone.
             zero(&keys.encryptionKey, "unloadedVaultEncryptionKey")
@@ -174,19 +200,21 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         }
     }
 
-    func setServerEnvironment(_ environment: ServerEnvironment) async throws {
+    func setServerEnvironment(_ environment: ServerEnvironment, flow: FlowToken) async throws {
+        let start = startFlow(flow)
+        guard isCurrent(start) else { throw AuthError.lockedWhileUnlocking }
         serverEnvironment = environment
         await apiClient.setBaseURL(environment.base)
     }
 
     // MARK: - Login
 
-    func loginWithPassword(email typedEmail: String, masterPassword: Data) async throws -> LoginResult {
+    func loginWithPassword(email typedEmail: String, masterPassword: Data, flow: FlowToken) async throws -> LoginResult {
         // Normalized once, as the official clients do (`email.trim().toLowerCase()`), and used for
         // prelogin, the salt fallback and the token `username` (fix-kdf-derivation-and-validation, D3).
         let email = Self.normalized(typedEmail)
         logger.info("Login attempt for \(email, privacy: .private)")
-        let epoch = lockEpoch
+        let start = startFlow(flow)
         guard let env = serverEnvironment else {
             throw AuthError.serverUnreachable
         }
@@ -263,14 +291,15 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
             switch err {
             case .twoFactorRequired(let providers):
                 // Not kept for a two-factor step behind a lock; `stretched` is zeroed on the way out.
-                guard epoch == lockEpoch else { throw AuthError.lockedWhileUnlocking }
+                guard isCurrent(start) else { throw AuthError.lockedWhileUnlocking }
                 pendingTwoFactor = PendingTwoFactor(
                     email:         email,
                     passwordHash:  serverHash,
                     kdfParams:     kdfParams,
                     salt:          salt,
                     stretchedKeys: stretched,
-                    deviceId:      deviceId
+                    deviceId:      deviceId,
+                    start:         start
                 )
                 stretchedHandedOver = true
                 logger.info("2FA required")
@@ -286,14 +315,15 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
 
         if let providers = tokenResp.twoFactorProviders, !providers.isEmpty {
             // Server returned a 2FA challenge inside a 200 response (test-mock path).
-            guard epoch == lockEpoch else { throw AuthError.lockedWhileUnlocking }
+            guard isCurrent(start) else { throw AuthError.lockedWhileUnlocking }
             pendingTwoFactor = PendingTwoFactor(
                 email:         email,
                 passwordHash:  serverHash,
                 kdfParams:     kdfParams,
                 salt:          salt,
                 stretchedKeys: stretched,
-                deviceId:      deviceId
+                deviceId:      deviceId,
+                start:         start
             )
             stretchedHandedOver = true
             logger.info("2FA required")
@@ -311,7 +341,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
             kdf:          kdfParams,
             salt:         salt,
             environment:  env,
-            startedAt:    epoch
+            startedAt:    start
         )
         logger.info("Login succeeded")
         return .success(account)
@@ -319,10 +349,11 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
 
     func loginWithTOTP(code: String, rememberDevice: Bool) async throws -> Account {
         logger.info("Submitting TOTP code")
-        let epoch = lockEpoch
         // Read the fields, not the whole struct: a local copy of it would share the key buffers
-        // and keep clearPendingTwoFactor() from zeroing them in place.
-        guard let email        = pendingTwoFactor?.email,
+        // and keep clearPendingTwoFactor() from zeroing them in place. The code completes the
+        // sign-in it belongs to, so the sign-in's start applies, not this call's.
+        guard let start        = pendingTwoFactor?.start,
+              let email        = pendingTwoFactor?.email,
               let passwordHash = pendingTwoFactor?.passwordHash,
               let deviceId     = pendingTwoFactor?.deviceId,
               let env          = serverEnvironment else {
@@ -366,7 +397,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
             zero(&stretched.macKey, "pendingMacKey")
         }
         return try await finalizeSession(tokenResp: tokenResp, stretched: stretched, kdf: kdf,
-                                         salt: salt, environment: env, startedAt: epoch)
+                                         salt: salt, environment: env, startedAt: start)
     }
 
     // MARK: - Unlock
@@ -377,9 +408,9 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         logger.info("Pending 2FA state cleared — stretched keys zeroed")
     }
 
-    func unlockWithPassword(_ masterPassword: Data) async throws -> Account {
+    func unlockWithPassword(_ masterPassword: Data, flow: FlowToken) async throws -> Account {
         logger.info("Unlock attempt")
-        let epoch = lockEpoch
+        let start = startFlow(flow)
         let userId: String
         do {
             userId = try readString(key: KeychainKey.activeUserId)
@@ -455,53 +486,12 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
             encUserKey:    encUserKey,
             stretchedKeys: stretched
         )
-        try await loadVaultKeys(&vaultKeys, startedAt: epoch)
-
-        // Restore API client state so the post-unlock sync can make authenticated requests.
-        // Both baseURL and accessToken are nil on a fresh app launch until restored here.
-        serverEnvironment = restoredAccount.serverEnvironment
-        await apiClient.setBaseURL(restoredAccount.serverEnvironment.base)
-
-        if let accessToken = try? readString(key: KeychainKey.user(userId, "accessToken")) {
-            await apiClient.setAccessToken(accessToken)
-            if DebugConfig.isEnabled {
-                logger.debug("[debug] unlock: baseURL and access token restored to API client")
-            }
-
-            // The stored access token may be expired. Attempt a refresh using the stored
-            // refresh token so the post-unlock sync doesn't fail with 401.
-            let refreshTokenOpt = try? readString(key: KeychainKey.user(userId, "refreshToken"))
-            if refreshTokenOpt == nil {
-                logger.debug("Unlock: no refresh token in Keychain — skipping token refresh")
-            }
-            if let refreshToken = refreshTokenOpt {
-                do {
-                    let tokens = try await apiClient.refreshAccessToken(refreshToken: refreshToken)
-                    do {
-                        try writeString(tokens.accessToken, key: KeychainKey.user(userId, "accessToken"))
-                        if let newRefresh = tokens.refreshToken {
-                            try writeString(newRefresh, key: KeychainKey.user(userId, "refreshToken"))
-                        }
-                    } catch {
-                        // Persisting the refreshed token failed — the next launch will use
-                        // the old (expired) token and the user may be signed out unexpectedly.
-                        logger.error("Unlock: failed to persist refreshed tokens — next launch may require re-auth: \(ErrorLog.describe(error), privacy: .public)")
-                    }
-                    if DebugConfig.isEnabled {
-                        logger.debug("[debug] unlock: access token refreshed successfully")
-                    }
-                } catch {
-                    // Refresh failed — keep the old token; sync will fail with 401 (non-fatal).
-                    logger.warning("Unlock: token refresh failed — sync may fail: \(ErrorLog.describe(error), privacy: .public)")
-                }
-            }
-        } else {
-            logger.error("Unlock: access token not found in Keychain — sync will fail with 401")
-        }
-
+        try await loadVaultKeys(&vaultKeys, startedAt: start)
+        try await restoreSession(userId: userId, account: restoredAccount, startedAt: start, caller: "Unlock")
         logger.info("Unlock succeeded")
+        // Only for an unlock that is still current (lock-state-machine, design D2).
         await MainActor.run {
-            NotificationCenter.default.post(name: .vaultDidUnlock, object: nil)
+            if isCurrent(start) { NotificationCenter.default.post(name: .vaultDidUnlock, object: nil) }
         }
         return restoredAccount
     }
@@ -523,7 +513,9 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
 
     func signOut() async throws {
         logger.info("Signing out — clearing session data")
-        lockEpoch &+= 1
+        // First, before any await: an unlock still running must not write this account's tokens
+        // back (design D3).
+        accountEpoch &+= 1
         let userId: String
         do {
             userId = try readString(key: KeychainKey.activeUserId)
@@ -561,6 +553,8 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         // Clear the bearer token from the API client's memory so it cannot be read
         // from a heap dump after sign-out (Constitution §III).
         await apiClient.clearAccessToken()
+        // Nor the server address of the signed-out account (lock-state-machine, design D3).
+        await apiClient.clearBaseURL()
 
         serverEnvironment = nil
         clearPendingTwoFactor()
@@ -575,12 +569,14 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
     /// Zeroes and drops all key material: the vault key, every per-item key and every org key.
     /// The one teardown path; `signOut()` calls it too.
     func lockVault() async {
-        lockEpoch &+= 1
         // A two-factor step does not survive a lock either; its keys are zeroed now.
         clearPendingTwoFactor()
         await crypto.lockVault()
         await vaultKeyCache.clear()
         await orgKeyCache.clear()
+        // No bearer token stays in the network layer while locked; the next unlock installs one
+        // again (lock-state-machine, design D3; code review C3). The Keychain keeps the tokens.
+        await apiClient.clearAccessToken()
         // Notify any open edit sheets to dismiss immediately (no confirmation prompt).
         // Posted on the main queue because subscribers are @MainActor UI components.
         await MainActor.run {
@@ -624,7 +620,8 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         logger.error("Biometric availability check failed: \(ErrorLog.describe(error), privacy: .public)")
     }
 
-    func enableBiometricUnlock() async throws {
+    func enableBiometricUnlock(flow: FlowToken) async throws {
+        let start = startFlow(flow)
         // Guard: vault must be unlocked — keys must be in memory (spec requirement).
         guard await crypto.isUnlocked else {
             throw AuthError.biometricUnavailable
@@ -632,6 +629,9 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         let keys = try await crypto.currentKeys()
         var data = keys.toData()
         defer { data.resetBytes(in: data.indices) }
+        // No await from this check to the write: an enrollment accepted after a lock stores
+        // nothing (lock-state-machine, design D2).
+        guard isCurrent(start) else { throw AuthError.lockedWhileUnlocking }
         guard let userId = try? readString(key: KeychainKey.activeUserId) else {
             throw AuthError.biometricUnavailable
         }
@@ -651,9 +651,9 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         logger.info("Biometric unlock disabled")
     }
 
-    func unlockWithBiometrics() async throws -> Account {
+    func unlockWithBiometrics(flow: FlowToken) async throws -> Account {
         logger.info("Biometric unlock attempt")
-        let epoch = lockEpoch
+        let start = startFlow(flow)
         guard let userId = try? readString(key: KeychainKey.activeUserId) else {
             throw AuthError.biometricUnavailable
         }
@@ -713,31 +713,12 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
             throw AuthError.biometricUnavailable
         }
 
-        try await loadVaultKeys(&vaultKeys, startedAt: epoch)
-
-        // Restore API client state — same as unlockWithPassword().
-        serverEnvironment = restoredAccount.serverEnvironment
-        await apiClient.setBaseURL(restoredAccount.serverEnvironment.base)
-
-        if let accessToken = try? readString(key: KeychainKey.user(userId, "accessToken")) {
-            await apiClient.setAccessToken(accessToken)
-
-            if let refreshToken = try? readString(key: KeychainKey.user(userId, "refreshToken")) {
-                do {
-                    let tokens = try await apiClient.refreshAccessToken(refreshToken: refreshToken)
-                    try? writeString(tokens.accessToken, key: KeychainKey.user(userId, "accessToken"))
-                    if let newRefresh = tokens.refreshToken {
-                        try? writeString(newRefresh, key: KeychainKey.user(userId, "refreshToken"))
-                    }
-                } catch {
-                    logger.warning("Biometric unlock: token refresh failed — sync may fail: \(ErrorLog.describe(error), privacy: .public)")
-                }
-            }
-        }
-
+        try await loadVaultKeys(&vaultKeys, startedAt: start)
+        try await restoreSession(userId: userId, account: restoredAccount, startedAt: start, caller: "Biometric unlock")
         logger.info("Biometric unlock succeeded")
+        // Only for an unlock that is still current (lock-state-machine, design D2).
         await MainActor.run {
-            NotificationCenter.default.post(name: .vaultDidUnlock, object: nil)
+            if isCurrent(start) { NotificationCenter.default.post(name: .vaultDidUnlock, object: nil) }
         }
         return restoredAccount
     }
@@ -747,9 +728,9 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
     /// Evaluates biometric policy on `context` then reads the vault key and unlocks.
     /// If `LAAuthenticationView` was paired with `context` before this call (via
     /// `EmbeddedTouchIDView`), `evaluatePolicy` routes inline — no modal appears.
-    func unlockWithBiometrics(context: LAContext) async throws -> Account {
+    func unlockWithBiometrics(context: LAContext, flow: FlowToken, onAuthenticated: () -> Void) async throws -> Account {
         logger.info("Embedded biometric unlock attempt")
-        let epoch = lockEpoch
+        let start = startFlow(flow)
         guard let userId = try? readString(key: KeychainKey.activeUserId) else {
             throw AuthError.biometricUnavailable
         }
@@ -779,6 +760,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
             // Let LAError (cancel, lockout) propagate — caller handles re-arming.
             throw error
         }
+        onAuthenticated()
 
         // The keys get their own buffers; the 64-byte blob read from the keychain is zeroed.
         defer { keyData.resetBytes(in: keyData.indices) }
@@ -787,33 +769,93 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
             throw AuthError.biometricUnavailable
         }
 
-        try await loadVaultKeys(&vaultKeys, startedAt: epoch)
-        serverEnvironment = restoredAccount.serverEnvironment
-        await apiClient.setBaseURL(restoredAccount.serverEnvironment.base)
-
-        if let accessToken = try? readString(key: KeychainKey.user(userId, "accessToken")) {
-            await apiClient.setAccessToken(accessToken)
-            if let refreshToken = try? readString(key: KeychainKey.user(userId, "refreshToken")) {
-                do {
-                    let tokens = try await apiClient.refreshAccessToken(refreshToken: refreshToken)
-                    try? writeString(tokens.accessToken, key: KeychainKey.user(userId, "accessToken"))
-                    if let newRefresh = tokens.refreshToken {
-                        try? writeString(newRefresh, key: KeychainKey.user(userId, "refreshToken"))
-                    }
-                } catch {
-                    logger.warning("Embedded biometric: token refresh failed: \(ErrorLog.describe(error), privacy: .public)")
-                }
-            }
-        }
-
+        try await loadVaultKeys(&vaultKeys, startedAt: start)
+        try await restoreSession(userId: userId, account: restoredAccount, startedAt: start, caller: "Embedded biometric unlock")
         logger.info("Embedded biometric unlock succeeded")
+        // Only for an unlock that is still current (lock-state-machine, design D2).
         await MainActor.run {
-            NotificationCenter.default.post(name: .vaultDidUnlock, object: nil)
+            if isCurrent(start) { NotificationCenter.default.post(name: .vaultDidUnlock, object: nil) }
         }
         return restoredAccount
     }
 
     // MARK: - Private helpers
+
+    /// After an unlock loaded its keys: points the API client at the account's server and refreshes
+    /// the access token, so the sync that follows is authenticated.
+    ///
+    /// - Security goal: no token of a flow that a lock or sign-out overtook reaches the API client,
+    ///   and no token of a signed-out account reaches the Keychain (lock-state-machine, design D3,
+    ///   gap 3). `refreshAccessToken` returns the tokens without storing them; they are installed
+    ///   here, after the checks, with no await between a check and its Keychain write.
+    /// - After a plain lock the refreshed tokens still go to the Keychain: the account is still
+    ///   signed in, and the server may have rotated the refresh token, so dropping it would sign the
+    ///   user out later. The API client gets none of them, and the call throws.
+    /// - Intentionally NOT done: cancelling the refresh (design D3, Open Question 2).
+    private func restoreSession(userId: String, account: Account, startedAt start: FlowStart, caller: String) async throws {
+        guard isCurrent(start) else { throw AuthError.lockedWhileUnlocking }
+        serverEnvironment = account.serverEnvironment
+        await apiClient.setBaseURL(account.serverEnvironment.base)
+
+        guard var accessToken = try? readString(key: KeychainKey.user(userId, "accessToken")) else {
+            logger.error("\(caller, privacy: .public): access token not found in Keychain — sync will fail with 401")
+            guard isCurrent(start) else { throw AuthError.lockedWhileUnlocking }
+            return
+        }
+        // The stored access token may be expired. Attempt a refresh using the stored refresh
+        // token so the post-unlock sync doesn't fail with 401.
+        if let refreshToken = try? readString(key: KeychainKey.user(userId, "refreshToken")) {
+            do {
+                let tokens = try await apiClient.refreshAccessToken(refreshToken: refreshToken)
+                // The account must still be the stored one: a sign-out deleted it, and its tokens
+                // must not come back. No await from here to the writes.
+                guard start.account == accountEpoch,
+                      (try? readString(key: KeychainKey.activeUserId)) == userId else {
+                    guard isCurrent(start) else {
+                        // A sign-out overtook this flow; its teardown unloads the keys.
+                        logger.info("\(caller, privacy: .public): refreshed tokens dropped, the account was signed out")
+                        throw AuthError.lockedWhileUnlocking
+                    }
+                    // Not overtaken, so no teardown will unload the keys this flow just loaded,
+                    // and no newer session can own them yet (code review C8).
+                    await crypto.lockVault()
+                    logger.error("\(caller, privacy: .public): the stored account changed during the unlock; keys unloaded")
+                    throw AuthError.accountChangedWhileUnlocking
+                }
+                do {
+                    try writeString(tokens.accessToken, key: KeychainKey.user(userId, "accessToken"))
+                    if let newRefresh = tokens.refreshToken {
+                        try writeString(newRefresh, key: KeychainKey.user(userId, "refreshToken"))
+                    }
+                } catch {
+                    // Persisting the refreshed token failed — the next launch will use
+                    // the old (expired) token and the user may be signed out unexpectedly.
+                    logger.error("\(caller, privacy: .public): failed to persist refreshed tokens — next launch may require re-auth: \(ErrorLog.describe(error), privacy: .public)")
+                }
+                accessToken = tokens.accessToken
+            } catch let error as AuthError where error == .lockedWhileUnlocking || error == .accountChangedWhileUnlocking {
+                throw error
+            } catch {
+                // Refresh failed — keep the old token; sync will fail with 401 (non-fatal).
+                logger.warning("\(caller, privacy: .public): token refresh failed — sync may fail: \(ErrorLog.describe(error), privacy: .public)")
+            }
+        } else {
+            logger.debug("\(caller, privacy: .public): no refresh token in Keychain — skipping token refresh")
+        }
+        try await installAccessToken(accessToken, startedAt: start)
+    }
+
+    /// Gives `token` to the API client while `start` is current. The client is an actor, so a
+    /// sign-out can run while the token is handed over; the check is repeated after the hop and
+    /// the token removed again if the flow went stale meanwhile.
+    private func installAccessToken(_ token: String, startedAt start: FlowStart) async throws {
+        guard isCurrent(start) else { throw AuthError.lockedWhileUnlocking }
+        await apiClient.setAccessToken(token)
+        guard isCurrent(start) else {
+            await apiClient.clearAccessToken()
+            throw AuthError.lockedWhileUnlocking
+        }
+    }
 
     /// Completes a successful token exchange: decrypts vault key, stores credentials, returns Account.
     ///
@@ -826,7 +868,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         kdf:         KdfParams,
         salt:        String,
         environment: ServerEnvironment,
-        startedAt epoch: Int
+        startedAt start: FlowStart
     ) async throws -> Account {
         // Vaultwarden omits UserId/Email from the token response body (unlike the official
         // Bitwarden server, which includes them as PascalCase fields). Extract identity from
@@ -867,9 +909,10 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         if DebugConfig.isEnabled {
             logger.debug("[debug] vault keys decrypted — encKey=\(vaultKeys.encryptionKey.count, privacy: .public) bytes, macKey=\(vaultKeys.macKey.count, privacy: .public) bytes")
         }
-        try await loadVaultKeys(&vaultKeys, startedAt: epoch)
+        try await loadVaultKeys(&vaultKeys, startedAt: start)
 
-        // Persist session data in Keychain.
+        // Persist session data in Keychain. No await since the check in `loadVaultKeys`, so a lock
+        // or sign-out cannot land in between (design D2).
         try writeString(userId,       key: KeychainKey.activeUserId)
         try writeString(accessToken,  key: KeychainKey.user(userId, "accessToken"))
         try writeString(refreshToken, key: KeychainKey.user(userId, "refreshToken"))
@@ -891,7 +934,7 @@ final class AuthRepositoryImpl: AuthRepository, EmbeddedBiometricUnlock {
         let envJSON = try JSONEncoder().encode(environment)
         try keychain.write(data: envJSON, key: KeychainKey.user(userId, "serverEnvironment"))
 
-        await apiClient.setAccessToken(accessToken)
+        try await installAccessToken(accessToken, startedAt: start)
 
         return Account(
             userId:            userId,

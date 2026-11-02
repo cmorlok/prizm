@@ -21,6 +21,39 @@ final class LoginUseCaseTests: XCTestCase {
         sut = LoginUseCaseImpl(auth: mockAuth, sync: mockSync)
     }
 
+    /// The sign-in's token reaches the auth layer unchanged, also across the server setup
+    /// (lock-state-machine, design D2, gap 4).
+    func testExecute_passesTheSignInsFlowToTheLogin() async throws {
+        mockAuth.stubbedLoginResult = .success(makeAccount())
+        mockSync.stubbedSyncResult  = makeSyncResult()
+        let flow = FlowToken()
+
+        _ = try await sut.execute(serverURL: serverURL, email: email, masterPassword: masterPassword, flow: flow)
+
+        XCTAssertEqual(mockAuth.receivedFlows, [flow])
+    }
+
+    /// The sync after the sign-in runs with the sign-in's token (design D8; code review C5).
+    func testExecute_syncsWithTheSignInsFlow() async throws {
+        mockAuth.stubbedLoginResult = .success(makeAccount())
+        mockSync.stubbedSyncResult  = makeSyncResult()
+        let flow = FlowToken()
+
+        _ = try await sut.execute(serverURL: serverURL, email: email, masterPassword: masterPassword, flow: flow)
+
+        XCTAssertEqual(mockSync.receivedFlows, [flow])
+    }
+
+    func testCompleteTOTP_syncsWithTheSignInsFlow() async throws {
+        mockAuth.stubbedLoginResult = .success(makeAccount())
+        mockSync.stubbedSyncResult  = makeSyncResult()
+        let flow = FlowToken()
+
+        _ = try await sut.completeTOTP(code: "123456", rememberDevice: false, flow: flow)
+
+        XCTAssertEqual(mockSync.receivedFlows, [flow])
+    }
+
     // MARK: - T026: execute(serverURL:email:masterPassword:)
 
     /// Full success path: validates URL, sets environment, calls loginWithPassword, syncs, returns .success.
@@ -31,7 +64,8 @@ final class LoginUseCaseTests: XCTestCase {
         let result = try await sut.execute(
             serverURL:      serverURL,
             email:          email,
-            masterPassword: masterPassword
+            masterPassword: masterPassword,
+            flow:           FlowToken()
         )
 
         guard case .success(let account) = result else {
@@ -52,7 +86,8 @@ final class LoginUseCaseTests: XCTestCase {
             try await sut.execute(
                 serverURL:      "not-a-url",
                 email:          email,
-                masterPassword: masterPassword
+                masterPassword: masterPassword,
+            flow:           FlowToken()
             )
         ) { error in
             XCTAssertEqual(error as? AuthError, .invalidURL)
@@ -70,7 +105,8 @@ final class LoginUseCaseTests: XCTestCase {
         let result = try await sut.execute(
             serverURL:      serverURL,
             email:          email,
-            masterPassword: masterPassword
+            masterPassword: masterPassword,
+            flow:           FlowToken()
         )
 
         guard case .requiresTwoFactor(let method) = result else {
@@ -91,7 +127,8 @@ final class LoginUseCaseTests: XCTestCase {
             try await sut.execute(
                 serverURL:      serverURL,
                 email:          email,
-                masterPassword: masterPassword
+                masterPassword: masterPassword,
+            flow:           FlowToken()
             )
         ) { error in
             XCTAssertEqual(error as? AuthError, .invalidCredentials)
@@ -108,7 +145,8 @@ final class LoginUseCaseTests: XCTestCase {
         let result = try await sut.execute(
             serverURL:      serverURL,
             email:          email,
-            masterPassword: masterPassword
+            masterPassword: masterPassword,
+            flow:           FlowToken()
         )
         guard case .success = result else {
             XCTFail("Expected .success despite sync failure")
@@ -125,7 +163,8 @@ final class LoginUseCaseTests: XCTestCase {
         _ = try await sut.execute(
             serverURL:      serverURL,
             email:          email,
-            masterPassword: masterPassword
+            masterPassword: masterPassword,
+            flow:           FlowToken()
         )
 
         sut.cancelTOTP()

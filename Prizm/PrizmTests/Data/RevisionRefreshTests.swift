@@ -171,7 +171,7 @@ final class RevisionRefreshTests: XCTestCase {
         try await seed([item], in: rig)
         rig.api.getCipherResponses["c1"] = try await record("c1", in: rig, revision: Self.r2)
         let vault = rig.vault
-        rig.api.whileGettingCipher = { await vault.clearVault() }
+        rig.api.whileGettingCipher = { await vault.lockAsTheRootDoes() }
 
         try await rig.vault.deleteItem(id: "c1")
 
@@ -193,7 +193,7 @@ final class RevisionRefreshTests: XCTestCase {
         rig.api.restoreCipherResponse = nil
         rig.api.getCipherResponses["c1"] = try await record("c1", in: rig, revision: Self.r2)
         let vault = rig.vault
-        rig.api.whileGettingCipher = { await vault.clearVault() }
+        rig.api.whileGettingCipher = { await vault.lockAsTheRootDoes() }
 
         try await rig.vault.restoreItem(id: "c1")
 
@@ -212,7 +212,7 @@ final class RevisionRefreshTests: XCTestCase {
         let attachment = Attachment(id: "att-1", fileName: "a.txt", encryptedKey: "2.k|k|k", size: 10,
                                     sizeName: "10 B", url: nil)
         let vault = rig.vault
-        rig.api.whileGettingCipher = { await vault.clearVault() }
+        rig.api.whileGettingCipher = { await vault.lockAsTheRootDoes() }
 
         await rig.vault.updateAttachments([attachment], for: "c1")
 
@@ -410,7 +410,7 @@ final class RevisionRefreshTests: XCTestCase {
         let rig = await StaleWriteRig.make()
         try await seed([StaleWriteRig.login("c1")], in: rig)
         let answer = try await record("c1", in: rig, revision: Self.r2)
-        await rig.vault.clearVault()
+        await rig.vault.lockAsTheRootDoes()
 
         let applied = await rig.vault.applyAttachmentChange(record: answer, for: "c1")
 
@@ -712,7 +712,7 @@ final class RevisionRefreshTests: XCTestCase {
             rig.api.getCipherResponses[item.id] = try await record(item.id, in: rig, revision: Self.r2)
         }
         let vault = rig.vault
-        rig.api.whileGettingCipher = { await vault.clearVault() }
+        rig.api.whileGettingCipher = { await vault.lockAsTheRootDoes() }
 
         try await rig.vault.moveItemsToFolder(itemIds: ["c1", "c2"], folderId: "work")
 

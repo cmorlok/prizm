@@ -9,7 +9,6 @@ enum LoginFlowState: Equatable {
     case login
     case loading
     case totpPrompt
-    case syncing(message: String)
     case vault
 }
 
@@ -33,11 +32,17 @@ final class LoginViewModel: ObservableObject {
     // MARK: - Dependencies
 
     private let loginUseCase: any LoginUseCase
+    /// The app's lock fence (lock-state-machine, design D2).
+    private let gate: any SessionGate
+    /// The running sign-in's token, taken when the user signed in; the two-factor step that
+    /// follows belongs to the same sign-in.
+    private var signInFlow: FlowToken?
     private let logger = Logger(subsystem: "com.prizm", category: "LoginViewModel")
 
     // MARK: - Init
 
-    init(loginUseCase: any LoginUseCase) {
+    init(loginUseCase: any LoginUseCase, gate: any SessionGate) {
+        self.gate = gate
         self.loginUseCase = loginUseCase
     }
 
@@ -60,13 +65,19 @@ final class LoginViewModel: ObservableObject {
             return
         }
 
+        // Taken here, before the first await: a lock during the server setup must refuse this
+        // sign-in too (gap 4).
+        let flow = gate.begin()
+        signInFlow = flow
         Task {
             do {
                 let result = try await loginUseCase.execute(
                     serverURL:      serverURL,
                     email:          email,
-                    masterPassword: passwordData
+                    masterPassword: passwordData,
+                    flow:           flow
                 )
+                guard gate.isCurrent(flow) else { return endOvertaken(flow) }
 
                 switch result {
                 case .success:
@@ -87,10 +98,12 @@ final class LoginViewModel: ObservableObject {
                 }
 
             } catch let err as AuthError {
+                guard gate.isCurrent(flow) else { return endOvertaken(flow) }
                 logger.error("Sign-in failed: \(ErrorLog.describe(err), privacy: .public)")
                 errorMessage = err.errorDescription
                 flowState    = .login
             } catch {
+                guard gate.isCurrent(flow) else { return endOvertaken(flow) }
                 logger.error("Sign-in failed: \(ErrorLog.describe(error), privacy: .public)")
                 errorMessage = error.localizedDescription
                 flowState    = .login
@@ -110,19 +123,69 @@ final class LoginViewModel: ObservableObject {
         errorMessage = nil
         flowState    = .loading
 
+        // The two-factor step belongs to the sign-in that reached it and reuses its token (D2).
+        guard let flow = signInFlow else {
+            logger.fault("TOTP submission without a sign-in")
+            flowState = .login
+            return
+        }
         Task {
             do {
-                let _ = try await loginUseCase.completeTOTP(code: code, rememberDevice: rememberDevice)
+                let _ = try await loginUseCase.completeTOTP(code: code, rememberDevice: rememberDevice, flow: flow)
+                guard gate.isCurrent(flow) else { return endOvertaken(flow) }
                 flowState = .vault
             } catch let err as AuthError {
+                guard gate.isCurrent(flow) else { return endOvertaken(flow) }
                 logger.error("TOTP submission failed: \(ErrorLog.describe(err), privacy: .public)")
                 errorMessage = err.errorDescription
                 flowState    = .totpPrompt
             } catch {
+                // No error from a submission that a lock overtook (code review C9).
+                guard gate.isCurrent(flow) else { return endOvertaken(flow) }
                 logger.error("TOTP submission failed: \(ErrorLog.describe(error), privacy: .public)")
                 errorMessage = error.localizedDescription
                 flowState    = .totpPrompt
             }
         }
+    }
+
+    /// Whether the running sign-in is still current (no lock or sign-out since it started).
+    var isFlowCurrent: Bool {
+        signInFlow.map { gate.isCurrent($0) } ?? false
+    }
+
+    /// Ends a running sign-in or two-factor step because a lock or sign-out started
+    /// (lock-state-machine, design D1, D6). Called in the lock's first turn; no-op otherwise.
+    func endFlow() {
+        switch flowState {
+        case .loading:
+            endOvertakenSignIn()
+        case .totpPrompt:
+            loginUseCase.cancelTOTP()
+            endOvertakenSignIn()
+        case .login, .vault:
+            break
+        }
+    }
+
+    /// The late result of an overtaken `flow`. It changes the screen only while `flow` is still
+    /// this view model's latest sign-in: after a lock the user may already have started a new one,
+    /// whose spinner and password it must leave alone (code review C2).
+    private func endOvertaken(_ flow: FlowToken?) {
+        guard flow == signInFlow else {
+            logger.info("Late result of an earlier sign-in dropped")
+            return
+        }
+        endOvertakenSignIn()
+    }
+
+    /// A sign-in that a lock or sign-out overtook ends quietly on the login screen: no error, no
+    /// vault (lock-state-machine, design D6). `RootViewModel` shows the login screen only while the
+    /// screen still belongs to the login flow.
+    private func endOvertakenSignIn() {
+        logger.info("Sign-in ended: a lock or sign-out came first")
+        password     = ""
+        errorMessage = nil
+        flowState    = .login
     }
 }
