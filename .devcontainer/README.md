@@ -4,12 +4,13 @@ Prizm is a macOS app, so it **cannot be built or tested in a Linux container**. 
 
 | Where | What | Entry point |
 |---|---|---|
-| Container (`prizm-dev`) | Claude Code, OpenSpec, GSD, spec validation, shell/plist/scheme checks, workflow lint, Linux type-check of the Foundation-only Domain layer, optional swift-format | `scripts/container/checks.sh` |
+| Container (`prizm-dev`) | Claude Code, Antigravity CLI (`agy`), OpenSpec, GSD, spec validation, shell/plist/scheme checks, workflow lint, Linux type-check of the Foundation-only Domain layer, optional swift-format | `scripts/container/checks.sh` |
 | Mac host | `xcodebuild` build, unit tests, UI tests, signed Release build | `scripts/host/xcode.sh` |
 | Mac host or container, both in order | container checks, then Xcode (from the container through the build daemon) | `scripts/build.sh` |
 | Mac host, left running | runs Xcode builds requested from the container | `scripts/host/build-daemon.sh` |
 | Container → Mac | one Xcode command on the Mac, output streamed back | `scripts/container/host-build.sh` |
 | Mac host terminal → container | run `claude` inside the container | `scripts/claude.sh` |
+| Mac host terminal → container | run the Antigravity CLI `agy` inside the container | `scripts/agy.sh` |
 | Mac host | Vaultwarden test rig: start, switch versions, certificate, feature flag, snapshots (see `rig/RUNBOOK.md`) | `scripts/host/vaultwarden.sh` |
 | Container → rig | probes against the Vaultwarden rig: login, sync summary, fixture capture, experiments (see rig/RUNBOOK.md) | `scripts/rig/` |
 
@@ -30,12 +31,17 @@ Prizm is a macOS app, so it **cannot be built or tested in a Linux container**. 
 1. Open the repo in VS Code and choose **Dev Containers: Reopen in Container**, or run
    `devcontainer up --workspace-folder .`. The first build takes several minutes, mostly for
    the Swift toolchain image.
-2. `post-create.sh` then generates the OpenSpec `/opsx:*` commands and installs GSD into this
-   project's `.claude/`. All of it is git-ignored. GSD's `.planning/` is excluded locally via
-   `.git/info/exclude`. The script fails if setup modified any tracked file.
+2. `post-create.sh` then generates the OpenSpec `/opsx:*` commands, installs GSD into this
+   project's `.claude/` (Claude Code) and `.agents/` (Antigravity), and installs the Antigravity
+   CLI `agy` into `~/.local/bin`. All of it is git-ignored or outside the repo; `.planning/` and
+   `.agents/` are excluded locally via `.git/info/exclude`. The script fails if setup modified
+   any tracked file. To add `agy` and GSD for Antigravity to an existing container, run
+   `bash .devcontainer/post-create.sh` once; every step is safe to repeat.
 3. Run `claude` once (in the VS Code terminal, or `scripts/claude.sh` from the Mac) and log in.
    The login is stored in `~/.claude` in the container, which lives in the `prizm-dev-home`
    volume, separate from your Mac's `~/.claude`, and survives container rebuilds.
+4. Optional: run `agy` once (in the VS Code terminal, or `scripts/agy.sh` from the Mac) and sign in with your Google account; the login is kept in the same
+   home volume.
 
 ### Migrating an existing prizm-dev
 
@@ -55,8 +61,8 @@ session running in the old container.
   is called or wherever it lives on the Mac. Paths printed inside the container (by Claude,
   linters, the compiler) therefore start with `/workspaces/prizm/`. On the Mac, read that prefix
   as your repo root.
-- `scripts/claude.sh` maps your current directory into the container: run from
-  `<repo>/Prizm/Domain` on the Mac, Claude starts in `/workspaces/prizm/Prizm/Domain`. Outside
+- `scripts/claude.sh` and `scripts/agy.sh` map your current directory into the container: run from
+  `<repo>/Prizm/Domain` on the Mac, the agent starts in `/workspaces/prizm/Prizm/Domain`. Outside
   the repo it starts at `/workspaces/prizm`.
 - **The container user's home, `/home/developer`, is the named volume `prizm-dev-home`.** It holds
   the Claude Code binary and login, OpenSpec's global config, shell history and anything else
@@ -122,7 +128,9 @@ mirror them, and `scripts/container/compose-model.sh` checks that the two agree:
 
 The policy is a release **at least two weeks old**, so a compromised or broken release has time
 to be noticed and pulled before it reaches a container that has your home directory mounted.
-Downloads are checksum-verified. Claude Code is not pinned: it updates itself.
+Downloads are checksum-verified. Claude Code and the Antigravity CLI are not pinned: both update
+themselves, and neither installer offers a version choice. GSD's Antigravity MCP server is
+pinned to the same GSD version by `post-create.sh` (the installer writes it unpinned).
 
 To bump a version, change the build arg and rebuild the container. For ShellCheck, also update
 the pinned SHA-256 values in the `Dockerfile`.

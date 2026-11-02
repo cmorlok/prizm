@@ -6,7 +6,7 @@
   "service": "prizm-dev",
   // Start only the dev container; the rig services are also behind the "rig" profile.
   "runServices": ["prizm-dev"],
-  // Closing VS Code must not stop prizm-dev under scripts/claude.sh, or the rig.
+  // Closing VS Code must not stop prizm-dev under scripts/claude.sh or scripts/agy.sh, or the rig.
   "shutdownAction": "none",
 
   // The Compose default would be "/". Keep in sync with PRIZM_CONTAINER_WORKSPACE in
