@@ -160,6 +160,8 @@ final class MockAuthRepository: AuthRepository {
         guard case .success(let account) = stubbedLoginResult else {
             throw AuthError.biometricUnavailable
         }
+        // Loads the keys, as the password unlock above and the real repository do.
+        stubbedIsVaultUnlocked = true
         return account
     }
 }

@@ -189,6 +189,48 @@ final class RootViewModelLockFlowTests: XCTestCase {
         XCTAssertTrue(next.showEnrollmentPrompt, "offered again after the next unlock")
     }
 
+    /// Spec "Touch ID after a lock during a password unlock": the password unlock that the lock
+    /// overtook ends after the user unlocked again with Touch ID, and the new session stays.
+    func testStalePasswordUnlockEndingAfterATouchIDUnlock_leavesTheNewSessionAlone() async throws {
+        mockAuth.stubbedLoginResult = .success(account)
+        mockAuth.stubbedBiometricUnlockAvailable = true
+        let release = AsyncGate()
+        mockAuth.whileUnlockingWithPassword = { await release.wait() }
+        let old = try XCTUnwrap(sut.unlockVM)
+        old.password = "pw"
+        old.unlock()
+        XCTAssertTrue(sut.canLock)
+
+        sut.lockVault()
+        try await waitUntil { self.sut.unlockVM !== old && self.deps.gate.isOpen }
+        let next = try XCTUnwrap(sut.unlockVM)
+        next.unlockWithBiometrics()
+        try await waitUntil { if case .vault = self.sut.screen { true } else { false } }
+        guard case .vault = sut.screen else { return XCTFail("the Touch ID unlock did not reach the vault") }
+        let locksBefore = mockAuth.lockVaultCalledCount
+
+        await release.open()
+        try await Task.sleep(for: .milliseconds(100))
+
+        guard case .vault = sut.screen else { return XCTFail("the stale unlock changed the screen: \(sut.screen)") }
+        XCTAssertEqual(mockAuth.lockVaultCalledCount, locksBefore, "no teardown of the new session")
+        XCTAssertTrue(deps.gate.isCurrent(deps.gate.begin()))
+    }
+
+    /// Spec "Command-L on an idle unlock screen": nothing changes and the typed password stays.
+    func testCommandLOnAnIdleUnlockScreen_keepsTheTypedPassword() async throws {
+        let unlock = try XCTUnwrap(sut.unlockVM)
+        unlock.password = "half-typed"
+
+        sut.lockVault()
+        try await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertTrue(sut.unlockVM === unlock)
+        XCTAssertFalse(unlock.isEnded)
+        XCTAssertEqual(unlock.password, "half-typed")
+        XCTAssertEqual(mockAuth.lockVaultCalledCount, 0)
+    }
+
     /// While a password unlock runs, the Touch ID sensor is not armed again (design D9; C14).
     func testWhileAPasswordUnlockRuns_touchIDDoesNotStart() async throws {
         let touch = HeldEmbeddedBiometric(account: account)
