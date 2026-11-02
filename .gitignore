@@ -77,3 +77,6 @@ node_modules/
 # tasks.json
 # tasks/ 
 .DS_Store
+
+# Per-developer agent notes (see AGENTS.md)
+AGENTS.local.md

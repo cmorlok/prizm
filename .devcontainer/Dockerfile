@@ -12,7 +12,7 @@
 # .devcontainer/compose.yaml. Claude Code is not pinned: it updates itself, which is Anthropic's
 # intended update path.
 
-# Swift 6.2 matches CLAUDE.md ("Swift 6.2"). Tag plus digest, so a re-pushed tag cannot change
+# Swift 6.2 matches AGENTS.md ("Swift 6.2"). Tag plus digest, so a re-pushed tag cannot change
 # the image silently.
 FROM swift:6.2.4-noble@sha256:d6f8f6112e9a63da0a4a151d6b93acd16699d35c0b82531ac1a245f5af210197
 

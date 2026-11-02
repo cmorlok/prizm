@@ -20,7 +20,7 @@ log() { printf '\n==> %s\n' "$*"; }
 
 tracked_before="$(git status --porcelain --untracked-files=no)"
 
-# OpenSpec's default "core" profile lacks /opsx:new and /opsx:verify, which CLAUDE.md uses.
+# OpenSpec's default "core" profile lacks /opsx:new and /opsx:verify, which AGENTS.md uses.
 # The "custom" profile with every workflow installs the full command set. This global config
 # lives in the container user's home (not the host's).
 log "Configuring OpenSpec ${OPENSPEC_VERSION} (custom profile, all workflows, telemetry off)"
