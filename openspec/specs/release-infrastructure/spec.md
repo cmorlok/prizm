@@ -4,7 +4,6 @@ Build, sign and package Prizm for Developer ID distribution.
 
 ## Requirements
 
-
 ### Requirement: App icon is present at all required sizes
 The app SHALL have an icon defined in `Assets.xcassets/AppIcon.appiconset` at all
 sizes required by macOS (16, 32, 64, 128, 256, 512, 1024px).
@@ -71,3 +70,12 @@ human-readable error message pointing to `DEVELOPMENT.md` for setup instructions
 #### Scenario: Workflow runs without secrets configured
 - **WHEN** a fork or fresh clone pushes a `v*` tag without secrets configured
 - **THEN** the signing step exits immediately with a clear message (e.g. "CERT_P12 secret is not set — see DEVELOPMENT.md for release signing setup") rather than a cryptic keychain or codesign error
+
+### Requirement: The Release configuration compiles
+The app SHALL compile in the Release configuration. Types and checks that exist only for tests
+(UI-test seams such as `UITestFixtures`) SHALL be referenced only inside `#if DEBUG`, so that a
+Release binary contains none of them and still builds.
+
+#### Scenario: Release build
+- **WHEN** the app is built with the Release configuration (`scripts/container/host-build.sh release`)
+- **THEN** the build succeeds without errors
