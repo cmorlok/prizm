@@ -1,7 +1,8 @@
 # Prizm devcontainer: everything that does not need macOS/Xcode.
 #
-# What runs here: Claude Code, OpenSpec, GSD, spec validation, shell/workflow/plist linting,
-# swift-format, and a Linux type-check of the Foundation-only Domain layer.
+# What runs here: Claude Code, the Antigravity CLI (installed by post-create.sh), OpenSpec, GSD,
+# spec validation, shell/workflow/plist linting, swift-format, and a Linux type-check of the
+# Foundation-only Domain layer.
 # What cannot run here: xcodebuild (build, unit tests, UI tests, signing). Use
 # scripts/host/xcode.sh on the Mac for that.
 #
