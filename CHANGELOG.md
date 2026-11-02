@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Fixed: a lock (Command-L, sleep, screensaver, screen lock) or sign-out now ends every sign-in,
+  two-factor step, password or Touch ID unlock and Touch ID enrollment that is running. None of
+  them can load the vault keys, show the vault or store a Touch ID key afterwards, and a sign-out
+  during an unlock no longer writes the account's tokens back. Sleep during a Touch ID unlock, also
+  right after the finger was accepted, or with the Touch ID enrollment sheet open locks the vault;
+  the sheet closes and is offered again after the next unlock. "Sign in with a different account"
+  and the Touch ID badge are unavailable while an unlock runs. While locked, Prizm keeps no server
+  access token in memory.
+- Fixed: a sync, password-history read or attachment download that was running when the vault
+  locked can no longer leave keys in memory or return decrypted data afterwards.
 - Fixed: Prizm builds again in the Release configuration (`xcodebuild -configuration Release`);
   since the website-icon privacy change a UI-test helper was referenced outside Debug builds.
 - Added: "No Folder" and "My Vault" in the sidebar, for items without a folder and for items that

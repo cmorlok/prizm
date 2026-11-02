@@ -242,3 +242,28 @@ None. Decided 2026-11-01:
 1. Owner: `RootViewModel`, with the gate as the shared part (D10).
 2. Token refresh during an unlock: not cancelled; after a sign-out nothing is written, after a lock
    only the keychain keeps the rotated tokens (D3).
+
+## Review
+
+- **Spec challenge** (2026-11-01, fresh agent, before code): 15 findings (4 high), all adopted.
+- **Security review and code review** (2026-11-01, fresh agents in their own worktrees, read-only):
+  security 1 high (Release build: `AppContainer.sessionGate` declared inside `#if DEBUG`),
+  1 medium and 4 low; code review 1 high, 5 medium and 8 low. Both found the same main bug: the
+  embedded Touch ID unlock counted as running only after its token refresh, so sleep or ⌘L in that
+  window left the keys loaded behind the lock screen. Fixed by `onAuthenticated` and the full
+  teardown in `lockForSystemEvent()` (D5). All other findings were fixed with red/green tests;
+  one low (S-L2) is accepted under Risks. Findings, fixes and runs: commit messages of 9886a4b1,
+  b9040894, 4eaa6700, 62f23191, e6696c5b, e6b6ecb2, b9b75044.
+- **Pre-existing, separate change**: the Release configuration did not compile on `develop`
+  (`UITestFixtures` used outside `#if DEBUG` since `fix-website-icons-privacy`), fixed in
+  `fix-release-build`.
+- **Rig check** (task 4.2) on Vaultwarden 1.37.4, 20261101T103026Z: all six checks pass.
+- **UI run** 20261101T103325Z (Login, Unlock, BiometricUnlock, BiometricEnrollment, VaultBrowser,
+  EditItem journeys): 52 tests, 37 pass, 15 standing skips (simulated Touch ID, save backend,
+  real server), 0 fail.
+- **Hand checks** (task 3.2, Christian, 2026-11-02): Touch ID + sleep and VoiceOver confirmed; the
+  enrollment sheet + ⌘L is covered by unit tests only (it needs an account without Touch ID).
+- **/opsx:verify** (2026-11-02): 4/4 requirements, 16/16 scenarios covered; two scenarios had no
+  direct test and got characterisation tests (42fb9452). SECURITY.md describes the lock of running
+  flows (edd9bb48).
+- **Unit tests**: every commit builds and passes on its own (20261102T125837Z … 130310Z); tip 1648.
